@@ -1,3 +1,6 @@
+import type { z } from "zod";
+import type { DashboardSpec, LayoutItem as LayoutItemSchema, Widget as WidgetSchema } from "../../shared/spec.js";
+
 export type GmailConnection = {
   mode: "live" | "sample";
   email: string;
@@ -43,6 +46,12 @@ export type Dashboard =
       activity: { date: string; received: number; sent: number }[];
     };
 
+export type Widget = z.infer<typeof WidgetSchema>;
+export type WidgetType = Widget["type"];
+export type GridItem = z.infer<typeof LayoutItemSchema>;
+export type DashboardSpecInput = z.infer<typeof DashboardSpec>;
+export type SavedDashboard = DashboardSpecInput & { id: string; version: number; canUndo: boolean; updatedAt: string };
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -62,6 +71,15 @@ export const api = {
   loadSample: () => request<{ count: number }>("/api/integrations/gmail/sample", { method: "POST" }),
   disconnect: () => request<{ ok: true }>("/api/integrations/gmail", { method: "DELETE" }),
   connectUrl: "/api/auth/google/start",
+  spec: () => request<SavedDashboard>("/api/dashboards/default"),
+  saveSpec: (spec: DashboardSpecInput & { version: number }) =>
+    request<SavedDashboard>("/api/dashboards/default", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(spec),
+    }),
+  undoSpec: () => request<SavedDashboard>("/api/dashboards/default/undo", { method: "POST" }),
+  resetSpec: () => request<SavedDashboard>("/api/dashboards/default/reset", { method: "POST" }),
 };
 
 export function timeAgo(iso: string | null): string {

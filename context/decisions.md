@@ -17,6 +17,7 @@ Newest at the bottom. Add an entry whenever the team makes a choice that affects
 | 12 | 2026-11-13 | Starter scope: **Integrations + Dashboard, Gmail only**. Read-only scope (`gmail.readonly`), last 30 days, max 300 messages, metadata only. Numbers are computed by plain code, not an LLM | User request; honest, explainable numbers |
 | 13 | 2026-11-13 | Clearly labelled **sample data** mode for rehearsing the demo before Google OAuth is set up | Lets the team demo without OAuth keys |
 | 14 | 2026-11-13 | Agent setup committed to the repo: `AGENTS.md` (shared rules), `CLAUDE.md` (imports it), skills in `.agents/skills/` (Codex) mirrored to `.claude/skills/`, `.claude/settings.json` (Impeccable + taste-skill plugins), `.codex/config.toml` | Teammates and their agents follow the same rules from the first pull |
+| 15 | 2026-11-13 | Drag-and-drop dashboard built on **react-grid-layout v2**. Spec validated by zod in `shared/spec.js`; only the desktop layout is stored and editable, tablet/phone are derived; one dashboard (`default`) until RBAC lands | Simplest model that stays correct at every width; per-person copies come with roadmap #6 |
 | 10 | 2026-11-13 | Figma UI file: [AI Workspace OS — UI](https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h) with 5 screens, tokens and components | Source of truth for the UI build |
 
 ## Open questions

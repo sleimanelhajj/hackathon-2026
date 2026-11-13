@@ -4,6 +4,7 @@ import { connectDb, getDb, pingDb } from "./db.js";
 import { authUrl, consumeState, disconnectGmail, googleConfigured, handleCallback, syncGmail } from "./gmail.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
+import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
 
 const app = express();
 app.use(express.json());
@@ -56,6 +57,18 @@ app.delete("/api/integrations/gmail", wrap(async (_req, res) => {
   res.json({ ok: true });
 }));
 app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboard())));
+
+// Dashboard layout spec (widgets + grid positions)
+app.get("/api/dashboards/default", wrap(async (_req, res) => res.json(await getDashboard())));
+app.put("/api/dashboards/default", async (req, res) => {
+  try {
+    res.json(await saveDashboard(req.body));
+  } catch (err) {
+    res.status(err instanceof ConflictError ? 409 : 400).json({ error: err.message });
+  }
+});
+app.post("/api/dashboards/default/undo", wrap(async (_req, res) => res.json(await undoDashboard())));
+app.post("/api/dashboards/default/reset", wrap(async (_req, res) => res.json(await resetDashboard())));
 
 // API_PORT (not PORT): dev tools often set PORT for the web server.
 const port = Number(process.env.API_PORT || 8787);

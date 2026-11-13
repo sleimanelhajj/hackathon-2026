@@ -6,6 +6,7 @@ type UiState = {
   sidebarCollapsed: boolean;
   closedPanels: Record<string, boolean>;
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   togglePanel: (id: string) => void;
   openPanel: (id: string) => void;
 };
@@ -33,6 +34,7 @@ export const useUi = create<UiState>()(
       sidebarCollapsed: false,
       closedPanels: {},
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
       togglePanel: (id) => set((s) => ({ closedPanels: { ...s.closedPanels, [id]: !s.closedPanels[id] } })),
       openPanel: (id) => set((s) => ({ closedPanels: { ...s.closedPanels, [id]: false } })),
     }),

@@ -18,9 +18,9 @@
 | `recharts` | Email activity chart |
 | `lucide-react` | Icons |
 | `@fontsource-variable/inter` | Self-hosted Inter font |
-| `react-grid-layout` (v2) | Installed for later: drag, drop and resize dashboard widgets (roadmap #1) |
+| `react-grid-layout` (v2) | **In use:** drag, drop and resize dashboard widgets |
 | `@dnd-kit/react` | Installed for later: drag-to-reorder lists only (roadmap #5, #6) |
-| `zod` | Installed for later: validating widget specs and AI output (roadmap #1–5) |
+| `zod` | **In use:** dashboard spec validation (`shared/spec.js`); later also AI output |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
@@ -37,12 +37,17 @@ Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages)
 │   ├── db.js           ← MongoDB connection + indexes
 │   ├── gmail.js        ← OAuth, token refresh, bounded sync, disconnect
 │   ├── dashboard.js    ← derived numbers (waiting on you / them, activity, top people)
+│   ├── dashboards.js   ← saved dashboard spec: get / save (versioned) / undo / reset
 │   ├── sample.js       ← labelled sample data for demos
 │   └── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
+├── shared/
+│   └── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
 ├── src/
-│   ├── App.tsx         ← shell + hash routing (#/dashboard, #/integrations)
+│   ├── App.tsx         ← shell + hash routing (#/dashboard, #/integrations), lazy dashboard
 │   ├── components/     ← Sidebar (collapsible), Panel (collapsible), Callout, Gmail logo
-│   ├── pages/          ← IntegrationsPage, DashboardPage
+│   ├── dashboard/      ← DashboardGrid (react-grid-layout), WidgetFrame, WidgetLibrary, layout helpers, data context
+│   ├── widgets/        ← Stat, ThreadList, ActivityChart (lazy), TopPeople + registry
+│   ├── pages/          ← IntegrationsPage, DashboardPage (edit mode, save/undo/reset)
 │   └── lib/            ← api client, react-query hooks, UI store
 ├── .env                ← secrets (git-ignored, never commit)
 └── .env.example        ← template for teammates
@@ -68,7 +73,11 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/integrations/gmail/sync` | Re-imports last 30 days (deduplicated by Gmail message id) |
 | POST | `/api/integrations/gmail/sample` | Loads labelled sample data |
 | DELETE | `/api/integrations/gmail` | Revokes token, deletes imported messages |
-| GET | `/api/dashboard` | Dashboard numbers and lists |
+| GET | `/api/dashboard` | Dashboard numbers and lists (shared by all widgets) |
+| GET | `/api/dashboards/default` | Saved layout spec (widgets + desktop grid positions) |
+| PUT | `/api/dashboards/default` | Save a new version (zod-validated; 409 if the version changed meanwhile) |
+| POST | `/api/dashboards/default/undo` | Swap back to the previous version |
+| POST | `/api/dashboards/default/reset` | Restore the default layout (undoable) |
 
 ## Gmail OAuth setup (one time)
 

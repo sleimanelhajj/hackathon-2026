@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, type SavedDashboard } from "./api";
 
 export function useStatus() {
   return useQuery({
@@ -10,8 +10,14 @@ export function useStatus() {
   });
 }
 
+/** Widget data: every number the dashboard can show, computed on the server. */
 export function useDashboard() {
   return useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
+}
+
+/** The dashboard layout: which widgets, where. */
+export function useDashboardSpec() {
+  return useQuery({ queryKey: ["dashboard-spec"], queryFn: api.spec, staleTime: 60_000 });
 }
 
 function useInvalidating<T>(fn: () => Promise<T>) {
@@ -28,3 +34,15 @@ function useInvalidating<T>(fn: () => Promise<T>) {
 export const useSync = () => useInvalidating(api.sync);
 export const useLoadSample = () => useInvalidating(api.loadSample);
 export const useDisconnect = () => useInvalidating(api.disconnect);
+
+function useSpecMutation<V>(fn: (v: V) => Promise<SavedDashboard>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (saved) => qc.setQueryData(["dashboard-spec"], saved),
+  });
+}
+
+export const useSaveSpec = () => useSpecMutation(api.saveSpec);
+export const useUndoSpec = () => useSpecMutation(() => api.undoSpec());
+export const useResetSpec = () => useSpecMutation(() => api.resetSpec());

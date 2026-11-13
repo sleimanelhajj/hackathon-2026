@@ -22,9 +22,9 @@ UI designs live in Figma: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h (7
 ## Current scope (starter)
 
 - **Integrations page:** connect Gmail (read-only), sync, disconnect, sample-data mode.
-- **Dashboard page:** waiting on you, waiting on them, activity chart, top people. All numbers are derived from Gmail metadata.
-- Collapsible sidebar (`[` key) and collapsible sections, remembered per browser.
-- Not built yet: drag-and-drop dashboard layout (next), agent chat, prompt-generated dashboards, AI extraction, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
+- **Dashboard page:** a drag-and-drop widget grid (react-grid-layout). Edit layout → drag, resize, add from the right-hand "Add widgets" panel, configure, remove → Save; Undo and Reset to default. Default widgets: 4 numbers, 2 conversation lists, top people, activity chart. All numbers are derived from Gmail metadata.
+- Collapsible sidebar (`[` key) and foldable widgets, remembered per browser.
+- Not built yet: agent chat (next), prompt-generated dashboards, AI extraction, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
 
 ## Commands
 
@@ -46,17 +46,21 @@ server/            Node + Express (ESM, plain JS)
   db.js            MongoDB Atlas connection + indexes (db: ai_workspace_os)
   gmail.js         OAuth (state/CSRF), token refresh, bounded sync, disconnect + revoke
   dashboard.js     deterministic aggregates for the dashboard
+  dashboards.js    saved dashboard spec: get / versioned save / undo / reset
   sample.js        labelled sample data (fictional people, *.example domains)
   crypto.js        AES-256-GCM for OAuth tokens at rest (TOKEN_SECRET)
+shared/spec.js     zod dashboard schema + widget catalogue + default layout (server and client)
 src/               React 19 + Vite + TypeScript
-  App.tsx          shell + hash routing (#/dashboard, #/integrations)
+  App.tsx          shell + hash routing (#/dashboard, #/integrations); dashboard is lazy-loaded
   components/      Sidebar, Panel (collapsible), Callout, GmailLogo
+  dashboard/       DashboardGrid, WidgetFrame, WidgetLibrary, layout helpers, data context
+  widgets/         widget components + registry (one entry per widget type)
   pages/           IntegrationsPage, DashboardPage
   lib/             api.ts (types + fetch), queries.ts (react-query), store.ts (zustand UI state)
   index.css        design tokens (CSS variables) + all styles
 ```
 
-MongoDB collections: `connections` (one doc per provider, tokens encrypted), `messages` (unique on `gmailId`).
+MongoDB collections: `connections` (one doc per provider, tokens encrypted), `messages` (unique on `gmailId`), `dashboards` (`_id: "default"`, versioned spec + previous version for undo).
 
 ## Non-negotiable rules
 

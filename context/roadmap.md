@@ -9,8 +9,8 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 | # | Feature | Status | Demo-critical | Figma screen |
 |---|---|---|---|---|
 | 0 | Gmail connect + sync + derived dashboard, collapsible UI | ✅ | yes | 1, 2, 7 |
-| 1 | Dashboard as saved widget spec + **drag-and-drop layout** | 🟡 | yes | 3 |
-| 2 | Agent chat panel (ask questions, edit the dashboard) | ⬜ | yes | 2 |
+| 1 | Dashboard as saved widget spec + **drag-and-drop layout** | ✅ | yes | 3 |
+| 2 | Agent chat panel (ask questions, edit the dashboard) | 🟡 | yes | 2 |
 | 3 | Generate a dashboard from a prompt (onboarding) | ⬜ | yes | 1 |
 | 4 | AI extraction: leads, follow-ups, tasks (with certainty labels) | ⬜ | yes | 2, 6 |
 | 5 | Action center + approval-gated Gmail drafts | ⬜ | yes | 4, 6 |
@@ -44,7 +44,19 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 
 ---
 
-## 1. Dashboard as a widget spec + drag-and-drop 🟡
+## 1. Dashboard as a widget spec + drag-and-drop ✅
+
+> **Built (2026-11-13).** What shipped, which differs slightly from the original plan below:
+> - Schema in `shared/spec.js` (plain JS + zod, imported by server and client). Widget types: `stat`, `thread-list`, `activity-chart`, `top-people`, 8 default widgets.
+> - Only the **desktop (12-column) layout is saved**. Tablet (6 cols) and phone (2 cols) are derived in `src/dashboard/layout.ts`, and editing is desktop-only.
+> - Data stays one call (`GET /api/dashboard`) shared through a React context, instead of one request per widget.
+> - Endpoints: `GET/PUT /api/dashboards/default` (version check → 409 on conflict), `POST …/undo`, `POST …/reset`.
+> - Edit mode: drag by the grip, resize from the corner, an **"Add widgets" panel on the right** (search, drag in or press +, with Save / Cancel / Reset at its foot), one setting per widget, remove, Undo after save, and a warning before leaving with unsaved changes. The sidebar folds while editing and comes back afterwards.
+> - Smoothness: the layout is read only on drag/resize **stop** (`onDragStop`/`onResizeStop`), never fed back mid-drag. Grid CSS overrides are prefixed with `.grid-host`, because the library stylesheet loads later.
+> - Widgets fold in view mode (the grid shrinks them to their header); stats don't fold.
+> - The dashboard page and the chart are lazy-loaded chunks.
+>
+> The original plan is kept below for reference.
 
 **Goal:** the dashboard is data, not hard-coded JSX. The user clicks **Edit layout**, drags widgets by a handle, resizes from the corner, adds widgets from a library, and clicks **Save**. The layout persists per person. See Figma screen 3.
 

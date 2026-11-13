@@ -56,7 +56,7 @@ export async function buildDashboard() {
   }
 
   const days = [];
-  for (let i = 13; i >= 0; i--) {
+  for (let i = 29; i >= 0; i--) {
     const start = new Date(now - i * DAY);
     start.setHours(0, 0, 0, 0);
     const end = start.getTime() + DAY;
@@ -83,9 +83,9 @@ export async function buildDashboard() {
       awaitingYou: awaitingYou.length,
       awaitingThem: awaitingThem.length,
     },
-    awaitingYou: awaitingYou.slice(0, 8),
-    awaitingThem: awaitingThem.slice(0, 6),
-    topPeople: [...people.values()].sort((a, b) => b.count - a.count).slice(0, 5),
+    awaitingYou: awaitingYou.slice(0, 20),
+    awaitingThem: awaitingThem.slice(0, 20),
+    topPeople: [...people.values()].sort((a, b) => b.count - a.count).slice(0, 10),
     activity: days,
   };
 }

@@ -1,42 +1,49 @@
 ---
 name: add-dashboard-widget
-description: Add a metric, list, or chart to the AI Workspace OS dashboard so it is computed from real synced data, explains how it was counted, and links to its source. Use when asked to show new information on the dashboard.
+description: Add a new widget type (metric, list, chart) to the AI Workspace OS drag-and-drop dashboard. It must be computed from real synced data, validated by the shared zod spec, appear in the widget library, and render in the grid. Use when asked to show new information on the dashboard.
 ---
 
 # Add a dashboard widget
 
-> Once roadmap feature #1 (widget spec + drag-and-drop with `react-grid-layout`) lands, widgets are registered in `src/widgets/registry.tsx` and placed by the grid, not hand-placed in `DashboardPage.tsx`. See `context/roadmap.md` §1. Until then, follow the steps below.
+## How the dashboard works
+
+- A dashboard is **data**: `{ title, widgets[], layout[] }`, validated by `DashboardSpec` in `shared/spec.js` (used by both server and client).
+- Widgets are placed by `react-grid-layout` v2 (`src/dashboard/DashboardGrid.tsx`). Only the 12-column desktop layout is saved; tablet (6 cols) and phone (2 cols) layouts are derived in `src/dashboard/layout.ts`.
+- Numbers come from one server call, `GET /api/dashboard` (`server/dashboard.js`), shared with every widget through `DashboardDataProvider` / `useDashboardData()`.
+- Layout changes are saved with `PUT /api/dashboards/default` (version-checked); undo and reset are separate endpoints.
 
 ## Principle
 
-A widget is **data the server derives** plus **a Panel that shows it**. No widget may show a number the data can't support. If the source isn't connected, show an honest empty state with a call to action ("Connect Google Calendar"), never a guess.
+No widget may show a number the data can't support. If the source isn't connected, show an honest empty state with a call to action, never a guess. Facts are observed, derived, inferred (model, must be labelled) or unknown.
 
-Every fact is one of:
+## Steps for a new widget type
 
-| Kind | Meaning | Example |
-|---|---|---|
-| observed | read directly from the provider | an email's date |
-| derived | computed by code | days since you last replied |
-| inferred | predicted by a model (not used yet; label it clearly when added) | "likely a sales lead" |
-| unknown | not enough evidence | invoice paid? (email can't prove it) |
+1. **Data (server):** add the computation to `buildDashboard()` in `server/dashboard.js`. Keep it deterministic and bounded; exclude automated senders when counting people.
+2. **Spec (shared):** in `shared/spec.js`:
+   - add a variant to the `Widget` discriminated union. Keep its options narrow: enums and bounded numbers, never free-form queries.
+   - add a `CATALOG` entry: `label`, `description`, `size { w, h, minW, minH, maxH? }` in grid units (1 row = 24px + 16px gap), and `create()`.
+3. **Types:** extend the `Dashboard` type in `src/lib/api.ts` with the new data field.
+4. **Component:** `src/widgets/<Name>Widget.tsx`:
+   - wrap it in `memo` and read data with `useDashboardData()`
+   - render only the body (the frame, title, drag handle and fold toggle come from `WidgetFrame`)
+   - handle the empty state with `.widget-empty`
+   - if it pulls in a heavy library, `export default` it and load it with `lazy()` in the registry (see `ActivityChartWidget`)
+5. **Registry:** add it to `REGISTRY` in `src/widgets/registry.tsx`: `icon` (lucide), `component`, `collapsible`, and an optional single `setting` (a select shown in edit mode).
+6. **Default layout:** add it to `DEFAULT_SPEC` only if every new user should see it.
+7. **Sample data:** make sure `server/sample.js` produces a sensible result for it.
 
-## Steps
+## React rules this codebase follows
 
-1. **Compute it on the server** in `server/dashboard.js` (`buildDashboard`). Keep it deterministic and bounded to the dashboard window (`windowDays`). Exclude automated senders with the `AUTOMATED` regex when counting people.
-2. **Return plain JSON** and extend the `Dashboard` type in `src/lib/api.ts`.
-3. **Render it** in `src/pages/DashboardPage.tsx` inside a `<Panel id="unique-id" title=… subtitle=…>`:
-   - The `id` must be stable: it's the key for the remembered collapsed state.
-   - The subtitle says what's included ("Last 14 days", "people only").
-   - Add `<HowCounted>` when the rule isn't obvious.
-   - Rows link to the source (`link`), or are marked as sample.
-4. **States:** loading (skeleton is handled at page level), empty (a friendly sentence, not "No data"), error (the page-level Callout).
-5. **If it calls for action** (something is waiting or overdue), consider adding or adjusting the top `Callout` with one primary button that scrolls to the panel via `scrollTo(id)`. That function also opens a folded panel.
-6. **Charts:** use `recharts` with the CSS tokens `--chart-in` and `--chart-out` (add new tokens to `:root` in `src/index.css` if you need more series), no gridline clutter, and a tooltip.
-7. Check the sample data still produces a sensible result; extend `server/sample.js` if the widget needs new fields (keep people fictional, with `.example` domains).
+- Callbacks passed into the grid or into widgets are `useCallback`-stable; grid children are built in `useMemo`. The grid re-renders on every drag frame.
+- Widgets never fetch on their own; they read the shared data context.
+- Each widget is wrapped in `WidgetErrorBoundary` (done by `WidgetFrame`), so one failure doesn't blank the page.
+- Never feed intermediate layouts back into the grid during a drag: commit on `onDragStop`/`onResizeStop` only (see `DashboardGrid`). The saved spec lives in react-query (`["dashboard-spec"]`); edits live in the page's `draft`.
+- Grid CSS overrides must be prefixed with `.grid-host` (the library stylesheet loads later and wins ties).
+- `react-grid-layout` is pinned to 2.3.0. `DashboardGrid` passes a fresh `onDrag`/`onResize` each move (the `nudge` workaround) because that version only redraws the dragged item when it changes grid cell. Re-test drag smoothness before upgrading.
 
 ## Done means
 
-- Works with sample data and with a real Gmail account.
-- The empty state reads well.
-- 1440px and 390px widths are clean.
-- `npx tsc --noEmit` passes.
+- The widget can be added from the library (drag **and** the Add button), configured, moved, resized, removed, saved, undone.
+- It reads well at desktop, tablet (derived 6 columns) and phone (2 columns) widths, and when folded.
+- It works with sample data and a real Gmail account.
+- `npx tsc --noEmit` and `npm run build` pass.
