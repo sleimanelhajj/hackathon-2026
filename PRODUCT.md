@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React 19 + Vite + TypeScript (user decision: "React only", no Next.js). Libraries: react-grid-layout, @dnd-kit/react, @xyflow/react, recharts, @tanstack/react-query, zustand, zod, @assistant-ui/react. Backend undecided.
+React 19 + Vite + TypeScript (user decision: "React only", no Next.js). Libraries: react-grid-layout, @dnd-kit/react, @xyflow/react, recharts, @tanstack/react-query, zustand, zod, @assistant-ui/react. Backend: Node + Express, MongoDB Atlas. LLM: Google Gemini (`@google/genai`).
 
 ## Users
 
@@ -39,7 +39,8 @@ Daily operational use at a desk: triaging leads, follow-ups, meetings and tasks 
 - Every fact is labeled observed / derived / inferred / unknown, with a source link.
 - External actions (Gmail draft) require explicit approval; MVP is draft-only, never auto-send.
 - Sync status must be honest ("last synced"), never claimed real-time without a real event path.
-- Undecided: backend, LLM provider, database, final brand.
+- Backend: Node + Express with MongoDB Atlas. LLM: Google Gemini (server-side only).
+- Undecided: final brand.
 
 ## Brand Commitments
 

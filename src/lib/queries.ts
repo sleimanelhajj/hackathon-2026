@@ -5,14 +5,25 @@ export function useStatus() {
   return useQuery({
     queryKey: ["status"],
     queryFn: api.status,
-    // Poll while a sync is running so the UI reflects the real state, not a guess.
-    refetchInterval: (q) => (q.state.data?.gmail?.status === "syncing" ? 2000 : 30000),
+    // Poll while a sync or AI analysis is running so the UI reflects the real state, not a guess.
+    refetchInterval: (q) => {
+      const g = q.state.data?.gmail;
+      return g?.status === "syncing" || g?.analysis?.status === "running" ? 2000 : 30000;
+    },
   });
 }
 
 /** Widget data: every number the dashboard can show, computed on the server. */
 export function useDashboard() {
-  return useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
+  return useQuery({
+    queryKey: ["dashboard"],
+    queryFn: api.dashboard,
+    // AI analysis runs in the background after a sync; refresh until it finishes so new labels appear.
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      return d?.connected && (d.status === "syncing" || d.insights.status === "running") ? 3000 : false;
+    },
+  });
 }
 
 /** The dashboard layout: which widgets, where. */
@@ -34,6 +45,16 @@ function useInvalidating<T>(fn: () => Promise<T>) {
 export const useSync = () => useInvalidating(api.sync);
 export const useLoadSample = () => useInvalidating(api.loadSample);
 export const useDisconnect = () => useInvalidating(api.disconnect);
+export function useRunAnalysis() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (force: boolean | void) => api.runAnalysis(force === true),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["status"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
 
 function useSpecMutation<V>(fn: (v: V) => Promise<SavedDashboard>) {
   const qc = useQueryClient();

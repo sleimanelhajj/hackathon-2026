@@ -8,6 +8,7 @@
 | API | Node + Express | `server/` (port 8787, proxied at `/api`) |
 | Database | MongoDB Atlas, db `ai_workspace_os` | connection string in `.env` |
 | Gmail | Google OAuth (`gmail.readonly`) + Gmail REST API | `server/gmail.js` |
+| AI | Google Gemini REST API (`generateContent`, plain fetch), model from `GEMINI_MODEL` | `server/agent/` |
 
 ## Frontend libraries
 
@@ -20,7 +21,7 @@
 | `@fontsource-variable/inter` | Self-hosted Inter font |
 | `react-grid-layout` (v2) | **In use:** drag, drop and resize dashboard widgets |
 | `@dnd-kit/react` | Installed for later: drag-to-reorder lists only (roadmap #5, #6) |
-| `zod` | **In use:** dashboard spec validation (`shared/spec.js`); later also AI output |
+| `zod` | **In use:** dashboard spec validation (`shared/spec.js`) and every Gemini answer (`server/agent/classify.js`) |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
@@ -39,14 +40,17 @@ Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages)
 │   ├── dashboard.js    ← derived numbers (waiting on you / them, activity, top people)
 │   ├── dashboards.js   ← saved dashboard spec: get / save (versioned) / undo / reset
 │   ├── sample.js       ← labelled sample data for demos
-│   └── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
+│   ├── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
+│   └── agent/
+│       ├── llm.js      ← the only file that calls Gemini (JSON output, retries, friendly errors)
+│       └── classify.js ← AI email analysis job: category, priority, summary, reason, next step per thread
 ├── shared/
 │   └── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
 ├── src/
 │   ├── App.tsx         ← shell + hash routing (#/dashboard, #/integrations), lazy dashboard
 │   ├── components/     ← Sidebar (collapsible), Panel (collapsible), Callout, Gmail logo
 │   ├── dashboard/      ← DashboardGrid (react-grid-layout), WidgetFrame, WidgetLibrary, layout helpers, data context
-│   ├── widgets/        ← Stat, ThreadList, ActivityChart (lazy), TopPeople + registry
+│   ├── widgets/        ← Stat, ThreadList, ActivityChart (lazy), TopPeople, InsightWidgets (AI list + category breakdown) + registry
 │   ├── pages/          ← IntegrationsPage, DashboardPage (edit mode, save/undo/reset)
 │   └── lib/            ← api client, react-query hooks, UI store
 ├── .env                ← secrets (git-ignored, never commit)
@@ -67,17 +71,33 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/status` | DB health, whether Google OAuth is configured, Gmail connection state |
+| GET | `/api/status` | DB health, whether Google OAuth and Gemini are configured, Gmail connection + AI analysis state |
 | GET | `/api/auth/google/start` | Redirects to Google consent |
 | GET | `/api/auth/google/callback` | Stores encrypted tokens, starts first sync |
 | POST | `/api/integrations/gmail/sync` | Re-imports last 30 days (deduplicated by Gmail message id) |
 | POST | `/api/integrations/gmail/sample` | Loads labelled sample data |
-| DELETE | `/api/integrations/gmail` | Revokes token, deletes imported messages |
+| DELETE | `/api/integrations/gmail` | Revokes token, deletes imported messages and their AI labels |
 | GET | `/api/dashboard` | Dashboard numbers and lists (shared by all widgets) |
 | GET | `/api/dashboards/default` | Saved layout spec (widgets + desktop grid positions) |
 | PUT | `/api/dashboards/default` | Save a new version (zod-validated; 409 if the version changed meanwhile) |
 | POST | `/api/dashboards/default/undo` | Swap back to the previous version |
 | POST | `/api/dashboards/default/reset` | Restore the default layout (undoable) |
+| POST | `/api/analysis/run` | Start AI email analysis in the background (`{ "force": true }` re-sorts every thread). Also runs on its own after a sync or sample load |
+
+## MongoDB collections
+
+| Collection | Holds |
+|---|---|
+| `connections` | One doc per provider (tokens encrypted). `analysis` sub-doc: status, progress, counts, last run, error |
+| `messages` | Synced Gmail metadata (unique on `gmailId`) |
+| `extractions` | AI labels, one doc per thread (`_id` = threadId): category, priority, needsReply, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId |
+| `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
+
+## Gemini setup
+
+1. Create a key at https://aistudio.google.com/apikey. Use a billing-enabled key before analysing a real inbox.
+2. Put it in `.env` as `GEMINI_API_KEY`. Optionally change `GEMINI_MODEL` (default `gemini-3.8-flash`) and `GEMINI_FALLBACK_MODEL` (default `gemini-3.5-flash-lite`, used when the main model is overloaded, rate-limited or slow; `none` turns it off). A model that fails from overload is skipped for 5 minutes.
+3. Restart `npm run dev`. Syncing Gmail or loading sample data now also sorts the email. The Integrations page says what is sent.
 
 ## Gmail OAuth setup (one time)
 

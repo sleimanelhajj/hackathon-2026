@@ -8,6 +8,7 @@ Read this first before contributing (humans and AI assistants alike).
 | [README.md](README.md) | This overview: idea, scope, status |
 | [product-blueprint.md](product-blueprint.md) | Full PRD / architecture / MVP plan (the original idea document) |
 | [roadmap.md](roadmap.md) | **What to build next, in order, how, and with which packages** (drag-and-drop, agent, drafts, RBAC, …) |
+| [agent-plan.md](agent-plan.md) | Build plan for the agent (roadmap #2, Gemini): tools, safety, streaming, chat panel, eval prompts |
 | [decisions.md](decisions.md) | Log of decisions made so far and open questions |
 | [tech-stack.md](tech-stack.md) | Libraries, tools, and project setup |
 

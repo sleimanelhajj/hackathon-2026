@@ -12,7 +12,7 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 | 1 | Dashboard as saved widget spec + **drag-and-drop layout** | ✅ | yes | 3 |
 | 2 | Agent chat panel (ask questions, edit the dashboard) | 🟡 | yes | 2 |
 | 3 | Generate a dashboard from a prompt (onboarding) | ⬜ | yes | 1 |
-| 4 | AI extraction: leads, follow-ups, tasks (with certainty labels) | ⬜ | yes | 2, 6 |
+| 4 | AI extraction: leads, follow-ups, tasks (with certainty labels) | 🟡 first cut built | yes | 2, 6 |
 | 5 | Action center + approval-gated Gmail drafts | ⬜ | yes | 4, 6 |
 | 6 | Sign-in, workspaces, RBAC, admin tailors dashboards per person | ⬜ | strong | 5 |
 | 7 | Scheduled sync + freshness | ⬜ | nice | – |
@@ -36,7 +36,7 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 | **`zod`** | installed | validate widget specs and every AI-produced JSON, on the server and the client (1–5) |
 | **`@assistant-ui/react`** | installed | agent chat panel UI: thread, composer, tool-call rendering (2) |
 | **`@xyflow/react`** | installed | node graph for automations (9) |
-| LLM SDK: `@anthropic-ai/sdk` **or** `openai` | to add (decision open, see `decisions.md`) | agent, dashboard generation, extraction (2–4) |
+| LLM SDK: `@google/genai` (Gemini, decision #16) | to add | agent, dashboard generation, extraction (2–4) |
 | `express-session` + `connect-mongo` | to add | login sessions stored in MongoDB (6) |
 | `node-cron` | to add | scheduled sync (7) |
 
@@ -132,7 +132,9 @@ const { width, containerRef, mounted } = useContainerWidth();
 
 ---
 
-## 2. Agent chat panel ⬜
+## 2. Agent chat panel 🟡
+
+> **Detailed build plan (Gemini): [agent-plan.md](agent-plan.md).** The notes below are the original outline.
 
 **Goal:** a right-hand panel where the user asks questions ("who's waiting on me?") and edits the dashboard ("move follow-ups to the top"). See Figma screen 2.
 
@@ -150,7 +152,10 @@ const { width, containerRef, mounted } = useContainerWidth();
 - The LLM must return a `Dashboard` spec (structured output / JSON schema from the zod schema). The server validates it, drops unknown widgets, and fills in the layout.
 - If the request needs a source we don't have (e.g. invoices, Calendar), return a widget that shows "Connect X" instead of inventing data.
 
-## 4. AI extraction (leads, follow-ups, tasks) ⬜
+## 4. AI extraction (leads, follow-ups, tasks) 🟡
+
+> **First cut built (2026-11-14), not yet run end to end.** `server/agent/classify.js` sorts each thread (not each message) into a category, priority, needsReply, summary, reason and suggested action. Results go to `extractions` (one doc per thread). It runs after sync and sample load, or via `POST /api/analysis/run`, and only re-sends threads with a new message. Automated senders are labelled by a rule with no model call. Widgets: `insight-list` and `category-breakdown`. The sample data includes a prompt-injection email.
+> **Still to do:** user corrections ("not a lead") stored in `correction` (the field is reserved and never overwritten), deadline extraction, a hand-labelled test set.
 
 - Batch job after each sync, over new messages only (metadata + snippet; fetch full bodies only if a decision allows it).
 - Output goes to an `extractions` collection: `{ messageId, kind: "lead" | "follow_up" | "task" | "deadline", value, certainty: "inferred", modelVersion, createdAt }`.

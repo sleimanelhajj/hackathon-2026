@@ -1,6 +1,9 @@
 import { getDb } from "./db.js";
+import { geminiConfigured } from "./agent/llm.js";
 
-const AUTOMATED = /(no-?reply|do-?not-?reply|notifications?@|mailer-daemon|newsletter|bounce)/i;
+const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+
+export const AUTOMATED = /(no-?reply|do-?not-?reply|notifications?@|mailer-daemon|newsletter|bounce)/i;
 const DAY = 24 * 60 * 60 * 1000;
 
 function gmailLink(m) {
@@ -70,6 +73,7 @@ export async function buildDashboard() {
 
   return {
     connected: true,
+    insights: await buildInsights(conn, threads, now),
     mode: conn.mode,
     account: conn.email,
     lastSyncAt: conn.lastSyncAt || null,
@@ -87,5 +91,57 @@ export async function buildDashboard() {
     awaitingThem: awaitingThem.slice(0, 20),
     topPeople: [...people.values()].sort((a, b) => b.count - a.count).slice(0, 10),
     activity: days,
+  };
+}
+
+// AI labels from server/agent/classify.js, joined to the threads in the current window.
+// These are *inferred* by a model (or *derived* for automated senders) and the UI says so on every row.
+async function buildInsights(conn, threads, now) {
+  const a = conn.analysis ?? {};
+  const docs = threads.size
+    ? await getDb().collection("extractions").find({ _id: { $in: [...threads.keys()] } }).toArray()
+    : [];
+
+  const rows = [];
+  for (const e of docs) {
+    const list = threads.get(e._id);
+    const last = list[list.length - 1];
+    const latestIn = [...list].reverse().find((m) => m.direction === "in");
+    rows.push({
+      threadId: e._id,
+      subject: last.subject,
+      contact: latestIn ? latestIn.from.name || latestIn.from.email : (last.to || "").replace(/<.*>/, "").trim(),
+      lastAt: last.date,
+      waitingDays: Math.floor((now - last.date.getTime()) / DAY),
+      link: gmailLink(last),
+      category: e.correction?.category ?? e.category,
+      priority: e.priority,
+      needsReply: e.needsReply,
+      summary: e.summary,
+      reason: e.reason,
+      suggestedAction: e.suggestedAction ?? null,
+      certainty: e.correction ? "confirmed" : e.certainty, // a user correction (planned) beats the model
+      // A newer message arrived after this label was made; it'll be refreshed on the next run.
+      stale: e.lastMessageId !== last.gmailId,
+    });
+  }
+  rows.sort((x, y) => PRIORITY_RANK[x.priority] - PRIORITY_RANK[y.priority] || new Date(y.lastAt) - new Date(x.lastAt));
+
+  const counts = {};
+  for (const r of rows) counts[r.category] = (counts[r.category] ?? 0) + 1;
+
+  return {
+    configured: geminiConfigured(),
+    status: a.status ?? "never",
+    error: a.error ?? null,
+    progress: a.progress ?? null,
+    lastRunAt: a.lastRunAt ?? null,
+    model: a.model ?? null,
+    analysedThreads: rows.length,
+    totalThreads: threads.size,
+    categories: Object.entries(counts)
+      .map(([category, count]) => ({ category, count }))
+      .sort((x, y) => y.count - x.count),
+    rows: rows.slice(0, 150),
   };
 }

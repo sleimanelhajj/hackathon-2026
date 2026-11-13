@@ -1,5 +1,26 @@
 import type { z } from "zod";
-import type { DashboardSpec, LayoutItem as LayoutItemSchema, Widget as WidgetSchema } from "../../shared/spec.js";
+import type {
+  Category as CategorySchema,
+  DashboardSpec,
+  InsightFocus as InsightFocusSchema,
+  LayoutItem as LayoutItemSchema,
+  Priority as PrioritySchema,
+  Widget as WidgetSchema,
+} from "../../shared/spec.js";
+
+export type Category = z.infer<typeof CategorySchema>;
+export type Priority = z.infer<typeof PrioritySchema>;
+export type InsightFocus = z.infer<typeof InsightFocusSchema>;
+
+export type AnalysisStatus = "never" | "not_configured" | "running" | "done" | "error";
+
+export type AnalysisState = {
+  status: AnalysisStatus;
+  error: string | null;
+  progress: { done: number; total: number } | null;
+  lastRunAt: string | null;
+  counts: { analysed: number; derived: number; unchanged: number; failed: number } | null;
+};
 
 export type GmailConnection = {
   mode: "live" | "sample";
@@ -10,12 +31,45 @@ export type GmailConnection = {
   lastSyncCount: number | null;
   error: string | null;
   connectedAt: string | null;
+  analysis: AnalysisState | null;
 };
 
 export type Status = {
   database: boolean;
   googleConfigured: boolean;
+  gemini: { configured: boolean; model: string };
   gmail: GmailConnection | null;
+};
+
+/** One thread as sorted by the AI analysis. Labels are inferred by a model (or derived by code for automated mail). */
+export type InsightRow = {
+  threadId: string;
+  subject: string;
+  contact: string;
+  lastAt: string;
+  waitingDays: number;
+  link: string | null;
+  category: Category;
+  priority: Priority;
+  needsReply: boolean;
+  summary: string;
+  reason: string;
+  suggestedAction: string | null;
+  certainty: "inferred" | "derived" | "confirmed";
+  stale: boolean;
+};
+
+export type Insights = {
+  configured: boolean;
+  status: AnalysisStatus;
+  error: string | null;
+  progress: { done: number; total: number } | null;
+  lastRunAt: string | null;
+  model: string | null;
+  analysedThreads: number;
+  totalThreads: number;
+  categories: { category: Category; count: number }[];
+  rows: InsightRow[];
 };
 
 export type ThreadRow = {
@@ -44,6 +98,7 @@ export type Dashboard =
       awaitingThem: ThreadRow[];
       topPeople: { name: string; email: string; count: number }[];
       activity: { date: string; received: number; sent: number }[];
+      insights: Insights;
     };
 
 export type Widget = z.infer<typeof WidgetSchema>;
@@ -70,6 +125,12 @@ export const api = {
   sync: () => request<{ count: number }>("/api/integrations/gmail/sync", { method: "POST" }),
   loadSample: () => request<{ count: number }>("/api/integrations/gmail/sample", { method: "POST" }),
   disconnect: () => request<{ ok: true }>("/api/integrations/gmail", { method: "DELETE" }),
+  runAnalysis: (force = false) =>
+    request<{ started: boolean; queued?: boolean; reason?: string }>("/api/analysis/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    }),
   connectUrl: "/api/auth/google/start",
   spec: () => request<SavedDashboard>("/api/dashboards/default"),
   saveSpec: (spec: DashboardSpecInput & { version: number }) =>

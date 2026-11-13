@@ -12,6 +12,7 @@ import {
   PenLine,
   RefreshCw,
   Settings2,
+  Sparkles,
 } from "lucide-react";
 import { api, timeAgo, type Status } from "../lib/api";
 import { useDisconnect, useLoadSample, useStatus, useSync } from "../lib/queries";
@@ -210,6 +211,12 @@ function GmailCard({ status }: { status: Status }) {
           <p className="fact-label" style={{ marginBottom: 10 }}>What we can do with your Gmail</p>
           <ul className="perm-list">
             <li data-allowed="true"><Eye size={16} color="var(--success)" /> Read message details (sender, subject, date) to build your dashboard</li>
+            <li data-allowed={status.gemini.configured ? "true" : undefined}>
+              <Sparkles size={16} color={status.gemini.configured ? "var(--success)" : undefined} />{" "}
+              {status.gemini.configured
+                ? "Sort your email with AI: sender name and domain, subject and a short preview are sent to Google's Gemini API"
+                : "Sort your email with AI: off until a Gemini API key is added to .env"}
+            </li>
             <li><PenLine size={16} /> Create drafts: coming later, and only after you approve each one</li>
             <li><Lock size={16} /> Send or delete email: never</li>
           </ul>
