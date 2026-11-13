@@ -68,6 +68,7 @@ Blank workspace → connect Gmail → *"I'm a sales manager, build me a dashboar
 ## Current status
 
 - ✅ Repo + React/Vite/TypeScript scaffold with dashboard libraries installed.
+- ✅ Figma UI design: [AI Workspace OS — UI](https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h). Screens: onboarding, member dashboard + agent, edit layout (drag & drop), draft approval modal, admin RBAC & tailoring. Product record: [../PRODUCT.md](../PRODUCT.md).
 - ⏳ No backend yet (needed for OAuth, LLM calls, DB).
 - ⏳ UI is a placeholder page.
 - Next: build the dashboard shell + widget renderer on mock data, then add backend + Gmail.
