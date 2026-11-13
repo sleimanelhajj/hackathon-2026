@@ -1,4 +1,17 @@
 node_modules
 dist
+
+# Secrets: never commit. Share values privately; template is .env.example
 .env
-.impeccable/
+.env.*
+!.env.example
+
+# Agent tooling: personal files stay local, shared config is committed
+.claude/settings.local.json
+.codex/*.local.toml
+
+# Impeccable: commit config.json (and design.json / surfaces/ when they exist), ignore runtime folders
+.impeccable/*
+!.impeccable/config.json
+!.impeccable/design.json
+!.impeccable/surfaces/

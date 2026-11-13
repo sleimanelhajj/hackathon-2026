@@ -1,0 +1,10 @@
+# Project-scoped Codex settings for AI Workspace OS.
+# Codex loads this once the project is trusted. Personal settings stay in ~/.codex/config.toml.
+# Instructions: AGENTS.md (repo root). Skills: .agents/skills/<name>/SKILL.md
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+# npm install, MongoDB Atlas and the Google APIs need the network.
+network_access = true

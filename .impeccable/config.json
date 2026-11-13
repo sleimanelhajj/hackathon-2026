@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-13T20:55:30.120Z",
+        "reason": "Claude decided: user chose the category-standard direction (PRODUCT.md, 2026-11-13) and the Figma UI file uses Inter; workhorse UI face for an Operate surface"
+      }
+    ]
+  }
+}
