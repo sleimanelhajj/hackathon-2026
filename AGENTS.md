@@ -12,9 +12,10 @@ Loop: **Connect → Understand → Visualize → Ask → Act → Monitor**. Gmai
 
 1. `context/README.md`: the idea, the MVP scope, and current status
 2. `PRODUCT.md`: users and RBAC roles, product principles, visual direction
-3. `context/decisions.md`: what has been decided, plus open questions
-4. `context/tech-stack.md`: stack, layout, API, Gmail OAuth setup
-5. `context/product-blueprint.md`: the full original PRD (long; skim the section you need)
+3. `context/roadmap.md`: **what to build next, in order, how, and which packages** (start here when picking work)
+4. `context/decisions.md`: what has been decided, plus open questions
+5. `context/tech-stack.md`: stack, layout, API, Gmail OAuth setup
+6. `context/product-blueprint.md`: the full original PRD (long; skim the section you need)
 
 UI designs live in Figma: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h (7 screens; the starter app implements Integrations + Dashboard).
 
@@ -23,7 +24,7 @@ UI designs live in Figma: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h (7
 - **Integrations page:** connect Gmail (read-only), sync, disconnect, sample-data mode.
 - **Dashboard page:** waiting on you, waiting on them, activity chart, top people. All numbers are derived from Gmail metadata.
 - Collapsible sidebar (`[` key) and collapsible sections, remembered per browser.
-- Not built yet: agent chat, drag-and-drop layout, approval-gated drafts, RBAC/admin, Calendar. See Figma and the blueprint.
+- Not built yet: drag-and-drop dashboard layout (next), agent chat, prompt-generated dashboards, AI extraction, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
 
 ## Commands
 

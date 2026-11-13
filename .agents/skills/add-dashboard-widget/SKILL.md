@@ -5,6 +5,8 @@ description: Add a metric, list, or chart to the AI Workspace OS dashboard so it
 
 # Add a dashboard widget
 
+> Once roadmap feature #1 (widget spec + drag-and-drop with `react-grid-layout`) lands, widgets are registered in `src/widgets/registry.tsx` and placed by the grid, not hand-placed in `DashboardPage.tsx`. See `context/roadmap.md` §1. Until then, follow the steps below.
+
 ## Principle
 
 A widget is **data the server derives** plus **a Panel that shows it**. No widget may show a number the data can't support. If the source isn't connected, show an honest empty state with a call to action ("Connect Google Calendar"), never a guess.

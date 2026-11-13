@@ -18,7 +18,13 @@
 | `recharts` | Email activity chart |
 | `lucide-react` | Icons |
 | `@fontsource-variable/inter` | Self-hosted Inter font |
-| `react-grid-layout`, `@dnd-kit/react`, `@xyflow/react`, `zod`, `@assistant-ui/react` | Installed for later: drag-and-drop widgets, workflow views, spec validation, agent chat |
+| `react-grid-layout` (v2) | Installed for later: drag, drop and resize dashboard widgets (roadmap #1) |
+| `@dnd-kit/react` | Installed for later: drag-to-reorder lists only (roadmap #5, #6) |
+| `zod` | Installed for later: validating widget specs and AI output (roadmap #1–5) |
+| `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
+| `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
+
+Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages).
 
 ## Project layout
 
