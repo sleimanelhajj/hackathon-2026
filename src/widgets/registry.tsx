@@ -1,8 +1,9 @@
 import { lazy, Suspense, type ComponentType } from "react";
-import { BarChart3, Filter, FolderOpen, Hash, ListTodo, Paperclip, PieChart, Sparkles, Tags, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Filter, FolderOpen, Hash, LineChart, ListTodo, Paperclip, PieChart, Sparkles, Table2, Tags, Target, Users, type LucideIcon } from "lucide-react";
 import { ContactsWidget } from "./ContactsWidget";
 import { AttachmentsWidget } from "./AttachmentsWidget";
-import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, STAT_LABELS } from "../../shared/spec.js";
+import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, SALES_BREAKDOWN_LABELS, SALES_METRIC_LABELS, SALES_TABLE_LABELS, STAT_LABELS } from "../../shared/spec.js";
+import { SalesBreakdownWidget, SalesKpiWidget, SalesPipelineWidget, SalesRepsWidget, SalesTableWidget, SalesTrendWidget } from "./SalesWidgets";
 import type { InsightFocus, Widget, WidgetType } from "../lib/api";
 import { CategoryBreakdownWidget, InsightListWidget } from "./InsightWidgets";
 import { StatWidget } from "./StatWidget";
@@ -60,7 +61,7 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
     component: RuleListWidget as AnyWidgetComponent,
     collapsible: true,
     setting: {
-      label: "Rule",
+      label: "Show",
       options: Object.entries(LIST_RULES).map(([value, r]) => ({ value, label: r.title })),
       get: (w) => (w.type === "rule-list" ? w.rule : ""),
       set: (w, v) => (w.type === "rule-list" ? { ...w, rule: v as typeof w.rule, title: LIST_RULES[v as typeof w.rule].title } : w),
@@ -135,6 +136,44 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
     icon: Paperclip,
     component: AttachmentsWidget as AnyWidgetComponent,
     collapsible: true,
+  },
+
+  // ---- Sales board ----
+  "sales-kpi": {
+    icon: Hash,
+    component: SalesKpiWidget as AnyWidgetComponent,
+    collapsible: false,
+    setting: {
+      label: "Show",
+      options: Object.entries(SALES_METRIC_LABELS).map(([value, label]) => ({ value, label })),
+      get: (w) => (w.type === "sales-kpi" ? w.metric : ""),
+      set: (w, v) => (w.type === "sales-kpi" ? { ...w, metric: v as typeof w.metric, title: SALES_METRIC_LABELS[v as typeof w.metric] } : w),
+    },
+  },
+  "sales-trend": { icon: LineChart, component: SalesTrendWidget as AnyWidgetComponent, collapsible: true },
+  "sales-breakdown": {
+    icon: PieChart,
+    component: SalesBreakdownWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: Object.entries(SALES_BREAKDOWN_LABELS).map(([value, label]) => ({ value, label })),
+      get: (w) => (w.type === "sales-breakdown" ? w.by : ""),
+      set: (w, v) => (w.type === "sales-breakdown" ? { ...w, by: v as typeof w.by, title: SALES_BREAKDOWN_LABELS[v as typeof w.by] } : w),
+    },
+  },
+  "sales-pipeline": { icon: Filter, component: SalesPipelineWidget as AnyWidgetComponent, collapsible: true },
+  "sales-reps": { icon: Target, component: SalesRepsWidget as AnyWidgetComponent, collapsible: true },
+  "sales-table": {
+    icon: Table2,
+    component: SalesTableWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: Object.entries(SALES_TABLE_LABELS).map(([value, label]) => ({ value, label })),
+      get: (w) => (w.type === "sales-table" ? w.table : ""),
+      set: (w, v) => (w.type === "sales-table" ? { ...w, table: v as typeof w.table, title: SALES_TABLE_LABELS[v as typeof w.table] } : w),
+    },
   },
 };
 

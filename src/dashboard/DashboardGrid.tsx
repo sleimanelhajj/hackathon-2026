@@ -3,7 +3,7 @@ import { GridStack, type GridItemHTMLElement } from "gridstack";
 import "gridstack/dist/gridstack.min.css";
 import { CATALOG } from "../../shared/spec.js";
 import type { GridItem, Widget, WidgetType } from "../lib/api";
-import { COLLAPSED_H, GAP, ROW_HEIGHT } from "./layout";
+import { COLLAPSED_H, GAP, ROW_HEIGHT, collapseLayout } from "./layout";
 
 /** Class on the panel entries GridStack accepts as new widgets (see WidgetLibrary). */
 export const LIBRARY_ITEM_CLASS = "library-drag";
@@ -25,6 +25,8 @@ type Props = {
   onChange: (layout: GridItem[]) => void;
   onDrop: (type: WidgetType, item: GridItem, layout: GridItem[]) => void;
   renderCard: (widget: Widget) => ReactNode;
+  /** Widget types this board accepts from the panel (defaults to the email catalogue). */
+  catalog?: Record<string, unknown>;
 };
 
 /**
@@ -39,17 +41,17 @@ type Props = {
  * layout changes that came from outside a drag (keyboard moves, size inputs, reset, undo).
  * GridStack reports finished gestures through `change` / `dropped`, which update React state.
  */
-export const DashboardGrid = memo(function DashboardGrid({ widgets, layout, collapsed, editing, busy, onChange, onDrop, renderCard }: Props) {
+export const DashboardGrid = memo(function DashboardGrid({ widgets, layout, collapsed, editing, busy, onChange, onDrop, renderCard, catalog = CATALOG }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<GridStack | null>(null);
   const syncing = useRef(false);
-  const handlers = useRef({ onChange, onDrop });
-  handlers.current = { onChange, onDrop };
+  const handlers = useRef({ onChange, onDrop, catalog });
+  handlers.current = { onChange, onDrop, catalog };
 
+  // Folded cards give their space back to the cards below them (view mode only; editing shows the saved layout).
   const positions = useMemo(() => {
-    const out: Record<string, GridItem> = {};
-    for (const l of layout) out[l.i] = !editing && collapsed[l.i] ? { ...l, h: COLLAPSED_H } : l;
-    return out;
+    const shown = editing ? layout : collapseLayout(layout, collapsed, COLLAPSED_H);
+    return Object.fromEntries(shown.map((l) => [l.i, l])) as Record<string, GridItem>;
   }, [layout, collapsed, editing]);
 
   // Create the grid once per mount (the page remounts this component when edit mode toggles).
@@ -95,7 +97,7 @@ export const DashboardGrid = memo(function DashboardGrid({ widgets, layout, coll
       syncing.current = true;
       if (node.el) grid.removeWidget(node.el, true, false);
       syncing.current = false;
-      if (type in CATALOG) handlers.current.onDrop(type, item, read());
+      if (type in handlers.current.catalog) handlers.current.onDrop(type, item, read());
     });
 
     return () => {
@@ -114,6 +116,7 @@ export const DashboardGrid = memo(function DashboardGrid({ widgets, layout, coll
     for (const node of [...grid.engine.nodes]) {
       if (node.el && !node.el.isConnected) grid.removeWidget(node.el, false, false);
     }
+    const moves: { el: GridItemHTMLElement; p: GridItem; rank: number }[] = [];
     host.querySelectorAll<GridItemHTMLElement>(":scope > .grid-stack-item").forEach((el) => {
       const id = el.getAttribute("gs-id");
       const p = id ? positions[id] : undefined;
@@ -121,8 +124,16 @@ export const DashboardGrid = memo(function DashboardGrid({ widgets, layout, coll
       const node = el.gridstackNode;
       if (!node) grid.makeWidget(el, { id, x: p.x, y: p.y, w: p.w, h: p.h, minW: MIN_W, minH: MIN_H });
       else if (grid.getColumn() === COLUMNS && (node.x !== p.x || node.y !== p.y || node.w !== p.w || node.h !== p.h))
-        grid.update(el, { x: p.x, y: p.y, w: p.w, h: p.h });
+      {
+        // Order matters so nothing collides on the way and gets pushed: shrink folded cards, lift cards top-down,
+        // lower cards bottom-up, then grow unfolded cards.
+        const h = node.h ?? p.h, y = node.y ?? p.y;
+        const rank = p.h < h ? -1e6 + p.y : p.y < y ? -1e5 + p.y : p.y > y ? -p.y : p.h > h ? 1e6 : 0;
+        moves.push({ el, p, rank });
+      }
     });
+    moves.sort((a, b) => a.rank - b.rank);
+    for (const { el, p } of moves) grid.update(el, { x: p.x, y: p.y, w: p.w, h: p.h });
     grid.batchUpdate(false);
     syncing.current = false;
   }, [positions, widgets]);

@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type SavedDashboard } from "./api";
+import { api, type Board, type SavedDashboard } from "./api";
 
 export function useStatus() {
   return useQuery({
@@ -27,8 +27,8 @@ export function useDashboard() {
 }
 
 /** The dashboard layout: which widgets, where. */
-export function useDashboardSpec() {
-  return useQuery({ queryKey: ["dashboard-spec"], queryFn: api.spec, staleTime: 60_000 });
+export function useDashboardSpec(board: Board = "default") {
+  return useQuery({ queryKey: ["dashboard-spec", board], queryFn: () => api.spec(board), staleTime: 60_000 });
 }
 
 function useInvalidating<T>(fn: () => Promise<T>) {
@@ -77,17 +77,18 @@ export function usePeople() {
   return useQuery({ queryKey: ["people"], queryFn: api.people, staleTime: 60_000 });
 }
 
-function useSpecMutation<V>(fn: (v: V) => Promise<SavedDashboard>) {
+function useSpecMutation<V>(board: Board, fn: (v: V) => Promise<SavedDashboard>) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: (saved) => qc.setQueryData(["dashboard-spec"], saved),
+    onSuccess: (saved) => qc.setQueryData(["dashboard-spec", board], saved),
   });
 }
 
-export const useSaveSpec = () => useSpecMutation(api.saveSpec);
-export const useUndoSpec = () => useSpecMutation(() => api.undoSpec());
-export const useResetSpec = () => useSpecMutation(() => api.resetSpec());
+export const useSaveSpec = (board: Board = "default") =>
+  useSpecMutation(board, (spec: Parameters<typeof api.saveSpec>[0]) => api.saveSpec(spec, board));
+export const useUndoSpec = (board: Board = "default") => useSpecMutation(board, () => api.undoSpec(board));
+export const useResetSpec = (board: Board = "default") => useSpecMutation(board, () => api.resetSpec(board));
 
 /** Stored emails, exactly as fetched from Gmail. Keeps the previous page on screen while the next loads. */
 export function useMessages(params: Parameters<typeof api.messages>[0]) {

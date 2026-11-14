@@ -57,7 +57,7 @@ shared/spec.js     zod dashboard schema + widget catalogue + default layout (ser
 src/               React 19 + Vite + TypeScript
   App.tsx          shell + hash routing (#/dashboard, #/integrations); dashboard is lazy-loaded
   components/      Sidebar, Panel (collapsible), Callout, GmailLogo
-  dashboard/       DashboardGrid (GridStack), WidgetFrame, WidgetLibrary, layout model (saved x/y/w/h coordinates), data context
+  dashboard/       BoardEditor (the customisable board used by the email dashboard and Sales), DashboardGrid (GridStack), WidgetFrame, WidgetLibrary, layout model, data context
   widgets/         widget components + registry (one entry per widget type)
   pages/           IntegrationsPage, DashboardPage
   lib/             api.ts (types + fetch), queries.ts (react-query), store.ts (zustand UI state)
@@ -79,7 +79,7 @@ MongoDB collections: `connections` (one doc per provider, tokens encrypted, hist
 
 ## UI conventions
 
-- The look is **white and dark blue glass on grey** (decision #35): white frosted-glass panes over a soft grey ground, dark blue for actions, a calm amber only for warnings. Written for non-technical users: plain words, large controls. Use the tokens in `src/index.css` (`--glass`, `--blur`, `--accent`, `--signal`…); don't hardcode new colours.
+- The look is **glassmorphism** (decision #39): white frosted-glass panels floating over soft blue, lavender and pink light, dark blue for actions, a calm amber only for warnings. Written for non-technical users: plain words, large controls. Use the tokens in `src/index.css` (`--glass`, `--blur`, `--accent`, `--signal`…); don't hardcode new colours.
 - Dropdowns: always the shared `Select` (`src/components/Select.tsx`, Radix UI). Never a native `<select>` (a test enforces it).
 - Every screen answers "what should I do next?" with a `Callout` plus one primary button.
 - Group content in `Panel` (collapsible, remembers state). Use real icons from `lucide-react`, never emoji.
@@ -105,6 +105,7 @@ Edit `.agents/skills/` and run `npm run skills:sync` to update the Claude copy.
 | `add-integration` | Adding a new connector (Calendar, Slack, …) |
 | `add-dashboard-widget` | Adding a number, list or chart to the dashboard |
 | `ui-conventions` | Any UI change |
+| `glassmorphism` | Building or restyling a card, panel, popover, menu, dialog or tooltip as frosted glass (project tokens, light theme) |
 | `record-decision` | After deciding scope, architecture, scopes or design |
 
 Design tooling, optional but recommended: the **Impeccable** design skill (`pbakaus/impeccable`). Claude Code users get it through `.claude/settings.json`. Its project config is `.impeccable/config.json`, and `PRODUCT.md` is its product record.

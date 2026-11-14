@@ -1,13 +1,14 @@
 import { memo, useMemo, useState } from "react";
-import { ChevronRight, ExternalLink, Folder, FolderOpen, Info, Reply, Search } from "lucide-react";
+import { ChevronRight, Info, Reply, Search } from "lucide-react";
 import { categoryInfo } from "../../shared/spec.js";
 import { timeAgo, type Contact, type Widget } from "../lib/api";
 import { useDashboardData } from "../dashboard/DataContext";
 import { useReply } from "../components/ReplyModal";
+import { useViewer } from "../components/EmailViewer";
 
 type Props = { widget: Extract<Widget, { type: "contacts" }> };
 
-/** One folder per person you've emailed with. "New" is counted from Gmail dates; "Lead" is an AI guess. */
+/** One folder per person you have emailed with: who they are, how much mail, what needs a reply. */
 export const ContactsWidget = memo(function ContactsWidget({ widget }: Props) {
   const { contacts } = useDashboardData();
   const [open, setOpen] = useState<string | null>(null);
@@ -44,63 +45,62 @@ export const ContactsWidget = memo(function ContactsWidget({ widget }: Props) {
       <p className="howto">
         <Info size={13} aria-hidden />
         <span>
-          {contacts.length} people{newCount ? `, ${newCount} new` : ""}. New = first email with you in the last 7 days, outside your company.
-          “Lead” is an AI guess. Automated senders are left out.
+          {contacts.length} people{newCount ? `, ${newCount} new` : ""}. "New contact" means they first emailed you in the last 7 days. Automated senders are left out.
         </span>
       </p>
     </div>
   );
 });
 
+const initials = (name: string) =>
+  name.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("") || "?";
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 function ContactFolder({ c, open, onToggle }: { c: Contact; open: boolean; onToggle: () => void }) {
   const openReply = useReply((s) => s.open);
+  const openViewer = useViewer((s) => s.open);
   const panelId = `folder-${c.email.replace(/[^a-z0-9]/gi, "-")}`;
+  const total = c.received + c.sent;
   return (
-    <li className="folder" data-open={open}>
-      <button className="folder-head" onClick={onToggle} aria-expanded={open} aria-controls={panelId}>
-        <ChevronRight size={14} className="folder-chevron" aria-hidden />
-        {open ? <FolderOpen size={16} className="folder-icon" aria-hidden /> : <Folder size={16} className="folder-icon" aria-hidden />}
-        <span className="folder-name">
-          <span className="folder-title" title={c.name}>{c.name}</span>
-          <span className="folder-sub" title={c.email}>{c.email}</span>
+    <li className="person-folder" data-open={open}>
+      <button className="person-head" onClick={onToggle} aria-expanded={open} aria-controls={panelId}>
+        <span className="person-avatar" aria-hidden>{initials(c.name)}</span>
+        <span className="person-text">
+          <span className="person-line">
+            <span className="person-title" title={c.email}>{c.name}</span>
+            {c.isNew && <span className="tag tag-sm" data-tone="ok" title={`First email with you: ${new Date(c.firstAt).toLocaleDateString()}`}>New contact</span>}
+            {c.isInternal && <span className="tag tag-sm">Your team</span>}
+          </span>
+          <span className="person-sub">
+            {plural(total, "email")}
+            {c.needsReply > 0 && <> · <strong className="person-reply">{c.needsReply} to reply</strong></>}
+            {" · "}last email {timeAgo(c.lastAt)}
+          </span>
         </span>
-        <span className="folder-tags">
-          {c.isNew && <span className="tag tag-sm" data-tone="ok" title={`First email with you: ${new Date(c.firstAt).toLocaleDateString()}`}>New</span>}
-          {c.aiLead && <span className="tag tag-sm" data-tone="inferred" title="AI guess: one of their conversations looks like a potential lead">Lead</span>}
-          {c.isInternal && <span className="tag tag-sm">Team</span>}
-          {c.needsReply > 0 && <span className="tag tag-sm" data-tone="accent">{c.needsReply} to reply</span>}
-        </span>
-        <span className="folder-count num" aria-label={`${c.threadCount} conversations`}>{c.threadCount}</span>
+        <ChevronRight size={16} className="folder-chevron person-chevron" aria-hidden />
       </button>
       {open && (
-        <div id={panelId} className="folder-body">
-          <p className="folder-stats muted small">
-            {c.received} received · {c.sent} sent · last email {timeAgo(c.lastAt)}
-          </p>
-          <ul className="folder-threads">
+        <div id={panelId} className="person-body">
+          <p className="person-email muted small">{c.email}</p>
+          <ul className="person-threads">
             {c.threads.map((t) => (
-              <li key={t.threadId} className="folder-thread">
-                <div className="folder-thread-main">
-                  <p className="thread-subject" title={t.subject}>{t.subject}</p>
-                  <p className="folder-thread-meta">
-                    {t.category && <span className="tag tag-sm" title="AI guess">{categoryInfo(t.category).title}</span>}
-                    {t.priority === "high" && <span className="tag tag-sm" data-tone="warn">High</span>}
-                    <span className="muted small num">{timeAgo(t.lastAt)}</span>
-                  </p>
-                </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => openReply(t.threadId, c.name)} aria-label={`Reply to ${c.name} about ${t.subject}`}>
-                  <Reply size={13} aria-hidden />
+              <li key={t.threadId} className="person-thread">
+                <button className="person-thread-main" onClick={() => openViewer(t.threadId)} aria-label={`Open conversation: ${t.subject}`}>
+                  <span className="person-thread-subject">{t.subject}</span>
+                  <span className="person-thread-meta">
+                    {t.category && <span>{categoryInfo(t.category).title}</span>}
+                    {t.needsReply && <span className="person-reply">Needs reply</span>}
+                    <span className="num">{timeAgo(t.lastAt)}</span>
+                  </span>
                 </button>
-                {t.link && (
-                  <a className="btn btn-ghost btn-sm" href={t.link} target="_blank" rel="noreferrer" aria-label={`Open “${t.subject}” in Gmail`}>
-                    <ExternalLink size={13} aria-hidden />
-                  </a>
-                )}
+                <button className="icon-btn" onClick={() => openReply(t.threadId, c.name)} aria-label={`Reply to ${c.name} about ${t.subject}`} title="Reply">
+                  <Reply size={16} aria-hidden />
+                </button>
               </li>
             ))}
           </ul>
           {c.threadCount > c.threads.length && (
-            <a className="folder-more" href={`#/data?from=${encodeURIComponent(c.email)}`}>See all {c.threadCount} conversations in All email</a>
+            <a className="folder-more" href={`#/data?from=${encodeURIComponent(c.email)}`}>See all {c.threadCount} conversations with {c.name.split(" ")[0]}</a>
           )}
         </div>
       )}

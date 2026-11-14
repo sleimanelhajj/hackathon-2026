@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowRight,
   Check,
   CheckCircle2,
   Copy,
+  Database,
   Eye,
   Loader2,
   Lock,
@@ -270,6 +272,46 @@ function SetupSteps() {
   );
 }
 
+/** Postgres: where the Sales dashboard reads from. Connection string lives in .env (POSTGRES_URL). */
+function PostgresCard() {
+  const { data: pg } = useQuery({ queryKey: ["sales-status"], queryFn: api.salesStatus });
+  const tag = !pg ? null : !pg.configured ? (
+    <span className="tag">Not connected</span>
+  ) : !pg.connected ? (
+    <span className="tag" data-tone="error">Needs attention</span>
+  ) : pg.counts?.orders ? (
+    <span className="tag" data-tone="warn">Demo data</span>
+  ) : (
+    <span className="tag" data-tone="ok">Connected</span>
+  );
+  return (
+    <section className="surface integration" aria-labelledby="pg-title">
+      <div className="integration-head">
+        <div className="logo-tile logo-tile-db"><Database size={22} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 className="integration-name" id="pg-title">Postgres {tag}</h2>
+          <p className="integration-desc">
+            {pg?.connected && pg.counts?.orders
+              ? `Sales data: ${pg.counts.orders.toLocaleString()} orders, ${pg.counts.customers} customers, ${pg.counts.deals} deals.`
+              : "Your sales database: revenue, orders, customers and pipeline for the Sales page."}
+          </p>
+          {pg?.error && <p className="error-text small" style={{ padding: 0, marginTop: 6 }}>{pg.error}</p>}
+          {pg && !pg.configured && (
+            <p className="integration-desc" style={{ marginTop: 6 }}>
+              Add <span className="code">POSTGRES_URL</span> to <span className="code">.env</span> and restart the server.
+            </p>
+          )}
+        </div>
+      </div>
+      {pg?.connected && (
+        <div className="integration-actions">
+          <a className="btn btn-primary" href="#/sales">Open Sales</a>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function IntegrationsPage() {
   const { data: status, isLoading, error } = useStatus();
   const returned = useReturnMessage();
@@ -297,6 +339,7 @@ export function IntegrationsPage() {
           <NextStep status={status} />
           <GmailCard status={status} />
           {!status.googleConfigured && <SetupSteps />}
+          <PostgresCard />
           <Panel id="planned" title="More integrations" subtitle="Not available yet">
             <div className="planned">
               {["Google Calendar", "Slack", "HubSpot", "Google Sheets", "Notion", "Outlook"].map((n) => (

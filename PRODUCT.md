@@ -46,7 +46,7 @@ Daily operational use at a desk: triaging leads, follow-ups, meetings and tasks 
 
 Name: **AI Workspace OS** (confirmed by user for the UI).
 
-Visual direction: **white and dark blue glass on grey** (user choice, 2026-11-14: "change the colors to white and dark blue and use glass morphism … have it have grey background … make the UI look good and clean for non tech users"). White frosted-glass panes over a soft grey ground; dark blue for actions; a calm amber only for warnings. Plain words, large controls. Layout, navigation and controls stay the category standard, held to the craft bar of Linear, Attio and HubSpot. Replaces the earlier sky-blue glass look (decision #33).
+Visual direction: **glassmorphism** (user choice, 2026-11-14, from reference designs): frosted white glass panels floating over soft blue, lavender and pink light; dark blue for actions; a calm amber only for warnings. Plain words, large controls. Layout, navigation and controls stay the category standard, held to the craft bar of Linear, Attio and HubSpot. Replaces the grey-ground look (decision #35).
 
 ## Evidence on Hand
 

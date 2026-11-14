@@ -1,10 +1,35 @@
-import { CATALOG, GRID_COLS } from "../../shared/spec.js";
+import { GRID_COLS, WIDGET_CATALOG } from "../../shared/spec.js";
 import type { GridItem, Widget, WidgetType } from "../lib/api";
 
 export const ROW_HEIGHT = 24;
 export const GAP = 16;
 export const COLLAPSED_H = 2;
 export type Size = { w: number; h: number };
+
+/**
+ * The layout as shown when some cards are folded (view mode only; the saved layout is never touched).
+ * A folded card shrinks to `collapsedH` rows. Every card then keeps the same empty gap to the nearest card above it
+ * (in the same columns) as in the saved layout, measured from where those cards end up. So cards follow the cards
+ * above them up, through any number of folded cards, and gaps the user left on purpose stay. Cards never move down.
+ */
+export function collapseLayout(layout: readonly GridItem[], collapsed: Readonly<Record<string, boolean>>, collapsedH = COLLAPSED_H): GridItem[] {
+  if (!layout.some((item) => collapsed[item.i] && item.h > collapsedH)) return layout.map((item) => ({ ...item }));
+  const shareColumns = (a: GridItem, b: GridItem) => a.x < b.x + b.w && b.x < a.x + a.w;
+
+  const placed = new Map<string, GridItem>();
+  for (const item of [...layout].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const h = collapsed[item.i] ? Math.min(item.h, collapsedH) : item.h;
+    const above = layout.filter((other) => other.i !== item.i && other.y + other.h <= item.y && shareColumns(other, item));
+    let y = item.y;
+    if (above.length) {
+      const gap = item.y - Math.max(...above.map((a) => a.y + a.h)); // intentional empty rows, kept as they were
+      const floor = Math.max(...above.map((a) => { const p = placed.get(a.i)!; return p.y + p.h; }));
+      y = Math.min(item.y, floor + gap);
+    }
+    placed.set(item.i, { ...item, y, h });
+  }
+  return layout.map((item) => placed.get(item.i)!);
+}
 
 /** Only persist coordinates, never grid-library flags or temporary drop placeholders. */
 export function cleanLayout(layout: readonly GridItem[]): GridItem[] {
@@ -35,7 +60,7 @@ export function normalizeLayout(widgets: Widget[], layout: readonly GridItem[]):
   const ids = new Set(widgets.map((w) => w.id));
   const result = settleLayout(cleanLayout(layout.filter((l) => ids.has(l.i))));
   for (const widget of widgets) if (!result.some((l) => l.i === widget.id)) {
-    const { w, h } = CATALOG[widget.type].size;
+    const { w, h } = WIDGET_CATALOG[widget.type].size;
     result.push(findSpace(result, widget.id, { w, h }));
   }
   return result;

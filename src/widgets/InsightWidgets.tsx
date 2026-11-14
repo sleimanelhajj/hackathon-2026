@@ -1,19 +1,13 @@
-import { memo, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, ExternalLink, Info, KeyRound, Loader2, Reply, Sparkles } from "lucide-react";
-import { useReply } from "../components/ReplyModal";
+import { memo, useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, ChevronRight, Folder, FolderOpen, Info, KeyRound, Loader2, Sparkles } from "lucide-react";
 import { categoryInfo } from "../../shared/spec.js";
 import { timeAgo, type InsightRow, type Insights, type Widget } from "../lib/api";
 import { useRunAnalysis } from "../lib/queries";
 import { useDashboardData } from "../dashboard/DataContext";
+import { ConversationRow } from "./ConversationRow";
 
-// Labels on these widgets come from the AI analysis (server/agent/classify.js).
-// They are guesses, so every row says so and shows the reason, and the footer says how they were made.
-
-const CERTAINTY = {
-  inferred: { label: "AI guess", tip: "Labelled by AI from the subject and preview. It can be wrong: check the reason." },
-  derived: { label: "Rule", tip: "Labelled by a fixed rule (the sender looks automated), not by AI." },
-  confirmed: { label: "Confirmed", tip: "You confirmed this label." },
-} as const;
+// Labels on these widgets come from the AI analysis (server/agent/classify.js). Rows stay clean (who, what, when);
+// the footer says once that the sorting is done by AI and can be wrong, and the full-email viewer shows the reasoning.
 
 const FOCUS_EMPTY: Record<string, string> = {
   "high-priority": "Nothing urgent right now.",
@@ -83,80 +77,75 @@ function Footer({ insights }: { insights: Insights }) {
   );
 }
 
-/** The summary is the headline; who/what/when sits under it; then the next step and the actions. */
-function InsightItem({ row, showCategory }: { row: InsightRow; showCategory: boolean }) {
-  const c = CERTAINTY[row.certainty] ?? CERTAINTY.inferred;
-  const openReply = useReply((s) => s.open);
-  return (
-    <li className="insight" data-priority={row.priority}>
-      <p className="insight-headline">{row.summary}</p>
-      <p className="insight-meta">
-        <span className="insight-who" title={row.contact}>{row.contact}</span>
-        <span className="sep" aria-hidden>·</span>
-        <span className="insight-subject" title={row.subject}>{row.subject}</span>
-        <span className="sep" aria-hidden>·</span>
-        <span className="num nowrap">{timeAgo(row.lastAt)}</span>
-      </p>
-      <div className="insight-tags">
-        {row.priority === "high" && <span className="tag" data-tone="warn">High priority</span>}
-        {row.needsReply && <span className="tag" data-tone="accent">Needs reply</span>}
-        {showCategory && <span className="tag">{categoryInfo(row.category).title}</span>}
-        <span className="tag" data-tone={row.certainty} title={`${c.tip} Why: ${row.reason}`}>{c.label}</span>
-      </div>
-      <div className="insight-foot">
-        {row.suggestedAction ? (
-          <p className="insight-action"><ArrowRight size={13} aria-hidden /> {row.suggestedAction}</p>
-        ) : (
-          <span />
-        )}
-        <div className="insight-buttons">
-          <button className="btn btn-secondary btn-sm" onClick={() => openReply(row.threadId, row.contact)}>
-            <Reply size={13} aria-hidden /> Reply
-          </button>
-          {row.link ? (
-            <a className="btn btn-ghost btn-sm" href={row.link} target="_blank" rel="noreferrer" aria-label={`Open “${row.subject}” in Gmail`}>
-              Open <ExternalLink size={13} aria-hidden />
-            </a>
-          ) : (
-            <span className="thread-sample" title="Sample threads aren't in Gmail">Sample</span>
-          )}
-        </div>
-      </div>
-      <p className="insight-reason">
-        <Info size={12} aria-hidden /> Why: {row.reason}
-        {row.stale && " (a newer message arrived; this label will refresh on the next run)"}
-      </p>
-    </li>
-  );
-}
-
 type ListProps = { widget: Extract<Widget, { type: "insight-list" }> };
 
 export const InsightListWidget = memo(function InsightListWidget({ widget }: ListProps) {
   const { insights } = useDashboardData();
+  const attention = widget.focus === "high-priority";
+  const rows = useMemo(
+    () => insights.rows.filter((r) => (attention ? r.priority === "high" : r.category === widget.focus)),
+    [insights.rows, attention, widget.focus]
+  );
   const gate = analysisGate(insights);
   if (gate) return gate;
 
-  const rows =
-    widget.focus === "high-priority"
-      ? insights.rows.filter((r) => r.priority === "high")
-      : insights.rows.filter((r) => r.category === widget.focus);
-
   return (
     <div className="thread-widget">
-      {rows.length ? (
-        <ul className="insights">
-          {rows.slice(0, 30).map((r) => (
-            <InsightItem key={r.threadId} row={r} showCategory={widget.focus === "high-priority"} />
+      {rows.length === 0 ? (
+        <div className="widget-empty"><p>{FOCUS_EMPTY[widget.focus] ?? "No conversations here."}</p></div>
+      ) : attention ? (
+        <TopicFolders rows={rows} />
+      ) : (
+        <ul className="convos">
+          {rows.slice(0, 40).map((r) => (
+            <ConversationRow key={r.threadId} threadId={r.threadId} contact={r.contact} text={r.summary} at={r.lastAt}
+              needsReply={r.needsReply} urgent={r.priority === "high"} />
           ))}
         </ul>
-      ) : (
-        <div className="widget-empty"><p>{FOCUS_EMPTY[widget.focus] ?? "No threads in this group."}</p></div>
       )}
       <Footer insights={insights} />
     </div>
   );
 });
+
+/** "Needs your attention": urgent conversations grouped into one folder per topic, biggest first. */
+function TopicFolders({ rows }: { rows: InsightRow[] }) {
+  const groups = useMemo(() => {
+    const map = new Map<string, InsightRow[]>();
+    for (const r of rows) map.set(r.category, [...(map.get(r.category) ?? []), r]);
+    return [...map.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [rows]);
+  // Folders start closed: the topics and counts are the overview; open one to see its conversations.
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+
+  return (
+    <div className="topic-folders">
+      {groups.map(([category, items]) => {
+        const open = Boolean(opened[category]);
+        const title = categoryInfo(category).title;
+        const id = `topic-${category}`;
+        return (
+          <section key={category} className="topic-folder" data-open={open}>
+            <button className="topic-head" aria-expanded={open} aria-controls={id} aria-label={`${title}, ${items.length} conversations`}
+              onClick={() => setOpened((o) => ({ ...o, [category]: !open }))}>
+              <ChevronRight size={14} className="folder-chevron" aria-hidden />
+              {open ? <FolderOpen size={16} className="folder-icon" aria-hidden /> : <Folder size={16} className="folder-icon" aria-hidden />}
+              <span className="topic-title">{title}</span>
+              <span className="topic-count num">{items.length}</span>
+            </button>
+            {open && (
+              <ul id={id} className="convos">
+                {items.map((r) => (
+                  <ConversationRow key={r.threadId} threadId={r.threadId} contact={r.contact} text={r.summary} at={r.lastAt} needsReply={r.needsReply} />
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
 
 type BreakdownProps = { widget: Extract<Widget, { type: "category-breakdown" }> };
 

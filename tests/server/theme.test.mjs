@@ -1,4 +1,4 @@
-// The visual theme (src/index.css): white glass panes over a soft grey ground, dark-blue primary, a calm amber kept
+// The visual theme (src/index.css): white glass panes over soft coloured light, dark-blue primary, a calm amber kept
 // for warnings only — and still readable (WCAG AA contrast) and usable without transparency (decision #35).
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -39,8 +39,13 @@ function hsl([r, g, b]) {
   return { h: (h * 60 + 360) % 360, s, l };
 }
 const color = (name) => rgba(token(name));
-// What text actually sits on: a glass pane over the brightest and the bluest part of the sky.
-const grounds = () => ["bg", "bg-deep"].map((g) => over(color("glass"), color(g)));
+// What text actually sits on: a glass pane over the lightest and darkest part of the ground, and over the darkest
+// ground with each coloured glow at full strength behind it (the worst cases).
+const GLOWS = ["glow-blue", "glow-lavender", "glow-pink"];
+const grounds = () => [
+  ...["bg", "bg-deep"].map((g) => over(color("glass"), color(g))),
+  ...GLOWS.map((g) => over(color("glass"), over(color(g), color("bg-deep")))),
+];
 
 // ---- palette ----
 test("primary is a dark blue", () => {
@@ -55,10 +60,10 @@ test("panes are white", () => {
   assert.ok(l >= 0.98, `--surface-solid lightness ${l.toFixed(2)}`);
 });
 
-test("the ground behind the glass is a soft grey, not a colour", () => {
+test("the base ground is light and cool; the colour comes from the glows", () => {
   for (const name of ["bg", "bg-deep"]) {
     const { s, l } = hsl(color(name));
-    assert.ok(s <= 0.25, `--${name} saturation ${s.toFixed(2)} is grey`);
+    assert.ok(s <= 0.6, `--${name} saturation ${s.toFixed(2)} stays soft`);
     assert.ok(l >= 0.82 && l <= 0.97, `--${name} lightness ${l.toFixed(2)} is light grey`);
   }
   assert.ok(lum(color("bg-deep")) < lum(color("bg")), "the grey deepens down the page so the glass has something to sit on");
@@ -74,17 +79,45 @@ test("warnings are a calm amber, the only colour besides blue", () => {
 test("the glass token is translucent white", () => {
   const [r, g, b, a] = color("glass");
   assert.ok(r >= 240 && g >= 240 && b >= 240, "white");
-  assert.ok(a >= 0.55 && a <= 0.85, `alpha ${a} lets the sky through but keeps text readable`);
+  assert.ok(a >= 0.4 && a <= 0.85, `alpha ${a} lets the colour through; contrast is checked separately`);
 });
 
-test("sidebar, widgets, panels, side panel and dialogs are frosted glass", () => {
-  for (const sel of [".sidebar", ".widget", ".panel", ".surface", ".side-panel-slot", ".modal"]) {
-    const rule = css.match(new RegExp(`(^|\\n)${sel.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
-    assert.ok(rule, `${sel} has a rule`);
-    assert.match(rule[2], /background:\s*var\(--glass/, `${sel} uses the glass background`);
-    assert.match(rule[2], /backdrop-filter:\s*var\(--blur\)/, `${sel} blurs what is behind it`);
-    assert.match(rule[2], /-webkit-backdrop-filter:\s*var\(--blur\)/, `${sel} also works in Safari`);
+// Speed (2026-11-14): panes sit on the page's soft light, which is already smooth, so a backdrop blur there costs a
+// full re-blur on every scroll, drag and resize frame and changes nothing you can see. Only layers that float over
+// other content (menus, the widget settings box, dialogs) blur what is behind them.
+const PANES = [".sidebar", ".widget", ".panel", ".surface", ".callout", ".skeleton", ".side-panel-slot"];
+const FLOATING = [".modal", ".widget-config", ".select-menu"];
+const ruleOf = (sel) => {
+  const m = css.match(new RegExp(`(^|\\n)${sel.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
+  assert.ok(m, `${sel} has a rule`);
+  return m[2];
+};
+
+test("panes are glass: translucent white with the bright edge", () => {
+  for (const sel of PANES) {
+    const r = ruleOf(sel);
+    assert.match(r, /background:\s*(linear-gradient\(90deg, )?var\(--glass/, `${sel} uses the glass background`);
+    assert.match(r, /border:\s*1px solid var\(--glass-edge\)/, `${sel} has the glass edge`);
   }
+});
+
+test("panes don't re-blur the page on every frame (that is what made scrolling and dragging lag)", () => {
+  for (const sel of PANES) assert.doesNotMatch(ruleOf(sel), /backdrop-filter/, `${sel} has no backdrop blur`);
+});
+
+test("floating layers over content are frosted glass", () => {
+  for (const sel of FLOATING) {
+    const r = ruleOf(sel);
+    assert.match(r, /background:\s*var\(--glass-strong\)/, `${sel} uses strong glass`);
+    assert.match(r, /backdrop-filter:\s*var\(--blur\)/, `${sel} blurs what is behind it`);
+    assert.match(r, /-webkit-backdrop-filter:\s*var\(--blur\)/, `${sel} also works in Safari`);
+  }
+});
+
+test("the page background is painted once, not on every scroll", () => {
+  assert.doesNotMatch(ruleOf("body"), /\bfixed\b/, "no background-attachment: fixed on body (forces a full repaint per scroll frame)");
+  assert.match(ruleOf("body::before"), /position:\s*fixed/);
+  assert.match(ruleOf("body::before"), /will-change:\s*transform/, "the light gets its own compositor layer");
 });
 
 test("people who reduce transparency get solid panes", () => {
@@ -146,7 +179,6 @@ test("loading skeletons are glass, not an opaque old-palette stripe", () => {
   const s = rule(".skeleton");
   assert.doesNotMatch(s, /#[0-9a-f]{3,6}/i);
   assert.match(s, /var\(--glass/);
-  assert.match(s, /backdrop-filter:\s*var\(--blur\)/);
 });
 
 test("the closest panes keep the white top-edge highlight", () => {
@@ -169,6 +201,50 @@ test("no old-palette hex values remain outside :root (brand logos excepted)", ()
 
 test("edit mode has one border rule, not two that cancel each other", () => {
   assert.equal([...css.matchAll(/\n\.widget\[data-editing="true"\]\s*\{[^}]*border-color/g)].length, 1);
+});
+
+// ---- visible glass (decision #38): the frosting must have something to frost, and show it ----
+test("panes are clearly see-through, floating layers frosted", () => {
+  const [, , , a] = color("glass");
+  assert.ok(a >= 0.4 && a <= 0.55, `--glass alpha ${a}`);
+  assert.match(token("blur"), /blur\((1[6-9]|2\d|3[0-2])px\)/, "a clear frosting that stays cheap to draw");
+});
+
+test("every pane carries the glass sheen", () => {
+  assert.match(token("glass-sheen"), /^linear-gradient\(/);
+  for (const sel of [".sidebar", ".widget", ".panel", ".surface"]) {
+    const m = css.match(new RegExp(`(^|\\n)${sel.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
+    assert.match(m[2], /background-image:\s*var\(--glass-sheen\)/, `${sel} has the sheen`);
+  }
+});
+
+test("behind the glass is soft coloured light: blue, lavender and pink glows (decision #39)", () => {
+  const ranges = { "glow-blue": [205, 235], "glow-lavender": [240, 275], "glow-pink": [310, 345] };
+  for (const [name, [lo, hi]] of Object.entries(ranges)) {
+    const c = color(name);
+    const { h, s } = hsl(c);
+    assert.ok(h >= lo && h <= hi, `--${name} hue ${h.toFixed(0)}`);
+    assert.ok(s >= 0.5, `--${name} is colourful`);
+    assert.ok(c[3] >= 0.25 && c[3] <= 0.5, `--${name} alpha ${c[3]}: visible, still soft`);
+  }
+  const glows = css.match(/(^|\n)body::before\s*\{([^}]*)\}/)[2];
+  for (const name of Object.keys(ranges)) assert.match(glows, new RegExp(`var\\(--${name}\\)`));
+  const colors = [...glows.matchAll(/rgba\(\d+, \d+, \d+, [\d.]+\)|var\(--[a-z-]+\)/g)].map((m) => m[0]);
+  for (const c of colors) assert.ok(/^var\(--(glow-(blue|lavender|pink)|bg|bg-deep)\)$/.test(c) || /^rgba\(255, 255, 255,/.test(c), `unexpected glow colour ${c}`);
+});
+
+test("the sidebar floats as its own rounded glass panel, with space around it", () => {
+  const side = css.match(/(^|\n)\.sidebar\s*\{([^}]*)\}/)[2];
+  assert.match(side, /margin:\s*\d+px/);
+  assert.match(side, /border-radius:\s*var\(--radius-xl\)/);
+  assert.match(side, /border:\s*1px solid var\(--glass-edge\)/);
+  assert.match(side, /height:\s*calc\(100vh - \d+px\)/);
+});
+
+test("banners are glass too", () => {
+  const callout = css.match(/(^|\n)\.callout\s*\{([^}]*)\}/)[2];
+  assert.match(callout, /background-image:\s*var\(--glass-sheen\)/);
+  assert.match(callout, /border:\s*1px solid var\(--glass-edge\)/);
 });
 
 // ---- bans from the design floor ----

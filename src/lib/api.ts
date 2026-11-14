@@ -133,7 +133,9 @@ export type Widget = z.infer<typeof WidgetSchema>;
 export type WidgetType = Widget["type"];
 export type GridItem = z.infer<typeof LayoutItemSchema>;
 export type DashboardSpecInput = z.infer<typeof DashboardSpec>;
-export type SavedDashboard = DashboardSpecInput & { id: string; version: number; canUndo: boolean; updatedAt: string };
+/** A dashboard with its own saved layout and widget catalogue (shared/spec.js BOARDS). */
+export type Board = "default" | "sales";
+export type SavedDashboard =DashboardSpecInput & { id: string; version: number; canUndo: boolean; updatedAt: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
@@ -190,8 +192,15 @@ export type AttachmentFile = {
   mimeType: string;
   size: number;
   direction: "in" | "out";
+  /** Who the file is filed under: the sender, or "You" for files you sent. */
+  sender: { name: string; email: string };
+  threadId: string;
   contact: string;
   subject: string;
+  /** The conversation's topic from the AI, or null when it wasn't sorted. */
+  topic: Category | null;
+  /** One line on what the email says (the AI summary, else Gmail's preview). */
+  summary: string;
   at: string;
   link: string | null;
   downloadable: boolean;
@@ -207,6 +216,51 @@ export type ReplyDraft = {
   /** Attachments whose text the draft was based on. */
   filesRead: string[];
   replyingTo: { from: string; date: string; snippet: string };
+};
+
+/** One conversation in full (GET /api/threads/:threadId). */
+export type ThreadView = {
+  threadId: string;
+  subject: string;
+  link: string | null;
+  ai: { summary: string; category: Category; priority: Priority | null; needsReply: boolean; suggestedAction: string | null; reason: string | null } | null;
+  messages: {
+    gmailId: string;
+    direction: "in" | "out";
+    date: string;
+    from: { name: string; email: string };
+    to: { name: string; email: string }[];
+    cc: { name: string; email: string }[];
+    body: string;
+    attachments: { filename: string; mimeType: string; size: number; gmailId: string; attachmentId: string | null; downloadable: boolean }[];
+  }[];
+};
+
+/** Postgres connection state for the Sales page. */
+export type SalesStatus = {
+  configured: boolean;
+  connected: boolean;
+  counts: { customers: number; products: number; orders: number; deals: number; reps: number } | null;
+  error: string | null;
+};
+
+/** Everything the Sales page shows (GET /api/sales/dashboard). `sample` is true while it's demo data. */
+export type SalesDashboard = {
+  sample: boolean;
+  range: { from: string; to: string; months: number; prevFrom: string; prevTo: string };
+  kpis: {
+    revenue: number; revenuePrev: number; orders: number; ordersPrev: number; aov: number; aovPrev: number;
+    marginPct: number; marginPctPrev: number; newCustomers: number; newCustomersPrev: number;
+    winRate: number; winRatePrev: number; openPipeline: number; openDeals: number;
+  };
+  monthly: { month: string; revenue: number; revenueLastYear: number; orders: number }[];
+  byCategory: { key: string; revenue: number; share: number }[];
+  byRegion: { key: string; revenue: number; share: number }[];
+  topProducts: { name: string; category: string; revenue: number; units: number }[];
+  topCustomers: { name: string; industry: string; region: string; revenue: number; orders: number }[];
+  reps: { name: string; region: string; revenue: number; target: number; attainment: number; won: number }[];
+  pipeline: { stage: "lead" | "qualified" | "proposal" | "negotiation" | "won" | "lost"; count: number; value: number; open: boolean }[];
+  recentOrders: { number: string; customer: string; status: "paid" | "pending" | "refunded"; channel: string; orderedAt: string; total: number }[];
 };
 
 export type MessageFilters = {
@@ -240,6 +294,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ force }),
     }),
+  salesStatus: () => request<SalesStatus>("/api/sales/status"),
+  salesDashboard: (months: number) => request<SalesDashboard>(`/api/sales/dashboard?months=${months}`),
+  seedSales: () => request<{ ok: true; counts: NonNullable<SalesStatus["counts"]> }>("/api/sales/seed", { method: "POST" }),
+  thread: (threadId: string) => request<ThreadView>(`/api/threads/${encodeURIComponent(threadId)}`),
   people: () => request<{ email: string; name: string; count: number }[]>("/api/messages/people"),
   draftReply: (threadId: string) =>
     request<ReplyDraft>("/api/replies/draft", {
@@ -257,15 +315,16 @@ export const api = {
   attachmentUrl: (gmailId: string, attachmentId: string) =>
     `/api/attachments/${encodeURIComponent(gmailId)}/${encodeURIComponent(attachmentId)}`,
   connectUrl: "/api/auth/google/start",
-  spec: () => request<SavedDashboard>("/api/dashboards/default"),
-  saveSpec: (spec: DashboardSpecInput & { version: number }) =>
-    request<SavedDashboard>("/api/dashboards/default", {
+  // Saved layouts, one per board ("default" = email dashboard, "sales" = Sales page).
+  spec: (board: Board = "default") => request<SavedDashboard>(`/api/dashboards/${board}`),
+  saveSpec: (spec: DashboardSpecInput & { version: number }, board: Board = "default") =>
+    request<SavedDashboard>(`/api/dashboards/${board}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(spec),
     }),
-  undoSpec: () => request<SavedDashboard>("/api/dashboards/default/undo", { method: "POST" }),
-  resetSpec: () => request<SavedDashboard>("/api/dashboards/default/reset", { method: "POST" }),
+  undoSpec: (board: Board = "default") => request<SavedDashboard>(`/api/dashboards/${board}/undo`, { method: "POST" }),
+  resetSpec: (board: Board = "default") => request<SavedDashboard>(`/api/dashboards/${board}/reset`, { method: "POST" }),
 };
 
 export function timeAgo(iso: string | null): string {

@@ -3,6 +3,9 @@ import { GridStack } from "gridstack";
 import { createPortal } from "react-dom";
 import { GripVertical, Lightbulb, Plus, Search } from "lucide-react";
 import { CATALOG } from "../../shared/spec.js";
+
+/** A board's widget catalogue (CATALOG for email, SALES_CATALOG for sales). */
+export type Catalog = Record<string, { label: string; description: string; size: { w: number; h: number } }>;
 import type { WidgetType } from "../lib/api";
 import { REGISTRY } from "../widgets/registry";
 import { LIBRARY_ITEM_CLASS, NEW_PREFIX } from "./DashboardGrid";
@@ -17,35 +20,36 @@ type Props = {
   busy?: boolean;
   onDragBegin: (type: WidgetType) => void;
   onDragFinish: () => void;
+  /** Which widgets this board offers. Defaults to the email catalogue. */
+  catalog?: Catalog;
 };
 
-const TYPES = Object.keys(CATALOG) as WidgetType[];
-
 /** One panel entry: GridStack makes it draggable onto the canvas (see setupDragIn below); + adds it to free space. */
-function LibraryItem({ type, onAdd, full }: { type: WidgetType; onAdd: (t: WidgetType) => void; full: boolean }) {
+function LibraryItem({ type, onAdd, full, catalog }: { type: WidgetType; onAdd: (t: WidgetType) => void; full: boolean; catalog: Catalog }) {
   const Icon = REGISTRY[type].icon;
   return (
     <li className="library-item" data-full={full || undefined}>
       <div className={LIBRARY_ITEM_CLASS} data-type={type}>
         <span className="library-grip" aria-hidden><GripVertical size={15} /></span>
         <span className="library-icon" aria-hidden><Icon size={16} /></span>
-        <span className="library-text"><span className="library-name">{CATALOG[type].label}</span>
-          <span className="library-desc">{CATALOG[type].description}</span></span>
+        <span className="library-text"><span className="library-name">{catalog[type].label}</span>
+          <span className="library-desc">{catalog[type].description}</span></span>
       </div>
       <button className="icon-btn icon-btn-sm library-add" onClick={() => onAdd(type)} disabled={full}
-        aria-label={"Add " + CATALOG[type].label} title="Add widget"><Plus size={16} /></button>
+        aria-label={"Add " + catalog[type].label} title="Add widget"><Plus size={16} /></button>
     </li>
   );
 }
 
 /** Right-hand "Add widgets" panel shown while editing. Rendered into the shell's #side-panel slot. */
-export const WidgetLibrary = memo(function WidgetLibrary({ onAdd, footer, full, busy }: Props) {
+export const WidgetLibrary = memo(function WidgetLibrary({ onAdd, footer, full, busy, catalog = CATALOG as Catalog }: Props) {
+  const TYPES = Object.keys(catalog) as WidgetType[];
   const [query, setQuery] = useState("");
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => setSlot(document.getElementById("side-panel")), []);
 
   const q = query.trim().toLowerCase();
-  const types = q ? TYPES.filter((t) => `${CATALOG[t].label} ${CATALOG[t].description}`.toLowerCase().includes(q)) : TYPES;
+  const types = q ? TYPES.filter((t) => `${catalog[t].label} ${catalog[t].description}`.toLowerCase().includes(q)) : TYPES;
 
   // Register the visible entries with GridStack: each one drags as a clone and creates a widget of
   // its catalogue size where it is dropped. Runs again when the list changes (search).
@@ -54,7 +58,7 @@ export const WidgetLibrary = memo(function WidgetLibrary({ onAdd, footer, full, 
     if (!slot) return;
     const els = [...slot.querySelectorAll<HTMLElement>(`.${LIBRARY_ITEM_CLASS}`)];
     GridStack.setupDragIn(els, { appendTo: "body", helper: "clone" },
-      els.map((el) => { const type = el.dataset.type as WidgetType; return { id: NEW_PREFIX + type, w: CATALOG[type].size.w, h: CATALOG[type].size.h }; }));
+      els.map((el) => { const type = el.dataset.type as WidgetType; return { id: NEW_PREFIX + type, w: catalog[type].size.w, h: catalog[type].size.h }; }));
   }, [slot, typeKey]);
 
   if (!slot) return null;
@@ -72,7 +76,7 @@ export const WidgetLibrary = memo(function WidgetLibrary({ onAdd, footer, full, 
       </label>
 
       <ul className="library-list">
-        {types.map((type) => <LibraryItem key={type} type={type} onAdd={onAdd} full={full} />)}
+        {types.map((type) => <LibraryItem key={type} type={type} onAdd={onAdd} full={full} catalog={catalog} />)}
         {types.length === 0 && <li className="library-none">No widget matches “{query}”.</li>}
       </ul>
 

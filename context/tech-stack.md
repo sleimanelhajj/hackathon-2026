@@ -25,6 +25,7 @@
 | `unpdf` | **In use:** text out of PDF attachments for the AI (`server/agent/content.js`); pure JS, no native build |
 | `mammoth` | **In use:** text out of Word (.docx) attachments for the AI |
 | `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
+| `pg` | **In use:** Postgres connector for the Sales page (`server/sales/db.js`); `POSTGRES_URL` in `.env` |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
@@ -88,12 +89,16 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | GET | `/api/messages/:gmailId` | One stored email with all headers and the decrypted body |
 | GET | `/api/messages/people` | Everyone in the stored email with message counts (Email data person filter) |
 | POST | `/api/replies/draft` | `{ threadId }` → AI-drafted reply (to, subject, body, note). Drafts only, never sends |
+| GET | `/api/threads/:threadId` | One conversation in full for the email viewer: bodies (decrypted on the server), files, AI summary |
+| GET | `/api/sales/status` | Postgres connection state and table counts (no secrets) |
+| POST | `/api/sales/seed` | Creates the database/schema if needed and loads the demo sales data (replaces it) |
+| GET | `/api/sales/dashboard?months=1\|3\|6\|12` | KPIs with previous-period comparison, monthly trend, category/region, top products/customers, reps vs target, pipeline, recent orders |
 | POST | `/api/replies/send` | Sends a reply the user edited and approved (`approved: true`); threading headers come from the store |
 | GET | `/api/attachments/:gmailId/:attachmentId` | Downloads one attachment from Gmail (always as a download) |
-| GET | `/api/dashboards/default` | Saved layout spec (widgets + desktop grid positions) |
-| PUT | `/api/dashboards/default` | Save a new version (zod-validated; 409 if the version changed meanwhile) |
-| POST | `/api/dashboards/default/undo` | Swap back to the previous version |
-| POST | `/api/dashboards/default/reset` | Restore the default layout (undoable) |
+| GET | `/api/dashboards/:board` | Saved layout spec (widgets + desktop grid positions) |
+| PUT | `/api/dashboards/:board` | Save a new version (zod-validated; 409 if the version changed meanwhile) |
+| POST | `/api/dashboards/:board/undo` | Swap back to the previous version |
+| POST | `/api/dashboards/:board/reset` | Restore the default layout (undoable) |
 | POST | `/api/analysis/run` | Start AI email analysis in the background (`{ "force": true }` re-sorts every thread). Also runs on its own after a sync or sample load |
 
 ## MongoDB collections

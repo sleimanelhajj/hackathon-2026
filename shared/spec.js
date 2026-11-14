@@ -52,6 +52,17 @@ export const INSIGHT_FOCUS_LABELS = {
   ...Object.fromEntries(Object.entries(CATEGORY_LABELS).map(([k, v]) => [k, v.title])),
 };
 
+// Sales board widgets
+export const SalesMetric = z.enum(["revenue", "orders", "aov", "marginPct", "newCustomers", "winRate", "openPipeline"]);
+export const SalesBreakdownBy = z.enum(["category", "region"]);
+export const SalesTable = z.enum(["topProducts", "topCustomers", "recentOrders"]);
+export const SALES_METRIC_LABELS = {
+  revenue: "Revenue", orders: "Orders", aov: "Average order", marginPct: "Gross margin",
+  newCustomers: "New customers", winRate: "Win rate", openPipeline: "Open pipeline",
+};
+export const SALES_BREAKDOWN_LABELS = { category: "Revenue by category", region: "Revenue by region" };
+export const SALES_TABLE_LABELS = { topProducts: "Top products", topCustomers: "Top customers", recentOrders: "Recent orders" };
+
 const id = z.string().regex(/^[a-z0-9-]{1,40}$/);
 const title = z.string().trim().min(1).max(60);
 
@@ -66,6 +77,13 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("category-breakdown"), title }),
   z.object({ id, type: z.literal("contacts"), title, show: z.enum(["all", "new"]) }),
   z.object({ id, type: z.literal("attachments"), title }),
+  // Sales board (Postgres, decision #36)
+  z.object({ id, type: z.literal("sales-kpi"), title, metric: SalesMetric }),
+  z.object({ id, type: z.literal("sales-trend"), title }),
+  z.object({ id, type: z.literal("sales-breakdown"), title, by: SalesBreakdownBy }),
+  z.object({ id, type: z.literal("sales-pipeline"), title }),
+  z.object({ id, type: z.literal("sales-reps"), title }),
+  z.object({ id, type: z.literal("sales-table"), title, table: SalesTable }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -236,3 +254,88 @@ export const DEFAULT_SPEC = {
     { i: "breakdown-newsletters", x: 7, y: 39, w: 5, h: 8 },
   ],
 };
+
+/** What users can add to the sales board (same shape as CATALOG). */
+export const SALES_CATALOG = {
+  "sales-kpi": {
+    label: "Sales number",
+    description: "One headline figure: revenue, orders, margin, win rate…",
+    size: { w: 2, h: 3, minW: 2, minH: 3, maxH: 4 },
+    create: () => ({ type: "sales-kpi", title: "Revenue", metric: "revenue" }),
+  },
+  "sales-trend": {
+    label: "Revenue by month",
+    description: "This period against the same months last year",
+    size: { w: 8, h: 10, minW: 4, minH: 7 },
+    create: () => ({ type: "sales-trend", title: "Revenue by month" }),
+  },
+  "sales-breakdown": {
+    label: "Revenue breakdown",
+    description: "Revenue by product category or by region",
+    size: { w: 4, h: 9, minW: 3, minH: 5 },
+    create: () => ({ type: "sales-breakdown", title: "Revenue by category", by: "category" }),
+  },
+  "sales-pipeline": {
+    label: "Pipeline",
+    description: "Open deals by stage, plus won and lost",
+    size: { w: 6, h: 9, minW: 4, minH: 6 },
+    create: () => ({ type: "sales-pipeline", title: "Pipeline" }),
+  },
+  "sales-reps": {
+    label: "Reps vs target",
+    description: "Each sales rep's revenue against their target",
+    size: { w: 6, h: 10, minW: 4, minH: 6 },
+    create: () => ({ type: "sales-reps", title: "Sales reps vs target" }),
+  },
+  "sales-table": {
+    label: "Sales table",
+    description: "Top products, top customers or recent orders",
+    size: { w: 6, h: 9, minW: 4, minH: 5 },
+    create: () => ({ type: "sales-table", title: "Top products", table: "topProducts" }),
+  },
+};
+
+export const DEFAULT_SALES_SPEC = {
+  title: "Sales overview",
+  widgets: [
+    { id: "kpi-revenue", type: "sales-kpi", title: "Revenue", metric: "revenue" },
+    { id: "kpi-orders", type: "sales-kpi", title: "Orders", metric: "orders" },
+    { id: "kpi-aov", type: "sales-kpi", title: "Average order", metric: "aov" },
+    { id: "kpi-margin", type: "sales-kpi", title: "Gross margin", metric: "marginPct" },
+    { id: "kpi-win-rate", type: "sales-kpi", title: "Win rate", metric: "winRate" },
+    { id: "kpi-pipeline", type: "sales-kpi", title: "Open pipeline", metric: "openPipeline" },
+    { id: "revenue-trend", type: "sales-trend", title: "Revenue by month" },
+    { id: "by-category", type: "sales-breakdown", title: "Revenue by category", by: "category" },
+    { id: "pipeline", type: "sales-pipeline", title: "Pipeline" },
+    { id: "reps", type: "sales-reps", title: "Sales reps vs target" },
+    { id: "top-products", type: "sales-table", title: "Top products", table: "topProducts" },
+    { id: "top-customers", type: "sales-table", title: "Top customers", table: "topCustomers" },
+    { id: "by-region", type: "sales-breakdown", title: "Revenue by region", by: "region" },
+    { id: "recent-orders", type: "sales-table", title: "Recent orders", table: "recentOrders" },
+  ],
+  layout: [
+    { i: "kpi-revenue", x: 0, y: 0, w: 2, h: 3 },
+    { i: "kpi-orders", x: 2, y: 0, w: 2, h: 3 },
+    { i: "kpi-aov", x: 4, y: 0, w: 2, h: 3 },
+    { i: "kpi-margin", x: 6, y: 0, w: 2, h: 3 },
+    { i: "kpi-win-rate", x: 8, y: 0, w: 2, h: 3 },
+    { i: "kpi-pipeline", x: 10, y: 0, w: 2, h: 3 },
+    { i: "revenue-trend", x: 0, y: 3, w: 8, h: 10 },
+    { i: "by-category", x: 8, y: 3, w: 4, h: 10 },
+    { i: "pipeline", x: 0, y: 13, w: 6, h: 10 },
+    { i: "reps", x: 6, y: 13, w: 6, h: 10 },
+    { i: "top-products", x: 0, y: 23, w: 6, h: 10 },
+    { i: "top-customers", x: 6, y: 23, w: 6, h: 10 },
+    { i: "by-region", x: 0, y: 33, w: 5, h: 9 },
+    { i: "recent-orders", x: 5, y: 33, w: 7, h: 9 },
+  ],
+};
+
+/** Every dashboard ("board"): its widget catalogue and its default layout. */
+export const BOARDS = {
+  default: { catalog: CATALOG, spec: DEFAULT_SPEC },
+  sales: { catalog: SALES_CATALOG, spec: DEFAULT_SALES_SPEC },
+};
+
+/** Every widget type on any board, for size lookups that only need the type. */
+export const WIDGET_CATALOG = { ...CATALOG, ...SALES_CATALOG };

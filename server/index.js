@@ -10,6 +10,20 @@ import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboa
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
 import { draftReply, loadThread } from "./agent/reply.js";
+import { threadView } from "./threads.js";
+import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgresConfigured, tableCounts } from "./sales/db.js";
+import { generateSalesData } from "./sales/seed.js";
+import { salesDashboard } from "./sales/metrics.js";
+
+/** Postgres errors in plain words, without echoing the connection string. */
+function friendlyPgError(err) {
+  const code = err?.code;
+  if (code === "28P01") return "Postgres refused the username or password in POSTGRES_URL.";
+  if (code === "3D000") return "The database in POSTGRES_URL doesn't exist. Click \"Load demo data\" to create it.";
+  if (code === "ECONNREFUSED") return "Can't reach Postgres. Is it running on the host and port in POSTGRES_URL?";
+  if (code === "42P01") return "The sales tables don't exist yet. Load the demo data first.";
+  return `Postgres error: ${String(err?.message || err).replace(/postgres(ql)?:\/\/[^\s]+/gi, "[connection string]")}`;
+}
 import { Category, Priority } from "../shared/spec.js";
 
 const app = express();
@@ -179,6 +193,46 @@ app.get("/api/messages/:gmailId", wrap(async (req, res) => {
   res.json({ ...rest, bodyText });
 }));
 
+// One conversation in full, for the email viewer: every message's body and files, plus the AI's summary.
+app.get("/api/threads/:threadId", wrap(async (req, res) => {
+  const threadId = z.string().min(1).max(200).parse(req.params.threadId);
+  const list = await loadThread(threadId);
+  const extraction = await getDb().collection("extractions").findOne({ _id: threadId });
+  res.json(threadView(list, extraction));
+}));
+
+// ---- Sales (Postgres, decision #36). Demo data only for now; every response says so (sample: true). ----
+app.get("/api/sales/status", async (_req, res) => {
+  if (!postgresConfigured()) return res.json({ configured: false, connected: false, counts: null, error: null });
+  try {
+    const counts = await tableCounts(getPool());
+    res.json({ configured: true, connected: true, counts, error: null });
+  } catch (err) {
+    res.json({ configured: true, connected: false, counts: null, error: friendlyPgError(err) });
+  }
+});
+app.post("/api/sales/seed", async (_req, res) => {
+  try {
+    if (!postgresConfigured()) return res.status(400).json({ error: "Postgres isn't set up. Add POSTGRES_URL to .env and restart the server." });
+    await ensureDatabase();
+    await createSchema(getPool());
+    await loadData(getPool(), DEFAULT_SCHEMA, generateSalesData({ seed: 42, months: 24, now: new Date() }));
+    res.json({ ok: true, counts: await tableCounts(getPool()) });
+  } catch (err) {
+    res.status(400).json({ error: friendlyPgError(err) });
+  }
+});
+app.get("/api/sales/dashboard", async (req, res) => {
+  try {
+    if (!postgresConfigured()) return res.status(400).json({ error: "Postgres isn't set up. Add POSTGRES_URL to .env and restart the server." });
+    const months = [1, 3, 6, 12].includes(Number(req.query.months)) ? Number(req.query.months) : 12;
+    if (!(await tableCounts(getPool()))?.orders) return res.status(404).json({ error: "No sales data yet. Load the demo data first." });
+    res.json(await salesDashboard(getPool(), { months }));
+  } catch (err) {
+    res.status(400).json({ error: friendlyPgError(err) });
+  }
+});
+
 // ---- Replies: AI draft, then send only after the user edits and approves it (decision #30) ----
 app.post("/api/replies/draft", wrap(async (req, res) => {
   const threadId = z.string().min(1).max(200).parse(req.body?.threadId);
@@ -234,16 +288,17 @@ app.get("/api/attachments/:gmailId/:attachmentId", async (req, res) => {
 });
 
 // Dashboard layout spec (widgets + grid positions)
-app.get("/api/dashboards/default", wrap(async (_req, res) => res.json(await getDashboard())));
-app.put("/api/dashboards/default", async (req, res) => {
+// One saved layout per board: "default" (email) or "sales". Unknown boards are rejected by checkBoard.
+app.get("/api/dashboards/:board", wrap(async (req, res) => res.json(await getDashboard(req.params.board))));
+app.put("/api/dashboards/:board", async (req, res) => {
   try {
-    res.json(await saveDashboard(req.body));
+    res.json(await saveDashboard(req.body, req.params.board));
   } catch (err) {
     res.status(err instanceof ConflictError ? 409 : 400).json({ error: err.message });
   }
 });
-app.post("/api/dashboards/default/undo", wrap(async (_req, res) => res.json(await undoDashboard())));
-app.post("/api/dashboards/default/reset", wrap(async (_req, res) => res.json(await resetDashboard())));
+app.post("/api/dashboards/:board/undo", wrap(async (req, res) => res.json(await undoDashboard(req.params.board))));
+app.post("/api/dashboards/:board/reset", wrap(async (req, res) => res.json(await resetDashboard(req.params.board))));
 
 // API_PORT (not PORT): dev tools often set PORT for the web server.
 const port = Number(process.env.API_PORT || 8787);

@@ -79,11 +79,11 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
         <div className="widget-dimensions">
           <label>Width<input type="number" min={2} max={12} value={size.w} onChange={(event) => {
             const value = event.target.valueAsNumber;
-            if (Number.isFinite(value)) onResize(widget.id, { ...size, w: Math.max(2, Math.min(12, value)) });
+            if (Number.isFinite(value)) onResize(widget.id, { w: Math.max(2, Math.min(12, value)), h: size.h });
           }} /></label>
           <label>Height<input type="number" min={3} max={30} value={size.h} onChange={(event) => {
             const value = event.target.valueAsNumber;
-            if (Number.isFinite(value)) onResize(widget.id, { ...size, h: Math.max(3, Math.min(30, value)) });
+            if (Number.isFinite(value)) onResize(widget.id, { w: size.w, h: Math.max(3, Math.min(30, value)) });
           }} /></label>
         </div>
         <button className="btn btn-ghost widget-remove" onClick={() => onRemove(widget.id)}><Trash2 size={14} /> Remove widget</button>
@@ -93,4 +93,9 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
       </div>
     </section>
   );
-});
+}, (a, b) =>
+  // Moving one card hands every card a fresh layout object; only redraw a card when something it shows changed.
+  a.size.w === b.size.w && a.size.h === b.size.h &&
+  a.widget === b.widget && a.editing === b.editing && a.collapsed === b.collapsed &&
+  a.onToggleCollapse === b.onToggleCollapse && a.onRemove === b.onRemove && a.onChange === b.onChange &&
+  a.onResize === b.onResize && a.onMove === b.onMove);

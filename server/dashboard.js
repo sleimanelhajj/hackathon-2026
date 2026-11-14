@@ -28,6 +28,31 @@ function contactOf(m) {
 }
 
 
+/**
+ * One attachment as the Attachments widget lists it: filed under who sent it (you, for files you sent), with the
+ * conversation's topic and a short summary of the email (the AI's, else Gmail's preview).
+ */
+export function fileItem(m, a, ai) {
+  return {
+    id: `${m.gmailId}:${a.partId}`,
+    gmailId: m.gmailId,
+    threadId: m.threadId,
+    attachmentId: a.attachmentId ?? null,
+    filename: a.filename || "(unnamed)",
+    mimeType: a.mimeType || "",
+    size: a.size ?? 0,
+    direction: m.direction,
+    sender: m.direction === "in" ? { name: m.from?.name || m.from?.email || "Unknown", email: m.from?.email || "" } : { name: "You", email: "" },
+    contact: contactOf(m),
+    subject: m.subject,
+    topic: ai?.category ?? null,
+    summary: ai?.summary || m.snippet || "",
+    at: m.date,
+    link: gmailLink(m),
+    downloadable: m.source === "gmail" && Boolean(a.attachmentId),
+  };
+}
+
 const median = (xs) => {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
@@ -257,20 +282,7 @@ export async function buildDashboard() {
   const files = [];
   for (const m of [...messages].sort(newest)) {
     for (const a of realAttachments(m)) {
-      files.push({
-        id: `${m.gmailId}:${a.partId}`,
-        gmailId: m.gmailId,
-        attachmentId: a.attachmentId ?? null,
-        filename: a.filename || "(unnamed)",
-        mimeType: a.mimeType || "",
-        size: a.size ?? 0,
-        direction: m.direction,
-        contact: contactOf(m),
-        subject: m.subject,
-        at: m.date,
-        link: gmailLink(m),
-        downloadable: m.source === "gmail" && Boolean(a.attachmentId),
-      });
+      files.push(fileItem(m, a, aiByThread.get(m.threadId)));
     }
   }
 

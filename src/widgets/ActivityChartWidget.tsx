@@ -25,7 +25,7 @@ const ActivityChartWidget = memo(function ActivityChartWidget({ widget }: Props)
         <span className="legend-total num">{total} emails · last {widget.days} days</span>
       </div>
       <div className="chart-area" role="img" aria-label={`Bar chart of emails received and sent per day over the last ${widget.days} days`}>
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" debounce={120}>
           <BarChart data={rows} barGap={2} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--border)" />
             <XAxis dataKey="date" tickFormatter={shortDate} tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={18} />

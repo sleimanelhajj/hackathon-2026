@@ -5,12 +5,12 @@ description: Visual and interaction rules for the AI Workspace OS React app, cov
 
 # UI conventions
 
-Direction: **white and dark blue glass on grey** (decision #35). White frosted-glass panes float over a soft grey ground. Written for non-technical users: plain words, large controls, one action colour. Layout, navigation and controls stay the standard ones, at the craft level of Linear and Attio. Glass marks the layers you work on (sidebar, widgets, panels, side panel, dialogs, dropdown menus), never decoration. The Figma file shows the layouts: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h
+Direction: **glassmorphism** (decision #39). White frosted-glass panels float over soft blue, lavender and pink light; the sidebar and edit panel are floating rounded panels. Written for non-technical users: plain words, large controls, one action colour. Layout, navigation and controls stay the standard ones, at the craft level of Linear and Attio. Glass marks the layers you work on (sidebar, widgets, panels, side panel, dialogs, dropdown menus), never decoration. The Figma file shows the layouts: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h
 
 ## Tokens (in `src/index.css` `:root`)
 
-- Ground: `--bg` (light grey) → `--bg-deep` (a little darker); `--surface-solid` (white) when a pane must be opaque.
-- Glass: a pane is `background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);` with `border: 1px solid var(--glass-edge)` and `box-shadow: var(--shadow)`. Popovers and dialogs use `--glass-strong` and `--shadow-lift`. Fills inside panes: `--subtle`; row hover: `--hover`.
+- Ground: a light cool base (`--bg` → `--bg-deep`) under soft coloured light (`--glow-blue`, `--glow-lavender`, `--glow-pink`); `--surface-solid` (white) when a pane must be opaque.
+- Glass: a pane is `background: var(--glass); background-image: var(--glass-sheen); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);` with `border: 1px solid var(--glass-edge)` and `box-shadow: var(--shadow)`. Popovers and dialogs use `--glass-strong` and `--shadow-lift`. Fills inside panes: `--subtle`; row hover: `--hover`.
 - Text: `--text`, `--text-2`, `--text-3`, all ≥4.5:1 on glass over any part of the ground.
 - Dark blue `--accent` (`#1e3a8a`) for actions, the active nav item, links, selection and the main data series.
 - Amber `--signal` for warnings only: high priority, "waiting on you" counts. Text in it uses `--signal-text`; `--warning` maps to it.
