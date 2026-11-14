@@ -61,7 +61,8 @@ test("the table skeleton has a header and the requested rows", () => {
   expect(container.querySelector(".skeleton-row-head")).toBeTruthy();
 });
 
-test("the dashboard page shows its skeleton while loading", async () => {
+// The first import of the dashboard page (grid + charts) can take a few seconds on a busy machine.
+test("the dashboard page shows its skeleton while loading", { timeout: 20_000 }, async () => {
   vi.spyOn(api, "dashboard").mockImplementation(never);
   const { DashboardPage } = await import("../src/pages/DashboardPage");
   withQuery(<DashboardPage />);

@@ -10,6 +10,7 @@ Loop: **Connect → Understand → Visualize → Ask → Act → Monitor**. Gmai
 
 **Read before changing anything:**
 
+0. `context/handoff.md`: **where the project stands right now** (what's built, how to run it, data and backups, known issues, next steps)
 1. `context/README.md`: the idea, the MVP scope, and current status
 2. `PRODUCT.md`: users and RBAC roles, product principles, visual direction
 3. `context/roadmap.md`: **what to build next, in order, how, and which packages** (start here when picking work)
@@ -29,6 +30,8 @@ UI designs live in Figma: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h (7
 - Collapsible sidebar (`[` key) and foldable widgets, remembered per browser.
 - **AI email analysis (Gemini, `server/agent/`):** after each sync, threads are sorted into a category and priority, with a summary, the reason and a suggested next step. It reads email bodies and attachments: PDF, Word, Excel, PowerPoint, calendar invites, ZIP folders, and images or scanned PDFs through Gemini vision (decision #43, `server/agent/files.js`). Two widgets show it ("Needs your attention", "What your email is about"), labelled as AI guesses. Needs `GEMINI_API_KEY` in `.env`.
 - **Assistant chat bubble (LangGraph, `server/agent/sales-agent.js`):** answers sales questions from Postgres, recommends products for a scenario, builds invoice PDFs after the user confirms a draft, and adds custom chart widgets to the Sales board through a widget-builder sub-agent ("show me sales of the cordless drill").
+- **Automatic Gmail sync:** the server checks for new mail every minute and syncs and sorts only when something arrived; switch on the Integrations page (decision #52).
+- **Schedule page (`#/calendar`):** a calendar built from Gmail (react-big-calendar): reply tasks by urgency, follow-ups, meetings and deadlines, each explaining why; opt-in sync to the app's own Google calendar (decision #51).
 - Not built yet: prompt-generated dashboards, user corrections for AI labels, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
 
 ## Commands
@@ -39,6 +42,8 @@ cp .env.example .env     # ask a teammate for the real values; never commit .env
 npm run dev              # API on :8787 + web on :5173 (Vite proxies /api)
 npm run build            # type-check + production build (must pass before you push)
 npx tsc --noEmit         # type-check only
+npm run db:restore -- --yes   # load the committed demo sales data + dashboard layouts (backups/)
+npm run db:backup        # write them again after changing demo data (never exports email data)
 ```
 
 **Work test-first (decision #34).** Write a failing test, make it pass, then tidy. Server and shared logic: `tests/server/*.test.mjs` (Node's test runner). UI behaviour: `tests/*.test.tsx` (Vitest + Testing Library). The theme's palette, glass and contrast are pinned by `tests/server/theme.test.mjs`. `npm test` runs everything and must pass before you push. Also verify changes by running the app and exercising the flow in a browser (see the `run-and-verify` skill).

@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Board, type SavedDashboard } from "./api";
+import { api, type Board, type SavedDashboard, type Status } from "./api";
 
 export function useStatus() {
   return useQuery({
@@ -101,3 +102,26 @@ export function useMessage(id: string | null) {
 
 /** Removes one widget from a saved board (the widget's Remove button); the server closes the gap. */
 export const useRemoveWidget = (board: Board = "default") => useSpecMutation(board, (id: string) => api.removeWidget(board, id));
+
+/** Turns automatic Gmail sync on or off, then refreshes the status. */
+export function useSetAutoSync() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (enabled: boolean) => api.setAutoSync(enabled), onSettled: () => qc.invalidateQueries({ queryKey: ["status"] }) });
+}
+
+/**
+ * When a sync (manual or automatic) brings in mail, or the AI finishes sorting it, refresh everything built from email
+ * so new mail shows up without a page reload. The first status seen is just the starting point.
+ */
+export function useRefreshOnNewMail(status: Status | undefined) {
+  const qc = useQueryClient();
+  const marker = `${status?.gmail?.lastSyncAt ?? ""}|${status?.gmail?.analysis?.lastRunAt ?? ""}`;
+  const seen = useRef<string | null>(null);
+  useEffect(() => {
+    if (!status?.gmail) return;
+    if (seen.current !== null && seen.current !== marker) {
+      for (const key of ["dashboard", "schedule", "messages", "people"]) void qc.invalidateQueries({ queryKey: [key] });
+    }
+    seen.current = marker;
+  }, [marker, status?.gmail, qc]);
+}

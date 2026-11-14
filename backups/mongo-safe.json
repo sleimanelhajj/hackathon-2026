@@ -1,0 +1,1090 @@
+{
+ "format": "ai-workspace-os/mongo-safe@1",
+ "exportedAt": "2026-11-14T19:48:13.388Z",
+ "collections": {
+  "dashboards": [
+   {
+    "_id": "default",
+    "title": "Gmail overview",
+    "widgets": [
+     {
+      "id": "stat-awaiting-you",
+      "type": "stat",
+      "title": "Waiting on you",
+      "metric": "awaitingYou"
+     },
+     {
+      "id": "stat-unread-important",
+      "type": "stat",
+      "title": "Unread important",
+      "metric": "unreadImportant"
+     },
+     {
+      "id": "stat-starred",
+      "type": "stat",
+      "title": "Starred",
+      "metric": "starred"
+     },
+     {
+      "id": "stat-reply-time",
+      "type": "stat",
+      "title": "Your reply time",
+      "metric": "yourReplyHours"
+     },
+     {
+      "id": "ai-attention",
+      "type": "insight-list",
+      "title": "Needs your attention",
+      "focus": "high-priority"
+     },
+     {
+      "id": "ai-categories",
+      "type": "category-breakdown",
+      "title": "What your email is about"
+     },
+     {
+      "id": "list-awaiting-you",
+      "type": "thread-list",
+      "title": "Waiting on your reply",
+      "list": "awaitingYou"
+     },
+     {
+      "id": "rule-unread-important",
+      "type": "rule-list",
+      "title": "Unread and important",
+      "rule": "unreadImportant"
+     },
+     {
+      "id": "list-awaiting-them",
+      "type": "thread-list",
+      "title": "Waiting on their reply",
+      "list": "awaitingThem"
+     },
+     {
+      "id": "rule-meeting-invites",
+      "type": "rule-list",
+      "title": "Meeting invites",
+      "rule": "meetingInvites"
+     },
+     {
+      "id": "activity",
+      "type": "activity-chart",
+      "title": "Email activity",
+      "days": 14
+     },
+     {
+      "id": "breakdown-domains",
+      "type": "breakdown",
+      "title": "Top companies",
+      "rule": "topDomains"
+     },
+     {
+      "id": "attachments",
+      "type": "attachments",
+      "title": "Attachments"
+     },
+     {
+      "id": "contacts",
+      "type": "contacts",
+      "title": "Contacts",
+      "show": "all"
+     },
+     {
+      "id": "breakdown-newsletters",
+      "type": "breakdown",
+      "title": "Newsletters and notifications",
+      "rule": "newsletters"
+     }
+    ],
+    "layout": [
+     {
+      "i": "stat-awaiting-you",
+      "x": 0,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "stat-unread-important",
+      "x": 3,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "stat-starred",
+      "x": 6,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "stat-reply-time",
+      "x": 9,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "ai-attention",
+      "x": 0,
+      "y": 3,
+      "w": 8,
+      "h": 10
+     },
+     {
+      "i": "ai-categories",
+      "x": 8,
+      "y": 3,
+      "w": 4,
+      "h": 10
+     },
+     {
+      "i": "list-awaiting-you",
+      "x": 0,
+      "y": 13,
+      "w": 7,
+      "h": 9
+     },
+     {
+      "i": "rule-unread-important",
+      "x": 7,
+      "y": 13,
+      "w": 5,
+      "h": 9
+     },
+     {
+      "i": "list-awaiting-them",
+      "x": 0,
+      "y": 22,
+      "w": 7,
+      "h": 9
+     },
+     {
+      "i": "rule-meeting-invites",
+      "x": 7,
+      "y": 22,
+      "w": 5,
+      "h": 9
+     },
+     {
+      "i": "activity",
+      "x": 0,
+      "y": 31,
+      "w": 8,
+      "h": 8
+     },
+     {
+      "i": "breakdown-domains",
+      "x": 8,
+      "y": 31,
+      "w": 4,
+      "h": 8
+     },
+     {
+      "i": "attachments",
+      "x": 0,
+      "y": 39,
+      "w": 7,
+      "h": 8
+     },
+     {
+      "i": "contacts",
+      "x": 0,
+      "y": 47,
+      "w": 12,
+      "h": 10
+     },
+     {
+      "i": "breakdown-newsletters",
+      "x": 7,
+      "y": 39,
+      "w": 5,
+      "h": 8
+     }
+    ],
+    "version": 29,
+    "previous": {
+     "title": "Gmail overview",
+     "widgets": [
+      {
+       "id": "stat-awaiting-you",
+       "type": "stat",
+       "title": "Waiting on you",
+       "metric": "awaitingYou"
+      },
+      {
+       "id": "stat-received",
+       "type": "stat",
+       "title": "Received",
+       "metric": "received"
+      },
+      {
+       "id": "stat-unread-important",
+       "type": "stat",
+       "title": "Unread important",
+       "metric": "unreadImportant"
+      },
+      {
+       "id": "stat-newsletters",
+       "type": "stat",
+       "title": "Newsletters",
+       "metric": "newsletters"
+      },
+      {
+       "id": "ai-attention",
+       "type": "insight-list",
+       "title": "Needs your attention",
+       "focus": "high-priority"
+      },
+      {
+       "id": "ai-categories",
+       "type": "category-breakdown",
+       "title": "What your email is about"
+      },
+      {
+       "id": "list-awaiting-you",
+       "type": "thread-list",
+       "title": "Waiting on your reply",
+       "list": "awaitingYou"
+      },
+      {
+       "id": "ai-proposals",
+       "type": "insight-list",
+       "title": "Proposals and deals",
+       "focus": "proposal"
+      },
+      {
+       "id": "ai-billing",
+       "type": "insight-list",
+       "title": "Billing and invoices",
+       "focus": "billing"
+      },
+      {
+       "id": "rule-unread-important",
+       "type": "rule-list",
+       "title": "Unread and important",
+       "rule": "unreadImportant"
+      },
+      {
+       "id": "activity",
+       "type": "activity-chart",
+       "title": "Email activity",
+       "days": 14
+      },
+      {
+       "id": "breakdown-hours",
+       "type": "breakdown",
+       "title": "When email arrives",
+       "rule": "busiestHours"
+      },
+      {
+       "id": "top-people-1",
+       "type": "top-people",
+       "title": "Who emails you most",
+       "limit": 5
+      },
+      {
+       "id": "contacts",
+       "type": "contacts",
+       "title": "Contacts",
+       "show": "all"
+      },
+      {
+       "id": "attachments",
+       "type": "attachments",
+       "title": "Attachments"
+      },
+      {
+       "id": "breakdown-labels",
+       "type": "breakdown",
+       "title": "Unread by label",
+       "rule": "labels"
+      },
+      {
+       "id": "stat-1",
+       "type": "stat",
+       "title": "New contacts",
+       "metric": "newContacts"
+      },
+      {
+       "id": "stat-2",
+       "type": "stat",
+       "title": "Waiting on you",
+       "metric": "awaitingYou"
+      },
+      {
+       "id": "stat-3",
+       "type": "stat",
+       "title": "Waiting on you",
+       "metric": "awaitingYou"
+      }
+     ],
+     "layout": [
+      {
+       "i": "stat-awaiting-you",
+       "x": 0,
+       "y": 0,
+       "w": 3,
+       "h": 3
+      },
+      {
+       "i": "stat-received",
+       "x": 3,
+       "y": 0,
+       "w": 3,
+       "h": 3
+      },
+      {
+       "i": "stat-unread-important",
+       "x": 6,
+       "y": 0,
+       "w": 3,
+       "h": 3
+      },
+      {
+       "i": "stat-newsletters",
+       "x": 9,
+       "y": 0,
+       "w": 3,
+       "h": 3
+      },
+      {
+       "i": "stat-3",
+       "x": 0,
+       "y": 3,
+       "w": 8,
+       "h": 4
+      },
+      {
+       "i": "stat-1",
+       "x": 8,
+       "y": 3,
+       "w": 4,
+       "h": 3
+      },
+      {
+       "i": "ai-categories",
+       "x": 8,
+       "y": 6,
+       "w": 4,
+       "h": 8
+      },
+      {
+       "i": "ai-attention",
+       "x": 0,
+       "y": 7,
+       "w": 8,
+       "h": 11
+      },
+      {
+       "i": "list-awaiting-you",
+       "x": 0,
+       "y": 18,
+       "w": 7,
+       "h": 9
+      },
+      {
+       "i": "stat-2",
+       "x": 7,
+       "y": 18,
+       "w": 5,
+       "h": 3
+      },
+      {
+       "i": "ai-proposals",
+       "x": 7,
+       "y": 21,
+       "w": 5,
+       "h": 6
+      },
+      {
+       "i": "ai-billing",
+       "x": 0,
+       "y": 27,
+       "w": 6,
+       "h": 8
+      },
+      {
+       "i": "rule-unread-important",
+       "x": 6,
+       "y": 27,
+       "w": 6,
+       "h": 8
+      },
+      {
+       "i": "activity",
+       "x": 0,
+       "y": 35,
+       "w": 8,
+       "h": 8
+      },
+      {
+       "i": "breakdown-hours",
+       "x": 8,
+       "y": 35,
+       "w": 4,
+       "h": 8
+      },
+      {
+       "i": "top-people-1",
+       "x": 0,
+       "y": 43,
+       "w": 12,
+       "h": 7
+      },
+      {
+       "i": "contacts",
+       "x": 0,
+       "y": 50,
+       "w": 7,
+       "h": 8
+      },
+      {
+       "i": "attachments",
+       "x": 7,
+       "y": 50,
+       "w": 5,
+       "h": 8
+      },
+      {
+       "i": "breakdown-labels",
+       "x": 0,
+       "y": 58,
+       "w": 12,
+       "h": 5
+      }
+     ]
+    },
+    "updatedAt": "2026-11-14T13:54:32.836Z"
+   },
+   {
+    "_id": "sales",
+    "title": "Sales overview",
+    "widgets": [
+     {
+      "id": "kpi-revenue",
+      "type": "sales-kpi",
+      "title": "Revenue",
+      "metric": "revenue"
+     },
+     {
+      "id": "kpi-orders",
+      "type": "sales-kpi",
+      "title": "Orders",
+      "metric": "orders"
+     },
+     {
+      "id": "kpi-aov",
+      "type": "sales-kpi",
+      "title": "Average order",
+      "metric": "aov"
+     },
+     {
+      "id": "kpi-margin",
+      "type": "sales-kpi",
+      "title": "Gross margin",
+      "metric": "marginPct"
+     },
+     {
+      "id": "kpi-win-rate",
+      "type": "sales-kpi",
+      "title": "Win rate",
+      "metric": "winRate"
+     },
+     {
+      "id": "kpi-pipeline",
+      "type": "sales-kpi",
+      "title": "Open pipeline",
+      "metric": "openPipeline"
+     },
+     {
+      "id": "revenue-trend",
+      "type": "sales-trend",
+      "title": "Revenue by month"
+     },
+     {
+      "id": "by-category",
+      "type": "sales-breakdown",
+      "title": "Revenue by category",
+      "by": "category"
+     },
+     {
+      "id": "pipeline",
+      "type": "sales-pipeline",
+      "title": "Pipeline"
+     },
+     {
+      "id": "reps",
+      "type": "sales-reps",
+      "title": "Sales reps vs target"
+     },
+     {
+      "id": "top-products",
+      "type": "sales-table",
+      "title": "Top products",
+      "table": "topProducts"
+     },
+     {
+      "id": "top-customers",
+      "type": "sales-table",
+      "title": "Top customers",
+      "table": "topCustomers"
+     },
+     {
+      "id": "by-region",
+      "type": "sales-breakdown",
+      "title": "Revenue by region",
+      "by": "region"
+     },
+     {
+      "id": "recent-orders",
+      "type": "sales-table",
+      "title": "Recent orders",
+      "table": "recentOrders"
+     },
+     {
+      "id": "ai-cordless-drill-driver-20-prqa",
+      "type": "sales-custom",
+      "title": "Cordless drill/driver 20V kit sales by month",
+      "chart": "line",
+      "query": {
+       "metric": "revenue",
+       "groupBy": "month",
+       "months": 12,
+       "limit": 10,
+       "filters": {
+        "products": [
+         "CH-0010"
+        ],
+        "categories": [],
+        "branches": [],
+        "segments": [],
+        "channels": [],
+        "customers": []
+       }
+      }
+     },
+     {
+      "id": "ai-top-5-retail-customer-or-ekgk",
+      "type": "sales-custom",
+      "title": "Top 5 retail customer orders by revenue",
+      "chart": "table",
+      "query": {
+       "metric": "revenue",
+       "groupBy": "customer",
+       "months": 12,
+       "limit": 5,
+       "filters": {
+        "products": [],
+        "categories": [],
+        "branches": [],
+        "segments": [
+         "Retail customer"
+        ],
+        "channels": [],
+        "customers": []
+       }
+      }
+     }
+    ],
+    "layout": [
+     {
+      "i": "kpi-revenue",
+      "x": 0,
+      "y": 0,
+      "w": 2,
+      "h": 3
+     },
+     {
+      "i": "kpi-orders",
+      "x": 2,
+      "y": 0,
+      "w": 2,
+      "h": 3
+     },
+     {
+      "i": "kpi-aov",
+      "x": 4,
+      "y": 0,
+      "w": 2,
+      "h": 3
+     },
+     {
+      "i": "kpi-margin",
+      "x": 6,
+      "y": 0,
+      "w": 2,
+      "h": 3
+     },
+     {
+      "i": "kpi-win-rate",
+      "x": 8,
+      "y": 0,
+      "w": 2,
+      "h": 3
+     },
+     {
+      "i": "kpi-pipeline",
+      "x": 10,
+      "y": 0,
+      "w": 2,
+      "h": 3
+     },
+     {
+      "i": "revenue-trend",
+      "x": 0,
+      "y": 3,
+      "w": 8,
+      "h": 10
+     },
+     {
+      "i": "by-category",
+      "x": 8,
+      "y": 3,
+      "w": 4,
+      "h": 10
+     },
+     {
+      "i": "pipeline",
+      "x": 0,
+      "y": 13,
+      "w": 6,
+      "h": 10
+     },
+     {
+      "i": "reps",
+      "x": 6,
+      "y": 13,
+      "w": 6,
+      "h": 10
+     },
+     {
+      "i": "top-products",
+      "x": 0,
+      "y": 23,
+      "w": 6,
+      "h": 10
+     },
+     {
+      "i": "top-customers",
+      "x": 6,
+      "y": 23,
+      "w": 6,
+      "h": 10
+     },
+     {
+      "i": "by-region",
+      "x": 0,
+      "y": 33,
+      "w": 5,
+      "h": 9
+     },
+     {
+      "i": "recent-orders",
+      "x": 5,
+      "y": 33,
+      "w": 7,
+      "h": 9
+     },
+     {
+      "i": "ai-cordless-drill-driver-20-prqa",
+      "x": 0,
+      "y": 42,
+      "w": 12,
+      "h": 9
+     },
+     {
+      "i": "ai-top-5-retail-customer-or-ekgk",
+      "x": 0,
+      "y": 51,
+      "w": 6,
+      "h": 10
+     }
+    ],
+    "version": 33,
+    "previous": {
+     "title": "Sales overview",
+     "widgets": [
+      {
+       "id": "kpi-revenue",
+       "type": "sales-kpi",
+       "title": "Revenue",
+       "metric": "revenue"
+      },
+      {
+       "id": "kpi-orders",
+       "type": "sales-kpi",
+       "title": "Orders",
+       "metric": "orders"
+      },
+      {
+       "id": "kpi-aov",
+       "type": "sales-kpi",
+       "title": "Average order",
+       "metric": "aov"
+      },
+      {
+       "id": "kpi-margin",
+       "type": "sales-kpi",
+       "title": "Gross margin",
+       "metric": "marginPct"
+      },
+      {
+       "id": "kpi-win-rate",
+       "type": "sales-kpi",
+       "title": "Win rate",
+       "metric": "winRate"
+      },
+      {
+       "id": "kpi-pipeline",
+       "type": "sales-kpi",
+       "title": "Open pipeline",
+       "metric": "openPipeline"
+      },
+      {
+       "id": "revenue-trend",
+       "type": "sales-trend",
+       "title": "Revenue by month"
+      },
+      {
+       "id": "by-category",
+       "type": "sales-breakdown",
+       "title": "Revenue by category",
+       "by": "category"
+      },
+      {
+       "id": "pipeline",
+       "type": "sales-pipeline",
+       "title": "Pipeline"
+      },
+      {
+       "id": "reps",
+       "type": "sales-reps",
+       "title": "Sales reps vs target"
+      },
+      {
+       "id": "top-products",
+       "type": "sales-table",
+       "title": "Top products",
+       "table": "topProducts"
+      },
+      {
+       "id": "top-customers",
+       "type": "sales-table",
+       "title": "Top customers",
+       "table": "topCustomers"
+      },
+      {
+       "id": "by-region",
+       "type": "sales-breakdown",
+       "title": "Revenue by region",
+       "by": "region"
+      },
+      {
+       "id": "recent-orders",
+       "type": "sales-table",
+       "title": "Recent orders",
+       "table": "recentOrders"
+      },
+      {
+       "id": "ai-cordless-drill-driver-20-prqa",
+       "type": "sales-custom",
+       "title": "Cordless drill/driver 20V kit sales by month",
+       "chart": "line",
+       "query": {
+        "metric": "revenue",
+        "groupBy": "month",
+        "months": 12,
+        "limit": 10,
+        "filters": {
+         "products": [
+          "CH-0010"
+         ],
+         "categories": [],
+         "branches": [],
+         "segments": [],
+         "channels": [],
+         "customers": []
+        }
+       }
+      }
+     ],
+     "layout": [
+      {
+       "i": "kpi-revenue",
+       "x": 0,
+       "y": 0,
+       "w": 2,
+       "h": 3
+      },
+      {
+       "i": "kpi-orders",
+       "x": 2,
+       "y": 0,
+       "w": 2,
+       "h": 3
+      },
+      {
+       "i": "kpi-aov",
+       "x": 4,
+       "y": 0,
+       "w": 2,
+       "h": 3
+      },
+      {
+       "i": "kpi-margin",
+       "x": 6,
+       "y": 0,
+       "w": 2,
+       "h": 3
+      },
+      {
+       "i": "kpi-win-rate",
+       "x": 8,
+       "y": 0,
+       "w": 2,
+       "h": 3
+      },
+      {
+       "i": "kpi-pipeline",
+       "x": 10,
+       "y": 0,
+       "w": 2,
+       "h": 3
+      },
+      {
+       "i": "revenue-trend",
+       "x": 0,
+       "y": 3,
+       "w": 8,
+       "h": 10
+      },
+      {
+       "i": "by-category",
+       "x": 8,
+       "y": 3,
+       "w": 4,
+       "h": 10
+      },
+      {
+       "i": "pipeline",
+       "x": 0,
+       "y": 13,
+       "w": 6,
+       "h": 10
+      },
+      {
+       "i": "reps",
+       "x": 6,
+       "y": 13,
+       "w": 6,
+       "h": 10
+      },
+      {
+       "i": "top-products",
+       "x": 0,
+       "y": 23,
+       "w": 6,
+       "h": 10
+      },
+      {
+       "i": "top-customers",
+       "x": 6,
+       "y": 23,
+       "w": 6,
+       "h": 10
+      },
+      {
+       "i": "by-region",
+       "x": 0,
+       "y": 33,
+       "w": 5,
+       "h": 9
+      },
+      {
+       "i": "recent-orders",
+       "x": 5,
+       "y": 33,
+       "w": 7,
+       "h": 9
+      },
+      {
+       "i": "ai-cordless-drill-driver-20-prqa",
+       "x": 0,
+       "y": 42,
+       "w": 12,
+       "h": 9
+      }
+     ]
+    },
+    "updatedAt": "2026-11-14T18:59:40.435Z"
+   }
+  ],
+  "invoices": [
+   {
+    "_id": "fdca2075-1972-4e2a-90fd-47882b4eb473",
+    "invoiceNumber": "INV-20261114-EAA6",
+    "from": {
+     "name": "Cornerstone Hardware & Supply",
+     "email": "billing@cornerstonehardware.example",
+     "address": "418 Market Street, Maple Falls, CA 95401 · (555) 014-2290"
+    },
+    "customer": {
+     "name": "Oak Valley Electric",
+     "email": "accounts@oakvalleyelectric.example",
+     "address": "339 Willow Avenue, Westfield, CA 95454"
+    },
+    "currency": "USD",
+    "issueDate": "2026-11-14",
+    "dueDate": "2026-12-14",
+    "lineItems": [
+     {
+      "description": "LED shop light 4 ft (CH-0039), 5% account discount",
+      "quantity": 2,
+      "unitPriceMinor": 3324,
+      "totalMinor": 6648
+     },
+     {
+      "description": "Electrical wire 12/2 x 50 ft (CH-0038), 5% account discount",
+      "quantity": 1,
+      "unitPriceMinor": 6174,
+      "totalMinor": 6174
+     },
+     {
+      "description": "Outlet tester (CH-0037), 5% account discount",
+      "quantity": 1,
+      "unitPriceMinor": 1234,
+      "totalMinor": 1234
+     }
+    ],
+    "taxRateBps": 825,
+    "notes": "PO-7731",
+    "sourceIds": [
+     "customer:1",
+     "product:CH-0039",
+     "product:CH-0038",
+     "product:CH-0037"
+    ],
+    "subtotalMinor": 14056,
+    "taxMinor": 1160,
+    "totalMinor": 15216,
+    "readiness": {
+     "ready": true,
+     "reasons": []
+    },
+    "status": "draft",
+    "source": "assistant",
+    "customerId": 1,
+    "model": "gemini-3.8-flash",
+    "confirmedAt": "2026-11-14T16:12:57.245Z",
+    "createdAt": "2026-11-14T16:12:57.245Z",
+    "updatedAt": "2026-11-14T16:12:57.245Z"
+   },
+   {
+    "_id": "b53a686c-0d57-49fb-8737-cd1a02189746",
+    "invoiceNumber": "INV-20261114-B2F3",
+    "from": {
+     "name": "Cornerstone Hardware & Supply",
+     "email": "billing@cornerstonehardware.example",
+     "address": "418 Market Street, Maple Falls, CA 95401, Tel (555) 014-2290"
+    },
+    "customer": {
+     "name": "Copper Creek Handyman Services",
+     "email": "accounts@coppercreekhandymanservices.example",
+     "address": "673 Union Court, Maple Falls, CA 95483"
+    },
+    "currency": "USD",
+    "issueDate": "2026-11-14",
+    "dueDate": "2026-12-14",
+    "lineItems": [
+     {
+      "description": "Cordless drill/driver 20V kit (CH-0010)",
+      "quantity": 3,
+      "unitPriceMinor": 12255,
+      "totalMinor": 36765
+     },
+     {
+      "description": "Wall anchors kit (100) (CH-0021)",
+      "quantity": 5,
+      "unitPriceMinor": 949,
+      "totalMinor": 4745
+     }
+    ],
+    "taxRateBps": 825,
+    "notes": "Harbor Lofts unit 4B Prices include your 5% trade account discount. Payment due within 30 days.",
+    "sourceIds": [
+     "customer:5",
+     "product:CH-0010",
+     "product:CH-0021"
+    ],
+    "subtotalMinor": 41510,
+    "taxMinor": 3425,
+    "totalMinor": 44935,
+    "readiness": {
+     "ready": true,
+     "reasons": []
+    },
+    "status": "draft",
+    "source": "assistant",
+    "customerId": 5,
+    "model": "gemini-3.8-flash",
+    "confirmedAt": "2026-11-14T16:13:41.081Z",
+    "createdAt": "2026-11-14T16:13:41.081Z",
+    "updatedAt": "2026-11-14T16:13:41.081Z"
+   },
+   {
+    "_id": "d9e014f0-5d71-4d2a-9303-859f9dbe275a",
+    "invoiceNumber": "INV-20261114-8AAC",
+    "from": {
+     "name": "Cornerstone Hardware & Supply",
+     "email": "billing@cornerstonehardware.example",
+     "address": "418 Market Street, Maple Falls, CA 95401, Tel (555) 014-2290"
+    },
+    "customer": {
+     "name": "Oak Valley Electric",
+     "email": "accounts@oakvalleyelectric.example",
+     "address": "339 Willow Avenue, Westfield, CA 95454"
+    },
+    "currency": "USD",
+    "issueDate": "2026-11-14",
+    "dueDate": "2026-12-14",
+    "lineItems": [
+     {
+      "description": "LED bulbs A19 60W (8 pack) (CH-0035)",
+      "quantity": 2,
+      "unitPriceMinor": 1519,
+      "totalMinor": 3038
+     },
+     {
+      "description": "Outlet tester (CH-0037)",
+      "quantity": 4,
+      "unitPriceMinor": 1234,
+      "totalMinor": 4936
+     }
+    ],
+    "taxRateBps": 825,
+    "notes": "PO-2026-1114. Prices include your 5% trade account discount. Payment due within 30 days.",
+    "sourceIds": [
+     "customer:1",
+     "product:CH-0035",
+     "product:CH-0037"
+    ],
+    "subtotalMinor": 7974,
+    "taxMinor": 658,
+    "totalMinor": 8632,
+    "readiness": {
+     "ready": true,
+     "reasons": []
+    },
+    "status": "draft",
+    "source": "assistant",
+    "customerId": 1,
+    "model": "gemini-3.8-flash",
+    "confirmedAt": "2026-11-14T17:46:00.716Z",
+    "createdAt": "2026-11-14T17:46:00.716Z",
+    "updatedAt": "2026-11-14T17:46:00.716Z"
+   }
+  ]
+ }
+}

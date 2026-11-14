@@ -35,6 +35,10 @@ export type GmailConnection = {
   error: string | null;
   connectedAt: string | null;
   syncProgress: { done: number; total: number; phase: string } | null;
+  /** Automatic sync (decision #52): on unless turned off; the server checks every autoSyncEverySeconds. */
+  autoSync?: boolean;
+  autoSyncCheckedAt?: string | null;
+  autoSyncEverySeconds?: number;
   mailbox: { messagesTotal: number; threadsTotal: number } | null;
   analysis: AnalysisState | null;
   /** True when Gmail granted the send scope (needed to send approved replies). */
@@ -103,6 +107,39 @@ export type AssistantReply = {
   /** Widgets the assistant removed; `version` is the board's version right after, so Undo can check nothing changed. */
   removed: { board: Board; id: string; title: string; version: number }[];
 };
+
+/** One item of the email schedule (GET /api/schedule). Dates are ISO strings. */
+export type ScheduleItem = {
+  id: string;
+  kind: "reply" | "follow-up" | "meeting" | "deadline";
+  priority?: "high" | "medium" | "low";
+  title: string;
+  start: string;
+  end: string;
+  why: string;
+  threadId: string;
+  link: string | null;
+  contact?: string | null;
+  subject?: string;
+  summary?: string | null;
+  suggestedAction?: string | null;
+  category?: string | null;
+  overdue?: boolean;
+  dueAt?: string | null;
+  allDay?: boolean;
+  location?: string | null;
+};
+export type Schedule = {
+  connected: boolean;
+  sample?: boolean;
+  timeZone: string;
+  generatedAt?: string;
+  account?: string;
+  items: ScheduleItem[];
+  analysis?: { status: string | null; analysed: number };
+  calendar?: { canSync: boolean; name: string; lastSyncAt: string | null; syncedCount: number };
+};
+export type ScheduleSyncResult = { created: number; updated: number; unchanged: number; removed: number; failed: number; total: number; calendarName: string; calendarId: string };
 
 /** Data for a custom sales widget (POST /api/sales/custom). */
 export type CustomResult = {
@@ -404,6 +441,20 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: messages.slice(-10) }),
+    }),
+  setAutoSync: (enabled: boolean) =>
+    request<{ autoSync: boolean }>("/api/integrations/gmail/auto-sync", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }),
+  schedule: (tz: string) => request<Schedule>(`/api/schedule?tz=${encodeURIComponent(tz)}`),
+  /** Writes the schedule to the app's own Google calendar. Only called from the confirm dialog. */
+  syncSchedule: (tz: string) =>
+    request<ScheduleSyncResult>("/api/schedule/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved: true, tz }),
     }),
   salesCustom: (query: Extract<Widget, { type: "sales-custom" }>["query"]) =>
     request<CustomResult>("/api/sales/custom", {

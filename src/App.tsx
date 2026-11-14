@@ -7,18 +7,21 @@ import { Sidebar } from "./components/Sidebar";
 import { AgentAssistant } from "./agent/AgentAssistant";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { useRoute, useSidebarShortcut } from "./lib/store";
-import { useStatus } from "./lib/queries";
+import { useRefreshOnNewMail, useStatus } from "./lib/queries";
 import { PageSkeleton } from "./components/Skeletons";
 
 // The dashboard pulls in the grid and chart libraries; load it only when it's opened.
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const SalesPage = lazy(() => import("./pages/SalesPage"));
+const SchedulePage = lazy(() => import("./pages/SchedulePage"));
 
 export default function App() {
   const route = useRoute();
   const { data: status } = useStatus();
   useSidebarShortcut();
+  // New mail from an automatic (or manual) sync shows up everywhere without a reload.
+  useRefreshOnNewMail(status);
   const mainRef = useRef<HTMLElement>(null);
   useSlideWithSidebar(mainRef);
 
@@ -34,7 +37,7 @@ export default function App() {
   }, [busy]);
 
   useEffect(() => {
-    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : route === "sales" ? "Sales" : "Dashboard"} · AI Workspace OS`;
+    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : route === "sales" ? "Sales" : route === "calendar" ? "Schedule" : "Dashboard"} · AI Workspace OS`;
   }, [route]);
 
   return (
@@ -46,7 +49,7 @@ export default function App() {
           <IntegrationsPage />
         ) : (
           <Suspense fallback={<PageSkeleton kind={route === "data" ? "data" : route === "sales" ? "sales" : "dashboard"} />}>
-            {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : <DashboardPage />}
+            {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : route === "calendar" ? <SchedulePage /> : <DashboardPage />}
           </Suspense>
         )}
         </PageErrorBoundary>

@@ -26,6 +26,7 @@
 | `mammoth` | **In use:** fallback reader for Word (.docx); the main reader is `server/agent/files.js`, which keeps tables as rows |
 | `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
 | `pg` | **In use:** Postgres connector for the Sales page (`server/sales/db.js`); `POSTGRES_URL` in `.env` |
+| `react-big-calendar` + `dayjs` | **In use:** the Schedule page (`src/pages/SchedulePage.tsx`), restyled with our tokens; only the dayjs adapter is imported |
 | `pdf-lib` | **In use:** deterministic invoice PDFs on the server; the model never writes PDF code or HTML |
 | `@langchain/langgraph` (+ `@langchain/core`) | **In use:** the assistant's agent graph (`server/agent/sales-agent.js`): model → tools → human confirmation via `interrupt()`, per-thread checkpoints. Gemini is still called through `llm.js`, not a LangChain model wrapper |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
@@ -119,6 +120,10 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/assistant/message` | `{ threadId, message }` → the LangGraph assistant's reply, tools used, and an invoice draft waiting for confirmation (if any) |
 | POST | `/api/sales/custom` | `{ query }` (a custom widget's typed query) → rows, total, previous-period total and what it counts; fixed, parameterized, read-only SQL |
 | DELETE | `/api/dashboards/:board/widgets/:id` | Removes one widget (the chat's Remove button for an assistant-made widget) |
+| (script) | `npm run db:backup` / `npm run db:restore -- --yes` | Back up / restore the demo sales data and dashboard layouts (`backups/`); never email data |
+| PUT | `/api/integrations/gmail/auto-sync` | `{ enabled }` → turns the every-minute new-mail check on or off |
+| GET | `/api/schedule?tz=` | The email schedule: reply tasks, follow-ups, meetings and deadlines built from Gmail data, each with `why` and a Gmail link, plus calendar sync status |
+| POST | `/api/schedule/sync` | `{ approved: true, tz }` → writes the schedule to the app's own Google calendar ("AI Workspace OS"); needs the `calendar.app.created` scope |
 | POST | `/api/assistant/confirm` | `{ threadId, approve }` → confirms the waiting draft (stores the invoice, returns its PDF link) or hands it back for changes |
 | GET | `/api/invoices/:id/pdf` | Download a deterministic PDF generated from one stored invoice draft |
 | POST | `/api/invoices/:id/send` | Send the reviewed PDF through Gmail; requires edited subject/body and `approved: true`, and cannot be called by the model |

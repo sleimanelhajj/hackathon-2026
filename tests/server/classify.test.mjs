@@ -41,3 +41,22 @@ test("categoryInfo knows every category and names unknown ones instead of crashi
   assert.equal(categoryInfo("shipping").title, "Shipping");
   assert.equal(categoryInfo("").title, "Unknown");
 });
+
+// ---- dates the email text mentions, for the schedule (decision #51) ----
+const { parseResult, PROMPT_VERSION } = await import("../../server/agent/classify.js");
+
+test("threadInput gives each message its local send date and weekday, so 'Thursday' can be resolved", () => {
+  const input = threadInput("t1", [m({ date: new Date("2026-11-11T07:40:00Z") })], "northwind.example", now);
+  assert.equal(input.messages[0].sent, "Wed 2026-11-11 09:40");
+});
+
+test("a date the email mentions is kept when it is well-formed, and dropped when it isn't", () => {
+  const base = { id: "t1", category: "scheduling", priority: "medium", needsReply: true, summary: "Site visit", reason: "asks to meet" };
+  assert.deepEqual(parseResult({ ...base, when: { kind: "meeting", at: "2026-11-12T15:00", allDay: false, what: "Site visit in Jounieh" } }).when,
+    { kind: "meeting", at: "2026-11-12T15:00", allDay: false, what: "Site visit in Jounieh" });
+  assert.equal(parseResult({ ...base, when: { kind: "deadline", at: "2026-11-13", allDay: true, what: "Send the quote" } }).when.at, "2026-11-13");
+  assert.equal(parseResult({ ...base, when: { kind: "meeting", at: "next Thursday", allDay: false, what: "x" } }).when, null, "not a date: dropped, the rest kept");
+  assert.equal(parseResult({ ...base, when: null }).when, null);
+  assert.equal(parseResult(base).when, null);
+  assert.ok(PROMPT_VERSION >= 4, "threads are re-sorted once to pick up dates");
+});

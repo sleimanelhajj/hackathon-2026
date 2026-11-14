@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Inbox, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles, TrendingUp } from "lucide-react";
+import { CalendarDays, Inbox, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles, TrendingUp } from "lucide-react";
 import { useUi, type Route } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { timeAgo } from "../lib/api";
@@ -7,6 +7,7 @@ import { timeAgo } from "../lib/api";
 const NAV: { route: Route; label: string; icon: typeof Plug }[] = [
   { route: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { route: "data", label: "All email", icon: Inbox },
+  { route: "calendar", label: "Schedule", icon: CalendarDays },
   { route: "sales", label: "Sales", icon: TrendingUp },
   { route: "integrations", label: "Integrations", icon: Plug },
 ];

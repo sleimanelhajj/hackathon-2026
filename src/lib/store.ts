@@ -42,13 +42,14 @@ export const useUi = create<UiState>()(
   )
 );
 
-export type Route = "dashboard" | "integrations" | "data" | "sales";
+export type Route = "dashboard" | "integrations" | "data" | "sales" | "calendar";
 
 function readRoute(): Route {
   const h = window.location.hash;
   if (h.startsWith("#/integrations")) return "integrations";
   if (h.startsWith("#/data")) return "data";
   if (h.startsWith("#/sales")) return "sales";
+  if (h.startsWith("#/calendar")) return "calendar";
   return "dashboard";
 }
 

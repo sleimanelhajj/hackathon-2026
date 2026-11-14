@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { getDb } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
 import { normalizeMessage } from "./gmail-parse.js";
+import { CALENDAR_SCOPE } from "./gcal.js";
 
 // gmail.send is used only after the user approves an edited reply or reviewed invoice in the app.
 export const SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
@@ -16,14 +17,19 @@ export function googleConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
-export function authUrl() {
-  const state = crypto.randomBytes(16).toString("hex");
+/**
+ * Google sign-in URL. With { calendar: true } it also asks for calendar.app.created (decision #51): only calendars the
+ * app creates, never the user's own. include_granted_scopes keeps the Gmail permissions already given.
+ */
+export function authUrl({ calendar = false } = {}) {
+  // The calendar flow marks its state so the callback can send the user back to the Schedule page.
+  const state = `${calendar ? "cal-" : ""}${crypto.randomBytes(16).toString("hex")}`;
   pendingStates.set(state, Date.now() + 10 * 60 * 1000);
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID,
     redirect_uri: process.env.GOOGLE_REDIRECT_URI,
     response_type: "code",
-    scope: SCOPES.join(" "),
+    scope: (calendar ? [...SCOPES, CALENDAR_SCOPE] : SCOPES).join(" "),
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: "true",
@@ -401,6 +407,41 @@ export function buildAttachmentMime({ from, to, cc = [], subject, body, attachme
     "",
   ];
   return b64url(Buffer.from(`${headers.join("\r\n")}\r\n\r\n${parts.join("\r\n")}`, "utf8"));
+}
+
+/**
+ * Auto-sync's decision (decision #52): sync when the mailbox's history id moved since the last sync. Skipped while a
+ * sync runs, for sample data, and when the user turned auto-sync off (it's on unless they did).
+ */
+export function shouldSync(conn, currentHistoryId) {
+  if (!conn || conn.mode !== "live") return { changed: false, reason: "not connected" };
+  if (conn.autoSync === false) return { changed: false, reason: "turned off" };
+  if (conn.status === "syncing") return { changed: false, reason: "already syncing" };
+  if (!conn.historyId) return { changed: true, reason: "never synced" };
+  return String(currentHistoryId) === String(conn.historyId) ? { changed: false, reason: "no new mail" } : { changed: true, reason: "mailbox changed" };
+}
+
+/** The cheap "anything new?" question: one profile call (1 quota unit). Records when it last checked. */
+export async function checkForNewMail() {
+  const db = getDb();
+  const conn = await db.collection("connections").findOne({ provider: "gmail" });
+  const skip = shouldSync(conn, conn?.historyId);
+  if (skip.reason !== "no new mail" && !skip.changed) return skip; // off, syncing or not live: don't call Google
+  const profile = await gmailFetch(await accessToken(conn), "profile", 1);
+  await db.collection("connections").updateOne({ _id: conn._id }, { $set: { autoSyncCheckedAt: new Date() } });
+  return shouldSync(conn, profile.historyId);
+}
+
+/** True when the user allowed the app to manage its own calendar (calendar.app.created). */
+export function canSyncCalendar(conn) {
+  return conn?.mode === "live" && (conn.scopes || []).includes(CALENDAR_SCOPE);
+}
+
+/** A valid access token for the connected Google account (refreshed when needed). */
+export async function googleAccessToken() {
+  const conn = await getDb().collection("connections").findOne({ provider: "gmail" });
+  if (!conn || conn.mode !== "live") throw new Error("Connect Gmail first.");
+  return accessToken(conn);
 }
 
 export function canSend(conn) {

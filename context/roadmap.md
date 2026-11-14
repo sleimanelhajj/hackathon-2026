@@ -134,7 +134,9 @@ const { width, containerRef, mounted } = useContainerWidth();
 
 ---
 
-## 2. Agent chat panel 🟡
+## 2. Agent chat panel ✅ (sales assistant; email-board tools still to do)
+
+> **2026-11-14:** the bubble now runs a LangGraph agent over the Postgres sales data (`/api/assistant/*`, decision #47), with a widget-builder sub-agent for the Sales board (#48, #49). See [handoff.md](handoff.md).
 
 > **Built first slice (2026-11-14):** a global floating bubble opens a desktop panel / phone sheet. `POST /api/agent/chat` sees only normalized records returned by the read-only `server/company-data/` gateway, filters source ids, and stores content-free audit events. The real provider is intentionally a handoff stub. The same panel can create source-grounded invoice drafts, download deterministic PDFs and open an editable, approval-gated Gmail delivery review. Dashboard edit tools and streaming remain to do.
 
@@ -183,12 +185,16 @@ const { width, containerRef, mounted } = useContainerWidth();
 - **Tailoring (Figma screen 5):** the super admin builds a template dashboard for a person and publishes it. The member gets a copy with `templateId`. Their drag-and-drop changes stay on their copy, and **Reset to admin default** re-copies the template.
 - Connections belong to a user; one person's Gmail data is never shown to another member unless they explicitly share it.
 
-## 7. Scheduled sync ⬜
+## 7. Scheduled sync ✅ (polling)
+
+> **2026-11-14:** every 60 s a 1-quota-unit history check; full sync + AI sorting only on change (decision #52). Gmail push remains for when the app is deployed.
 
 - `node-cron` in the API process: every 15 minutes, `syncGmail()` for each live connection, with backoff on errors.
 - Later: Gmail push notifications (Pub/Sub) plus `history.list` incremental sync. Keep showing an honest "Synced X min ago" either way.
 
-## 8. Google Calendar 💤
+## 8. Google Calendar 🟡 (schedule + write-only sync to the app's own calendar)
+
+> **2026-11-14:** Schedule page built from Gmail; opt-in sync with `calendar.app.created` (decision #51). Reading the user's own calendar (`calendar.readonly`) is not built.
 
 - Follow the `add-integration` skill. Scope `calendar.readonly`, store events in an `events` collection, add a meeting-list widget, and match attendees to Gmail contacts by email.
 

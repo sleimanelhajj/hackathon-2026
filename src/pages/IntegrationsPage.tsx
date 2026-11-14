@@ -19,7 +19,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api, timeAgo, type Status } from "../lib/api";
-import { useDisconnect, useLoadSample, useStatus, useSync } from "../lib/queries";
+import { useDisconnect, useLoadSample, useSetAutoSync, useStatus, useSync } from "../lib/queries";
 import { Callout, GmailLogo, Panel } from "../components/ui";
 import { useUi } from "../lib/store";
 import { IntegrationsSkeleton } from "../components/Skeletons";
@@ -138,6 +138,29 @@ function ConfirmButton({ label, confirmLabel, onConfirm, busy }: { label: string
   );
 }
 
+/** Automatic sync on/off (decision #52). Honest wording: it checks on a timer, it isn't real-time. */
+function AutoSyncSwitch({ gmail }: { gmail: NonNullable<Status["gmail"]> }) {
+  const set = useSetAutoSync();
+  const on = set.isPending ? Boolean(set.variables) : Boolean(gmail.autoSync);
+  const every = gmail.autoSyncEverySeconds ?? 60;
+  const cadence = every === 60 ? "every minute" : every % 60 === 0 ? `every ${every / 60} minutes` : `every ${every} seconds`;
+  return (
+    <div className="auto-sync">
+      <button type="button" role="switch" aria-checked={on} className="switch" onClick={() => set.mutate(!on)} disabled={set.isPending}
+        aria-describedby="auto-sync-note">
+        <span className="switch-track" aria-hidden><span className="switch-thumb" /></span>
+        <span className="switch-label">Check for new email automatically</span>
+      </button>
+      <p id="auto-sync-note" className="muted small">
+        {on
+          ? `Checks Gmail ${cadence} and imports new email, then sorts it. Last checked ${timeAgo(gmail.autoSyncCheckedAt ?? null)}.`
+          : "Off. New email comes in when you click Sync now."}
+      </p>
+      {set.error && <p role="alert" className="small" style={{ color: "var(--danger)" }}>{(set.error as Error).message}</p>}
+    </div>
+  );
+}
+
 function GmailCard({ status }: { status: Status }) {
   const g = status.gmail;
   const sync = useSync();
@@ -197,6 +220,8 @@ function GmailCard({ status }: { status: Status }) {
           </>
         )}
       </div>
+
+      {g?.mode === "live" && <AutoSyncSwitch gmail={g} />}
 
       {error && <p role="alert" style={{ color: "var(--danger)" }}>{(error as Error).message}</p>}
 

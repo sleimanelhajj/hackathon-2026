@@ -15,6 +15,7 @@
 // ZIP safety: no extraction to disk, sizes are capped before and during decompression, encrypted entries and
 // deep nesting are skipped, and only a few images per folder go to vision.
 import zlib from "node:zlib";
+import { fromZoned } from "../schedule.js";
 
 export const LIMITS = {
   zipEntries: 300, // entries looked at in one ZIP
@@ -249,6 +250,55 @@ function icsDate(value, params) {
   if (!m[4]) return day;
   const tz = m[6] ? " UTC" : params.match(/TZID=([^;:]+)/)?.[1] ? ` (${params.match(/TZID=([^;:]+)/)[1]})` : "";
   return `${day} ${m[4]}:${m[5]}${tz}`;
+}
+
+/**
+ * Structured events from an .ics file, for the schedule: { summary, start, end, allDay, location }.
+ * Times ending in Z are UTC; TZID times are wall-clock in that zone; floating times use `tz`; dates are all-day.
+ */
+export function parseIcsEvents(buf, tz = "Asia/Beirut") {
+  const unescape = (s) => s.replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1");
+  const when = (field) => {
+    if (!field) return null;
+    const m = field.value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/);
+    if (!m) return null;
+    const [, y, mo, d, h, mi, , z] = m;
+    if (!h) return { date: fromZoned({ y: +y, m: +mo, d: +d, h: 0 }, tz), allDay: true };
+    if (z) return { date: new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi)), allDay: false };
+    const zone = field.params.match(/TZID=([^;:]+)/)?.[1]?.replace(/"/g, "") || tz;
+    let date;
+    try { date = fromZoned({ y: +y, m: +mo, d: +d, h: +h, min: +mi }, zone); } catch { date = fromZoned({ y: +y, m: +mo, d: +d, h: +h, min: +mi }, tz); }
+    return { date, allDay: false };
+  };
+  return icsRaw(buf).map((e) => {
+    const start = when(e.DTSTART);
+    const end = when(e.DTEND);
+    return {
+      summary: e.SUMMARY ? unescape(e.SUMMARY.value).slice(0, 200) : null,
+      start: start?.date ?? null,
+      end: end?.date ?? (start ? new Date(start.date.getTime() + (start.allDay ? 864e5 : 3600e3)) : null),
+      allDay: Boolean(start?.allDay),
+      location: e.LOCATION ? unescape(e.LOCATION.value).slice(0, 200) : null,
+    };
+  }).filter((e) => e.start);
+}
+
+/** The VEVENT blocks of an .ics file as { KEY: { params, value } }. */
+function icsRaw(buf) {
+  const lines = buf.toString("utf8").replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+  const events = [];
+  let ev = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") ev = {};
+    else if (line === "END:VEVENT" && ev) { events.push(ev); ev = null; }
+    else if (ev) {
+      const i = line.indexOf(":");
+      if (i < 0) continue;
+      const [key, ...rest] = line.slice(0, i).split(";");
+      ev[key.toUpperCase()] = { params: rest.join(";"), value: line.slice(i + 1) };
+    }
+  }
+  return events;
 }
 
 function icsText(buf) {

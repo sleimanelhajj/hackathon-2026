@@ -5,6 +5,7 @@ Read this first before contributing (humans and AI assistants alike).
 
 | File | What it holds |
 |---|---|
+| [handoff.md](handoff.md) | **Start here when picking the project up**: what exists, how to run it, data and backups, known issues, next steps |
 | [README.md](README.md) | This overview: idea, scope, status |
 | [product-blueprint.md](product-blueprint.md) | Full PRD / architecture / MVP plan (the original idea document) |
 | [roadmap.md](roadmap.md) | **What to build next, in order, how, and with which packages** (drag-and-drop, agent, drafts, RBAC, …) |
@@ -78,4 +79,6 @@ Blank workspace → connect Gmail → *"I'm a sales manager, build me a dashboar
 - ✅ Free-position dashboard editing with corner resizing, saved coordinates, library drag/drop, keyboard controls, and responsive layouts.
 - ✅ Agent chat bubble/panel, bounded company-data contract, source chips, deterministic invoice PDFs and approval-gated invoice delivery.
 - 🟡 The real company database provider is a teammate handoff in `server/company-data/provider.js`; until connected, the UI reports that honestly.
-- Next: connect the real company database provider, then prompt-generated dashboards (see `roadmap.md`).
+- ✅ Postgres Sales board (small Lebanese demo store), LangGraph assistant with read-only tools, invoice PDFs after confirmation, and a widget-builder sub-agent that adds charts to the board (#46–#50).
+- ✅ Schedule page built from Gmail with opt-in sync to the app's own Google calendar (#51); automatic Gmail sync every minute (#52); database backups for non-personal data (#53).
+- Next: see [handoff.md](handoff.md) §6 (deploy + Gmail push, prompt-generated email dashboards, user corrections, RBAC).

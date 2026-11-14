@@ -2,7 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { connectDb, getDb, pingDb } from "./db.js";
 import { z } from "zod";
-import { authUrl, canSend, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, sendEmailWithAttachment, sendReply, syncGmail } from "./gmail.js";
+import { authUrl, canSend, checkForNewMail, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, sendEmailWithAttachment, sendReply, syncGmail } from "./gmail.js";
+import { createAutoSync } from "./autosync.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
 import { decrypt } from "./crypto.js";
@@ -15,6 +16,7 @@ import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgr
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
 import { runCustomQuery } from "./sales/custom.js";
+import { DEFAULT_TIME_ZONE, loadSchedule, safeTimeZone, syncSchedule } from "./schedule-data.js";
 import { chat } from "./agent/chat.js";
 import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
 import { assistantError, getAssistant } from "./agent/assistant.js";
@@ -35,6 +37,8 @@ const app = express();
 app.use(express.json());
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
+/** How often auto-sync asks Gmail for new mail (GMAIL_POLL_SECONDS, at least 20, default 60). */
+const POLL_SECONDS = Math.max(20, Number(process.env.GMAIL_POLL_SECONDS) || 60);
 const wrap = (fn) => (req, res) => fn(req, res).catch((err) => res.status(400).json({ error: err.message }));
 
 function publicConnection(conn) {
@@ -50,6 +54,10 @@ function publicConnection(conn) {
     error: conn.error || null,
     connectedAt: conn.createdAt || null,
     syncProgress: conn.syncProgress || null,
+    // Automatic sync (decision #52): on unless the user turned it off; checks every POLL_SECONDS.
+    autoSync: conn.mode === "live" && conn.autoSync !== false,
+    autoSyncCheckedAt: conn.autoSyncCheckedAt || null,
+    autoSyncEverySeconds: POLL_SECONDS,
     mailbox: conn.mailbox || null,
     analysis: conn.analysis
       ? {
@@ -78,20 +86,22 @@ app.get("/api/status", wrap(async (_req, res) => {
   });
 }));
 
-app.get("/api/auth/google/start", (_req, res) => {
+app.get("/api/auth/google/start", (req, res) => {
   if (!googleConfigured()) return res.status(400).send("Google OAuth is not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env.");
-  res.redirect(authUrl());
+  // ?calendar=1 also asks for calendar.app.created (the app's own calendar only), for the Schedule page's sync.
+  res.redirect(authUrl({ calendar: req.query.calendar === "1" }));
 });
 
 app.get("/api/auth/google/callback", async (req, res) => {
   const { code, state, error } = req.query;
-  if (error) return res.redirect(`${APP_URL}/?gmail=denied#/integrations`);
-  if (!code || !consumeState(String(state))) return res.redirect(`${APP_URL}/?gmail=invalid#/integrations`);
+  const back = String(state ?? "").startsWith("cal-") ? "calendar" : "integrations";
+  if (error) return res.redirect(`${APP_URL}/?gmail=denied#/${back}`);
+  if (!code || !consumeState(String(state))) return res.redirect(`${APP_URL}/?gmail=invalid#/${back}`);
   try {
     await handleCallback(String(code));
     // First sync (then AI analysis) runs in the background; status is visible in the UI.
     syncGmail().then(analyseInBackground).catch(() => {});
-    res.redirect(`${APP_URL}/?gmail=connected#/integrations`);
+    res.redirect(`${APP_URL}/?gmail=connected#/${back}`);
   } catch (err) {
     console.error("OAuth callback failed:", err.message);
     res.redirect(`${APP_URL}/?gmail=failed#/integrations`);
@@ -403,6 +413,22 @@ app.put("/api/dashboards/:board", async (req, res) => {
 });
 app.post("/api/dashboards/:board/undo", wrap(async (req, res) => res.json(await undoDashboard(req.params.board))));
 app.post("/api/dashboards/:board/reset", wrap(async (req, res) => res.json(await resetDashboard(req.params.board))));
+// The email schedule (Schedule page): reply tasks, follow-ups, meetings and deadlines built from Gmail data.
+// ?tz= is the browser's time zone, so tasks land in the user's working hours.
+app.get("/api/schedule", wrap(async (req, res) => {
+  res.json(await loadSchedule({ tz: safeTimeZone(String(req.query.tz || DEFAULT_TIME_ZONE)) }));
+}));
+// Writes the schedule to the app's own Google calendar ("AI Workspace OS"). Leaves the workspace, so it needs an
+// explicit approval from the confirm dialog (AGENTS.md rule 4); the model can never call this.
+app.post("/api/schedule/sync", async (req, res) => {
+  try {
+    if (req.body?.approved !== true) return res.status(400).json({ error: "Confirm the sync first." });
+    res.json(await syncSchedule({ tz: safeTimeZone(String(req.body?.tz || DEFAULT_TIME_ZONE)) }));
+  } catch (err) {
+    res.status(400).json({ error: String(err?.message ?? err).slice(0, 300) });
+  }
+});
+
 // The chat's "Remove" button for a widget the assistant added.
 app.delete("/api/dashboards/:board/widgets/:id", async (req, res) => {
   try {
@@ -422,11 +448,23 @@ app.post("/api/sales/custom", async (req, res) => {
   }
 });
 
+// Turn automatic Gmail sync on or off (Integrations page).
+app.put("/api/integrations/gmail/auto-sync", wrap(async (req, res) => {
+  if (typeof req.body?.enabled !== "boolean") return res.status(400).json({ error: "Say whether auto-sync should be on or off." });
+  const r = await getDb().collection("connections").updateOne({ provider: "gmail", mode: "live" }, { $set: { autoSync: req.body.enabled } });
+  if (!r.matchedCount) return res.status(400).json({ error: "Connect your Gmail first." });
+  res.json({ autoSync: req.body.enabled });
+}));
+
 // API_PORT (not PORT): dev tools often set PORT for the web server.
 const port = Number(process.env.API_PORT || 8787);
 connectDb()
   .then(resetStaleAnalysis)
-  .then(() => app.listen(port, () => console.log(`API ready on http://localhost:${port} (MongoDB connected)`)))
+  .then(() => app.listen(port, () => {
+    console.log(`API ready on http://localhost:${port} (MongoDB connected)`);
+    // New mail: a cheap check every POLL_SECONDS, a full sync and AI sorting only when the mailbox changed.
+    createAutoSync({ check: checkForNewMail, sync: syncGmail, after: analyseInBackground, intervalMs: POLL_SECONDS * 1000 }).start();
+  }))
   .catch((err) => {
     console.error("Could not connect to MongoDB:", err.message);
     process.exit(1);

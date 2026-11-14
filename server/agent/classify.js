@@ -19,7 +19,7 @@ import { generateJson, geminiConfigured, geminiModel } from "./llm.js";
 import { READER_VERSION, attachmentsText, messageBody } from "./content.js";
 
 // 3 = reads bodies and attachment text. (2 was used by another branch writing to the shared database.)
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4; // 4: dates the email mentions (`when`), for the schedule
 const DAY = 24 * 60 * 60 * 1000;
 const LOOKBACK_DAYS = 30;
 const BATCH_SIZE = 8; // smaller now that bodies and attachment text are included
@@ -58,6 +58,12 @@ For every thread return:
   or an attachment states the key facts (an amount, a due date, a quantity, a deadline), include them exactly.
 - reason: the evidence for the category, pointing at words in the subject or text (max 120 characters).
 - suggestedAction: a short next step for the user (max 80 characters, start with a verb), or null if none.
+- when: a specific meeting/call time or a deadline for the user that the messages state, or null. kind is "meeting"
+  (a meeting, call, visit or demo with a time) or "deadline" (something the user must do or send by a date). at is
+  the local date-time as "YYYY-MM-DDTHH:mm", or "YYYY-MM-DD" with allDay true when no time is given. Resolve words like
+  "tomorrow", "Thursday" or "next week Monday" from the "sent" date of the message that says them. what is a short
+  label (max 60 characters), e.g. "Site visit in Jounieh" or "Send the revised quote". Use null when no specific day
+  is stated; never guess a date.
 
 Use only what is in the thread. Never invent amounts, dates, names or outcomes. A thread that mentions a proposal
 or invoice does not mean a deal is won or an invoice is unpaid; say only what the text supports.
@@ -79,6 +85,16 @@ const RESPONSE_SCHEMA = {
           summary: { type: "STRING", description: "One plain sentence, max 140 characters" },
           reason: { type: "STRING", description: "Evidence for the category, max 120 characters" },
           suggestedAction: { type: "STRING", nullable: true, description: "Next step, max 80 characters, or null" },
+          when: {
+            type: "OBJECT", nullable: true, description: "A meeting time or deadline the messages state, or null",
+            properties: {
+              kind: { type: "STRING", enum: ["meeting", "deadline"] },
+              at: { type: "STRING", description: "YYYY-MM-DDTHH:mm local time, or YYYY-MM-DD when all day" },
+              allDay: { type: "BOOLEAN" },
+              what: { type: "STRING", description: "Short label, max 60 characters" },
+            },
+            required: ["kind", "at", "allDay", "what"],
+          },
         },
         required: ["id", "category", "priority", "needsReply", "summary", "reason"],
       },
@@ -100,7 +116,29 @@ const Result = z.object({
     .trim()
     .nullish()
     .transform((s) => (s ? clip(100)(s) : null)),
+  // A malformed date is dropped on its own; it never costs the thread its labels.
+  when: z
+    .object({
+      kind: z.enum(["meeting", "deadline"]),
+      at: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/),
+      allDay: z.boolean().default(false),
+      what: z.string().trim().min(1).transform(clip(60)),
+    })
+    .nullish()
+    .catch(null)
+    .transform((w) => w ?? null),
 });
+
+/** Validates one model result (exported for tests). Throws on a result that can't be used. */
+export const parseResult = (raw) => Result.parse(raw);
+
+/** The user's time zone, for the "sent" dates the model resolves "Thursday" against. */
+const TIME_ZONE = process.env.TIME_ZONE || "Asia/Beirut";
+const sentFormat = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+function sentLabel(date) {
+  const p = Object.fromEntries(sentFormat.formatToParts(date).map((x) => [x.type, x.value]));
+  return `${p.weekday} ${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
 
 // ---------- helpers ----------
 
@@ -121,6 +159,7 @@ function threadInput(id, list, selfDomain, now) {
     messages: recent.map((m) => ({
       from: m.direction === "out" ? "you" : `${m.from?.name || "Unknown"} (${domainOf(m.from?.email) || "unknown domain"})`,
       daysAgo: Math.max(0, Math.floor((now - m.date.getTime()) / DAY)),
+      sent: sentLabel(m.date),
       text: m.aiBody || (m.snippet || "").slice(0, SNIPPET_CHARS),
       ...(m.aiAttachments?.length ? { attachments: m.aiAttachments } : {}),
     })),
