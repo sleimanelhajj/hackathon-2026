@@ -8,6 +8,9 @@ Read this first before contributing (humans and AI assistants alike).
 | [README.md](README.md) | This overview: idea, scope, status |
 | [product-blueprint.md](product-blueprint.md) | Full PRD / architecture / MVP plan (the original idea document) |
 | [roadmap.md](roadmap.md) | **What to build next, in order, how, and with which packages** (drag-and-drop, agent, drafts, RBAC, …) |
+| [gmail-data.md](gmail-data.md) | **Everything Gmail returns** (formats, message structure, headers, labels, threads, history), quotas, and which default business rules each field supports |
+| [business-rules.md](business-rules.md) | **The 14 default business rules** (no inference, Gmail fields only): exactly what each counts, with sample values |
+| [agent-gmail.md](agent-gmail.md) | **What the agent should fetch from Gmail**: tools, limits, prompt budget, custom-rule DSL (read before building the agent) |
 | [decisions.md](decisions.md) | Log of decisions made so far and open questions |
 | [tech-stack.md](tech-stack.md) | Libraries, tools, and project setup |
 
@@ -70,6 +73,6 @@ Blank workspace → connect Gmail → *"I'm a sales manager, build me a dashboar
 
 - ✅ Repo + React/Vite/TypeScript scaffold with dashboard libraries installed.
 - ✅ Figma UI design: [AI Workspace OS — UI](https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h). Screens: onboarding, member dashboard + agent, edit layout (drag & drop), draft approval modal, admin RBAC & tailoring, action center, integrations. Product record: [../PRODUCT.md](../PRODUCT.md).
-- ⏳ No backend yet (needed for OAuth, LLM calls, DB).
-- ⏳ UI is a placeholder page.
-- Next: build the dashboard shell + widget renderer on mock data, then add backend + Gmail.
+- ✅ Express/MongoDB backend, Gmail connect/sync, labelled sample data, dashboard and Email data pages.
+- ✅ Free-position dashboard editing with corner resizing, saved coordinates, library drag/drop, keyboard controls, and responsive layouts.
+- Next: agent chat and prompt-generated dashboards (see `roadmap.md`).

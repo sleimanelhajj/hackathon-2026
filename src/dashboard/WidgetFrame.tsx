@@ -1,65 +1,85 @@
-import { memo } from "react";
-import { ChevronDown, GripVertical, X } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
+import { ChevronDown, GripVertical, Settings2, Trash2 } from "lucide-react";
 import type { Widget } from "../lib/api";
 import { REGISTRY, WidgetBody } from "../widgets/registry";
 import { WidgetErrorBoundary } from "./ErrorBoundary";
+import type { Size } from "./layout";
 
 type Props = {
   widget: Widget;
   editing: boolean;
   collapsed: boolean;
+  size: Size;
   onToggleCollapse: (id: string) => void;
   onRemove: (id: string) => void;
   onChange: (widget: Widget) => void;
+  onResize: (id: string, size: Size) => void;
+  onMove: (id: string, dx: number, dy: number, resize: boolean) => void;
 };
 
-/** The card around every widget: title, drag handle and settings in edit mode, fold toggle in view mode. */
-export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapsed, onToggleCollapse, onRemove, onChange }: Props) {
+export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapsed, size, onToggleCollapse, onRemove, onChange, onResize, onMove }: Props) {
   const def = REGISTRY[widget.type];
   const canCollapse = def.collapsible && !editing;
   const bodyId = `widget-body-${widget.id}`;
-  const isStat = widget.type === "stat";
+  const [configOpen, setConfigOpen] = useState(false);
+  const configRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!configOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (!configRef.current?.contains(event.target as Node) && !settingsRef.current?.contains(event.target as Node)) setConfigOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setConfigOpen(false); settingsRef.current?.focus(); }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, [configOpen]);
 
   return (
-    <section className="widget" data-editing={editing} data-collapsed={collapsed && !editing} data-kind={widget.type} aria-label={widget.title}>
+    <section className="widget" data-editing={editing} data-config-open={configOpen && editing || undefined}
+      data-collapsed={collapsed && !editing} data-kind={widget.type} aria-label={widget.title}>
       <header className="widget-head">
-        {editing && (
-          <span className="widget-handle" title="Drag to move" aria-hidden>
-            <GripVertical size={16} />
-          </span>
-        )}
-        {canCollapse ? (
+        {editing ? (
+          <div className="widget-handle" role="button" tabIndex={0} aria-label={`Move ${widget.title}`} aria-describedby="grid-keyboard-help"
+            title="Drag to move. Arrow keys move; Shift + arrows resize."
+            onKeyDown={(event) => {
+              const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+              const direction = directions[event.key];
+              if (direction) { event.preventDefault(); event.stopPropagation(); onMove(widget.id, ...direction, event.shiftKey); }
+            }}>
+            <GripVertical size={15} aria-hidden /><span className="widget-title">{widget.title}</span>
+          </div>
+        ) : canCollapse ? (
           <button className="widget-title-btn" aria-expanded={!collapsed} aria-controls={bodyId} onClick={() => onToggleCollapse(widget.id)}>
-            <ChevronDown size={16} className="widget-chevron" aria-hidden />
-            <h2 className="widget-title">{widget.title}</h2>
+            <ChevronDown size={16} className="widget-chevron" aria-hidden /><h2 className="widget-title">{widget.title}</h2>
           </button>
-        ) : (
-          <h2 className={isStat ? "widget-title widget-title-stat" : "widget-title"}>{widget.title}</h2>
-        )}
-        {editing && def.setting && (
-          <label className="widget-setting">
-            <span className="sr-only">{def.setting.label}</span>
-            <select
-              value={String(def.setting.get(widget))}
-              onChange={(e) => onChange(def.setting!.set(widget, e.target.value))}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              {def.setting.options.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
-        )}
-        {editing && (
-          <button className="icon-btn icon-btn-sm" onClick={() => onRemove(widget.id)} aria-label={`Remove ${widget.title}`} title="Remove widget">
-            <X size={15} />
-          </button>
-        )}
+        ) : <h2 className={widget.type === "stat" ? "widget-title widget-title-stat" : "widget-title"}>{widget.title}</h2>}
+        {editing && <button ref={settingsRef} className="icon-btn icon-btn-sm" aria-label={`Configure ${widget.title}`}
+          aria-expanded={configOpen} aria-controls={`widget-config-${widget.id}`} onClick={() => setConfigOpen((open) => !open)}><Settings2 size={15} /></button>}
       </header>
+      {editing && configOpen && <div ref={configRef} id={`widget-config-${widget.id}`} className="widget-config" role="group" aria-label={`Settings for ${widget.title}`}>
+        <strong>Widget settings</strong>
+        {def.setting && <label className="widget-setting"><span>{def.setting.label}</span>
+          <select value={String(def.setting.get(widget))} onChange={(event) => onChange(def.setting!.set(widget, event.target.value))}>
+            {def.setting.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select></label>}
+        <div className="widget-dimensions">
+          <label>Width<input type="number" min={2} max={12} value={size.w} onChange={(event) => {
+            const value = event.target.valueAsNumber;
+            if (Number.isFinite(value)) onResize(widget.id, { ...size, w: Math.max(2, Math.min(12, value)) });
+          }} /></label>
+          <label>Height<input type="number" min={3} max={30} value={size.h} onChange={(event) => {
+            const value = event.target.valueAsNumber;
+            if (Number.isFinite(value)) onResize(widget.id, { ...size, h: Math.max(3, Math.min(30, value)) });
+          }} /></label>
+        </div>
+        <button className="btn btn-ghost widget-remove" onClick={() => onRemove(widget.id)}><Trash2 size={14} /> Remove widget</button>
+      </div>}
       <div className="widget-body" id={bodyId} hidden={collapsed && !editing}>
-        <WidgetErrorBoundary>
-          <WidgetBody widget={widget} />
-        </WidgetErrorBoundary>
+        <WidgetErrorBoundary><WidgetBody widget={widget} /></WidgetErrorBoundary>
       </div>
     </section>
   );

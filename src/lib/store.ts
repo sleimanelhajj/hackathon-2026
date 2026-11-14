@@ -42,10 +42,13 @@ export const useUi = create<UiState>()(
   )
 );
 
-export type Route = "dashboard" | "integrations";
+export type Route = "dashboard" | "integrations" | "data";
 
 function readRoute(): Route {
-  return window.location.hash.startsWith("#/integrations") ? "integrations" : "dashboard";
+  const h = window.location.hash;
+  if (h.startsWith("#/integrations")) return "integrations";
+  if (h.startsWith("#/data")) return "data";
+  return "dashboard";
 }
 
 export function useRoute(): Route {

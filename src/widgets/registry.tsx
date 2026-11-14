@@ -1,10 +1,12 @@
 import { lazy, Suspense, type ComponentType } from "react";
-import { BarChart3, Hash, ListTodo, Users, type LucideIcon } from "lucide-react";
-import { STAT_LABELS } from "../../shared/spec.js";
+import { BarChart3, Filter, Hash, ListTodo, PieChart, Users, type LucideIcon } from "lucide-react";
+import { BREAKDOWN_RULES, LIST_RULES, STAT_LABELS } from "../../shared/spec.js";
 import type { Widget, WidgetType } from "../lib/api";
 import { StatWidget } from "./StatWidget";
 import { ThreadListWidget } from "./ThreadListWidget";
 import { TopPeopleWidget } from "./TopPeopleWidget";
+import { RuleListWidget } from "./RuleListWidget";
+import { BreakdownWidget } from "./BreakdownWidget";
 
 const ActivityChartWidget = lazy(() => import("./ActivityChartWidget"));
 
@@ -48,6 +50,28 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
       options: Object.entries(LIST_TITLES).map(([value, label]) => ({ value, label })),
       get: (w) => (w.type === "thread-list" ? w.list : ""),
       set: (w, v) => (w.type === "thread-list" ? { ...w, list: v as typeof w.list, title: LIST_TITLES[v as typeof w.list] } : w),
+    },
+  },
+  "rule-list": {
+    icon: Filter,
+    component: RuleListWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Rule",
+      options: Object.entries(LIST_RULES).map(([value, r]) => ({ value, label: r.title })),
+      get: (w) => (w.type === "rule-list" ? w.rule : ""),
+      set: (w, v) => (w.type === "rule-list" ? { ...w, rule: v as typeof w.rule, title: LIST_RULES[v as typeof w.rule].title } : w),
+    },
+  },
+  breakdown: {
+    icon: PieChart,
+    component: BreakdownWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: Object.entries(BREAKDOWN_RULES).map(([value, r]) => ({ value, label: r.title })),
+      get: (w) => (w.type === "breakdown" ? w.rule : ""),
+      set: (w, v) => (w.type === "breakdown" ? { ...w, rule: v as typeof w.rule, title: BREAKDOWN_RULES[v as typeof w.rule].title } : w),
     },
   },
   "activity-chart": {

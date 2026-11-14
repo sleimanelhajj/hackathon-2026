@@ -8,7 +8,7 @@ description: Add a new widget type (metric, list, chart) to the AI Workspace OS 
 ## How the dashboard works
 
 - A dashboard is **data**: `{ title, widgets[], layout[] }`, validated by `DashboardSpec` in `shared/spec.js` (used by both server and client).
-- Widgets are placed by `react-grid-layout` v2 (`src/dashboard/DashboardGrid.tsx`). Only the 12-column desktop layout is saved; tablet (6 cols) and phone (2 cols) layouts are derived in `src/dashboard/layout.ts`.
+- The canvas is **GridStack** (`src/dashboard/DashboardGrid.tsx`, `mode: "float"`): 12 columns, row unit 40px (24px + 16px gap). Cards stay where they are dropped, dropping onto a card pushes it down, and empty space is kept. The saved `layout[]` is the real `{i,x,y,w,h}` per widget. Under 640px wide GridStack switches to one column; changes made there are not saved.
 - Numbers come from one server call, `GET /api/dashboard` (`server/dashboard.js`), shared with every widget through `DashboardDataProvider` / `useDashboardData()`.
 - Layout changes are saved with `PUT /api/dashboards/default` (version-checked); undo and reset are separate endpoints.
 
@@ -21,7 +21,7 @@ No widget may show a number the data can't support. If the source isn't connecte
 1. **Data (server):** add the computation to `buildDashboard()` in `server/dashboard.js`. Keep it deterministic and bounded; exclude automated senders when counting people.
 2. **Spec (shared):** in `shared/spec.js`:
    - add a variant to the `Widget` discriminated union. Keep its options narrow: enums and bounded numbers, never free-form queries.
-   - add a `CATALOG` entry: `label`, `description`, `size { w, h, minW, minH, maxH? }` in grid units (1 row = 24px + 16px gap), and `create()`.
+   - add a `CATALOG` entry: `label`, `description`, default `size { w, h }` (w in 12ths: 3/4/6/8/12; h in rows of 24px + 16px gap: 6/9/12, number cards 3), and `create()`.
 3. **Types:** extend the `Dashboard` type in `src/lib/api.ts` with the new data field.
 4. **Component:** `src/widgets/<Name>Widget.tsx`:
    - wrap it in `memo` and read data with `useDashboardData()`
@@ -34,16 +34,17 @@ No widget may show a number the data can't support. If the source isn't connecte
 
 ## React rules this codebase follows
 
-- Callbacks passed into the grid or into widgets are `useCallback`-stable; grid children are built in `useMemo`. The grid re-renders on every drag frame.
+- Callbacks passed into the grid or into widgets are `useCallback`-stable; cards are `memo`ized, so a drag only re-renders what moves.
 - Widgets never fetch on their own; they read the shared data context.
 - Each widget is wrapped in `WidgetErrorBoundary` (done by `WidgetFrame`), so one failure doesn't blank the page.
-- Never feed intermediate layouts back into the grid during a drag: commit on `onDragStop`/`onResizeStop` only (see `DashboardGrid`). The saved spec lives in react-query (`["dashboard-spec"]`); edits live in the page's `draft`.
-- Grid CSS overrides must be prefixed with `.grid-host` (the library stylesheet loads later and wins ties).
-- `react-grid-layout` is pinned to 2.3.0. `DashboardGrid` passes a fresh `onDrag`/`onResize` each move (the `nudge` workaround) because that version only redraws the dragged item when it changes grid cell. Re-test drag smoothness before upgrading.
+- Drag and drop is **GridStack only**; don't add another drag library or HTML5 drag events. React renders one `.grid-stack-item` per widget; `DashboardGrid` registers new ones with `grid.makeWidget`, unregisters removed ones, and applies outside changes (keyboard moves, size inputs, reset) with `grid.update`. Finished gestures come back through GridStack's `change` and `dropped` events. Panel entries are registered with `GridStack.setupDragIn` (class `library-drag`, id `new:<type>`, catalogue size).
+- The card drag handle (`.widget-handle`) must not be a `<button>`: GridStack ignores mousedown on buttons, inputs and selects. It is a `div role="button" tabIndex=0`.
+- GridStack CSS overrides in `src/index.css` are prefixed with `.dashboard-canvas` so they win over the library stylesheet.
+- The saved spec lives in react-query (`["dashboard-spec"]`); edits live in the page's `draft` ({ widgets, order, sizes }).
 
 ## Done means
 
-- The widget can be added from the library (drag **and** the Add button), configured, moved, resized, removed, saved, undone.
-- It reads well at desktop, tablet (derived 6 columns) and phone (2 columns) widths, and when folded.
+- The widget can be added from the panel (drag **and** the + button), configured, moved (mouse and keyboard), resized with the size buttons, removed, saved, undone.
+- It reads well at every width it can be set to, on narrow screens, and when folded.
 - It works with sample data and a real Gmail account.
 - `npx tsc --noEmit` and `npm run build` pass.

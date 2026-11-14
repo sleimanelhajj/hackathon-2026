@@ -1,15 +1,27 @@
 import { getDb } from "./db.js";
-import { DashboardSpec, DEFAULT_SPEC } from "../shared/spec.js";
+import { DashboardSpec, DEFAULT_SPEC, Widget } from "../shared/spec.js";
 
 // One dashboard per workspace for now ("default"). Feature 6 (RBAC) adds per-person copies.
 const ID = "default";
 
+/**
+ * Saved layouts can contain widgets whose type or rule was later removed from the catalogue
+ * (e.g. the keyword rules dropped on 2026-11-14). Drop those and their grid slots instead of
+ * failing, so old dashboards keep loading.
+ */
+function sanitize(widgets = [], layout = []) {
+  const valid = widgets.filter((w) => Widget.safeParse(w).success);
+  const ids = new Set(valid.map((w) => w.id));
+  return { widgets: valid, layout: layout.filter((l) => ids.has(l.i)) };
+}
+
 function publicSpec(doc) {
+  const { widgets, layout } = sanitize(doc.widgets, doc.layout);
   return {
     id: doc._id,
     title: doc.title,
-    widgets: doc.widgets,
-    layout: doc.layout,
+    widgets,
+    layout,
     version: doc.version,
     canUndo: Boolean(doc.previous),
     updatedAt: doc.updatedAt,

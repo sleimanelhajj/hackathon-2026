@@ -4,6 +4,7 @@ import { connectDb, getDb, pingDb } from "./db.js";
 import { authUrl, consumeState, disconnectGmail, googleConfigured, handleCallback, syncGmail } from "./gmail.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
+import { decrypt } from "./crypto.js";
 import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
 
 const app = express();
@@ -23,6 +24,8 @@ function publicConnection(conn) {
     lastSyncCount: conn.lastSyncCount ?? null,
     error: conn.error || null,
     connectedAt: conn.createdAt || null,
+    syncProgress: conn.syncProgress || null,
+    mailbox: conn.mailbox || null,
   };
 }
 
@@ -57,6 +60,36 @@ app.delete("/api/integrations/gmail", wrap(async (_req, res) => {
   res.json({ ok: true });
 }));
 app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboard())));
+
+// Inspect what's stored per email (for the team, to see exactly what Gmail gave us).
+// Local dev server only; there is no auth yet.
+// GET /api/messages?limit=50&page=0&q=lena&direction=in
+app.get("/api/messages", wrap(async (req, res) => {
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+  const page = Math.max(0, Number(req.query.page) || 0);
+  const filter = {};
+  const q = String(req.query.q || "").trim().slice(0, 100);
+  if (q) {
+    const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$or = [{ subject: rx }, { snippet: rx }, { "from.email": rx }, { "from.name": rx }, { "to.email": rx }, { "attachments.filename": rx }];
+  }
+  if (req.query.direction === "in" || req.query.direction === "out") filter.direction = req.query.direction;
+  const col = getDb().collection("messages");
+  const [docs, total, all] = await Promise.all([
+    col.find(filter, { projection: { bodyEnc: 0, headers: 0, _id: 0 } }).sort({ date: -1 }).skip(page * limit).limit(limit).toArray(),
+    col.countDocuments(filter),
+    col.countDocuments(),
+  ]);
+  res.json({ total, all, page, limit, messages: docs });
+}));
+app.get("/api/messages/:gmailId", wrap(async (req, res) => {
+  const doc = await getDb().collection("messages").findOne({ gmailId: req.params.gmailId });
+  if (!doc) return res.status(404).json({ error: "Not found" });
+  const { bodyEnc, _id, ...rest } = doc;
+  let bodyText = null;
+  try { bodyText = bodyEnc ? decrypt(bodyEnc) : null; } catch { bodyText = "(can't decrypt: different TOKEN_SECRET)"; }
+  res.json({ ...rest, bodyText });
+}));
 
 // Dashboard layout spec (widgets + grid positions)
 app.get("/api/dashboards/default", wrap(async (_req, res) => res.json(await getDashboard())));

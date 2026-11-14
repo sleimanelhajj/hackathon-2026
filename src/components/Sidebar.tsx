@@ -1,16 +1,29 @@
-import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Database, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles } from "lucide-react";
 import { useUi, type Route } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { timeAgo } from "../lib/api";
 
 const NAV: { route: Route; label: string; icon: typeof Plug }[] = [
   { route: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { route: "data", label: "Email data", icon: Database },
   { route: "integrations", label: "Integrations", icon: Plug },
 ];
 
 export function Sidebar({ route }: { route: Route }) {
-  const collapsed = useUi((s) => s.sidebarCollapsed);
-  const toggle = useUi((s) => s.toggleSidebar);
+  const desktopCollapsed = useUi((s) => s.sidebarCollapsed);
+  const toggleDesktop = useUi((s) => s.toggleSidebar);
+  const [phone, setPhone] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const change = () => setPhone(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useEffect(() => setMobileOpen(false), [route, phone]);
+  const collapsed = phone ? !mobileOpen : desktopCollapsed;
+  const toggle = () => phone ? setMobileOpen((open) => !open) : toggleDesktop();
   const { data } = useStatus();
   const gmail = data?.gmail;
 
@@ -26,6 +39,7 @@ export function Sidebar({ route }: { route: Route }) {
           : `Synced ${timeAgo(gmail.lastSyncAt)}`;
 
   return (
+    <>
     <aside className="sidebar" data-collapsed={collapsed} aria-label="Main navigation">
       <div className="sidebar-top">
         <div className="brand">
@@ -71,5 +85,7 @@ export function Sidebar({ route }: { route: Route }) {
         </a>
       </div>
     </aside>
+    {phone && mobileOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
+    </>
   );
 }

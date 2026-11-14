@@ -1,10 +1,11 @@
 import crypto from "node:crypto";
 import { getDb } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
+import { normalizeMessage } from "./gmail-parse.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
-const LOOKBACK_DAYS = 30;
-const MAX_MESSAGES = 300;
+const LOOKBACK_DAYS = Number(process.env.GMAIL_LOOKBACK_DAYS || 30);
+const MAX_MESSAGES = Number(process.env.GMAIL_MAX_MESSAGES || 300);
 
 // Short-lived OAuth state values (CSRF protection). In-memory is fine for a single dev server.
 const pendingStates = new Map();
@@ -61,8 +62,14 @@ export async function handleCallback(code) {
     refresh_token: tok.refresh_token,
     expires_at: Date.now() + (tok.expires_in - 60) * 1000,
   };
-  const profile = await gmailFetch(tokens.access_token, "profile");
+  const profile = await gmailFetch(tokens.access_token, "profile", 1);
   const now = new Date();
+  const existing = await getDb().collection("connections").findOne({ provider: "gmail" });
+  // Switching accounts or replacing sample data: start from a clean store.
+  if (!existing || existing.mode !== "live" || existing.email !== profile.emailAddress) {
+    await getDb().collection("messages").deleteMany({});
+    await getDb().collection("labels").deleteMany({});
+  }
   await getDb().collection("connections").updateOne(
     { provider: "gmail" },
     {
@@ -74,6 +81,7 @@ export async function handleCallback(code) {
         tokens: encrypt(tokens),
         status: "connected",
         error: null,
+        historyId: existing?.mode === "live" && existing.email === profile.emailAddress ? existing.historyId ?? null : null,
         updatedAt: now,
       },
       $setOnInsert: { createdAt: now },
@@ -92,19 +100,52 @@ async function accessToken(conn) {
   return next.access_token;
 }
 
-async function gmailFetch(token, path) {
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 401 || res.status === 403) throw new Error("Google refused access. Reconnect Gmail.");
-  if (!res.ok) throw new Error(`Gmail API error ${res.status}`);
-  return res.json();
+// ---------------------------------------------------------------------------
+// Gmail API access with quota pacing.
+// Gmail allows 6,000 quota units per user per minute. messages.get with format=full costs 60
+// (20 for minimal/metadata), messages.list 5, history.list 2, labels.list 1, getProfile 1.
+// We keep a rolling one-minute budget below the limit and retry 429 / rate-limit 403s with backoff.
+// ---------------------------------------------------------------------------
+const QUOTA_PER_MINUTE = 5400;
+const spent = []; // [timestamp, units]
+
+async function takeQuota(units) {
+  for (;;) {
+    const now = Date.now();
+    while (spent.length && now - spent[0][0] > 60_000) spent.shift();
+    const used = spent.reduce((s, [, u]) => s + u, 0);
+    if (used + units <= QUOTA_PER_MINUTE) {
+      spent.push([now, units]);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, Math.max(250, 60_000 - (now - spent[0][0]))));
+  }
 }
 
-function parseAddress(raw = "") {
-  const m = raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>/);
-  if (m) return { name: m[1].trim() || m[2], email: m[2].toLowerCase() };
-  return { name: raw.trim(), email: raw.trim().toLowerCase() };
+class GmailHttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function gmailFetch(token, path, units = 5) {
+  for (let attempt = 0; ; attempt++) {
+    await takeQuota(units);
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) return res.json();
+    const body = await res.json().catch(() => ({}));
+    const reason = body?.error?.errors?.[0]?.reason || "";
+    const rateLimited = res.status === 429 || (res.status === 403 && /rateLimit|userRateLimit/i.test(reason));
+    if (rateLimited && attempt < 5) {
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt + Math.random() * 500));
+      continue;
+    }
+    if (res.status === 401 || res.status === 403) throw new GmailHttpError(res.status, "Google refused access. Reconnect Gmail.");
+    throw new GmailHttpError(res.status, `Gmail API error ${res.status}${reason ? ` (${reason})` : ""}`);
+  }
 }
 
 async function mapLimit(items, limit, fn) {
@@ -113,13 +154,88 @@ async function mapLimit(items, limit, fn) {
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (i < items.length) {
       const idx = i++;
-      out[idx] = await fn(items[idx]);
+      out[idx] = await fn(items[idx], idx);
     }
   });
   await Promise.all(workers);
   return out;
 }
 
+async function setProgress(connId, done, total, phase) {
+  await getDb().collection("connections").updateOne({ _id: connId }, { $set: { syncProgress: { done, total, phase } } });
+}
+
+/** Labels with unread/total counts (1 + 1 unit per label). */
+async function syncLabels(token) {
+  const { labels = [] } = await gmailFetch(token, "labels", 1);
+  const detailed = await mapLimit(labels, 4, (l) => gmailFetch(token, `labels/${encodeURIComponent(l.id)}`, 1));
+  const col = getDb().collection("labels");
+  await col.deleteMany({});
+  if (detailed.length)
+    await col.insertMany(
+      detailed.map((l) => ({
+        labelId: l.id,
+        name: l.name,
+        type: l.type,
+        messagesTotal: l.messagesTotal ?? 0,
+        messagesUnread: l.messagesUnread ?? 0,
+        threadsTotal: l.threadsTotal ?? 0,
+        threadsUnread: l.threadsUnread ?? 0,
+        color: l.color ?? null,
+      }))
+    );
+  return detailed.length;
+}
+
+/**
+ * Applies label changes / deletions since the last sync using history.list (2 units/page).
+ * Returns false when the stored historyId is too old (404): the caller then refreshes labels the slow way.
+ */
+async function applyHistory(token, startHistoryId) {
+  const col = getDb().collection("messages");
+  let pageToken;
+  try {
+    do {
+      const types = ["labelAdded", "labelRemoved", "messageDeleted"].map((t) => `historyTypes=${t}`).join("&");
+      const page = await gmailFetch(token, `history?startHistoryId=${startHistoryId}&${types}&maxResults=500${pageToken ? `&pageToken=${pageToken}` : ""}`, 2);
+      for (const h of page.history || []) {
+        for (const a of h.labelsAdded || [])
+          await col.updateOne({ gmailId: a.message.id }, { $addToSet: { labelIds: { $each: a.labelIds } } });
+        for (const r of h.labelsRemoved || [])
+          await col.updateOne({ gmailId: r.message.id }, { $pull: { labelIds: { $in: r.labelIds } } });
+        for (const d of h.messagesDeleted || []) await col.deleteOne({ gmailId: d.message.id });
+      }
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+    return true;
+  } catch (err) {
+    if (err instanceof GmailHttpError && err.status === 404) return false;
+    throw err;
+  }
+}
+
+/** Keeps the label-derived flags in step with labelIds after history updates. */
+async function refreshLabelFlags() {
+  const col = getDb().collection("messages");
+  await col.updateMany({ source: "gmail" }, [
+    {
+      $set: {
+        isUnread: { $in: ["UNREAD", "$labelIds"] },
+        isStarred: { $in: ["STARRED", "$labelIds"] },
+        isImportant: { $in: ["IMPORTANT", "$labelIds"] },
+      },
+    },
+  ]);
+}
+
+/**
+ * Full sync, step by step:
+ *  1. profile (totals + historyId)        2. labels with counts
+ *  3. label changes since last sync (history.list), cheap
+ *  4. list message IDs in the lookback window (all categories, no spam/trash)
+ *  5. fetch only NEW messages with format=full → headers, body, attachments
+ *  6. drop messages that fell out of the window
+ */
 export async function syncGmail() {
   const db = getDb();
   const conn = await db.collection("connections").findOne({ provider: "gmail" });
@@ -128,54 +244,73 @@ export async function syncGmail() {
   await db.collection("connections").updateOne({ _id: conn._id }, { $set: { status: "syncing", error: null } });
   try {
     const token = await accessToken(conn);
+    await setProgress(conn._id, 0, 0, "Reading your mailbox");
+    const profile = await gmailFetch(token, "profile", 1);
+    await syncLabels(token);
+
+    const col = db.collection("messages");
+    if (conn.historyId) {
+      const ok = await applyHistory(token, conn.historyId);
+      if (!ok) await col.deleteMany({ source: "gmail" }); // history expired: re-import cleanly
+      else await refreshLabelFlags();
+    }
+
     const ids = [];
     let pageToken;
     do {
-      const q = encodeURIComponent(`newer_than:${LOOKBACK_DAYS}d -category:promotions -category:social`);
-      const page = await gmailFetch(token, `messages?q=${q}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ""}`);
+      const q = encodeURIComponent(`newer_than:${LOOKBACK_DAYS}d`);
+      const page = await gmailFetch(token, `messages?q=${q}&maxResults=500${pageToken ? `&pageToken=${pageToken}` : ""}`, 5);
       ids.push(...(page.messages || []).map((m) => m.id));
       pageToken = page.nextPageToken;
     } while (pageToken && ids.length < MAX_MESSAGES);
+    const wanted = ids.slice(0, MAX_MESSAGES);
 
-    const self = conn.email.toLowerCase();
-    const metas = await mapLimit(ids.slice(0, MAX_MESSAGES), 8, (id) =>
-      gmailFetch(token, `messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`)
-    );
+    const have = new Set((await col.find({ gmailId: { $in: wanted } }, { projection: { gmailId: 1 } }).toArray()).map((d) => d.gmailId));
+    const fresh = wanted.filter((id) => !have.has(id));
 
-    const ops = metas.map((m) => {
-      const h = Object.fromEntries((m.payload?.headers || []).map((x) => [x.name.toLowerCase(), x.value]));
-      const from = parseAddress(h.from);
-      const labels = m.labelIds || [];
-      return {
-        updateOne: {
-          filter: { gmailId: m.id },
-          update: {
-            $set: {
-              gmailId: m.id,
-              threadId: m.threadId,
-              from,
-              to: h.to || "",
-              subject: h.subject || "(no subject)",
-              snippet: m.snippet || "",
-              date: new Date(Number(m.internalDate)),
-              labelIds: labels,
-              direction: labels.includes("SENT") || from.email === self ? "out" : "in",
-              source: "gmail",
-            },
+    let done = 0;
+    await setProgress(conn._id, 0, fresh.length, "Importing email");
+    const BATCH = 25;
+    for (let i = 0; i < fresh.length; i += BATCH) {
+      const slice = fresh.slice(i, i + BATCH);
+      const full = await mapLimit(slice, 4, (id) => gmailFetch(token, `messages/${id}?format=full`, 60));
+      const ops = full.map((m) => {
+        const { doc, bodyText } = normalizeMessage(m, conn.email);
+        return {
+          updateOne: {
+            filter: { gmailId: doc.gmailId },
+            update: { $set: { ...doc, bodyEnc: bodyText ? encrypt(bodyText) : null, syncedAt: new Date() } },
+            upsert: true,
           },
-          upsert: true,
-        },
-      };
-    });
-    if (ops.length) await db.collection("messages").bulkWrite(ops, { ordered: false });
+        };
+      });
+      if (ops.length) await col.bulkWrite(ops, { ordered: false });
+      done += slice.length;
+      await setProgress(conn._id, done, fresh.length, "Importing email");
+    }
 
+    // Keep the store bounded to the window we show.
+    await col.deleteMany({ source: "gmail", gmailId: { $nin: wanted } });
+
+    const count = await col.countDocuments({ source: "gmail" });
     await db.collection("connections").updateOne(
       { _id: conn._id },
-      { $set: { status: "connected", lastSyncAt: new Date(), lastSyncCount: ops.length, error: null } }
+      {
+        $set: {
+          status: "connected",
+          lastSyncAt: new Date(),
+          lastSyncCount: count,
+          lastSyncNew: fresh.length,
+          historyId: profile.historyId,
+          mailbox: { messagesTotal: profile.messagesTotal, threadsTotal: profile.threadsTotal },
+          error: null,
+          syncProgress: null,
+        },
+      }
     );
-    return { count: ops.length };
+    return { count, new: fresh.length };
   } catch (err) {
-    await db.collection("connections").updateOne({ _id: conn._id }, { $set: { status: "error", error: err.message } });
+    await db.collection("connections").updateOne({ _id: conn._id }, { $set: { status: "error", error: err.message, syncProgress: null } });
     throw err;
   }
 }
@@ -192,5 +327,6 @@ export async function disconnectGmail() {
     }
   }
   await db.collection("messages").deleteMany({});
+  await db.collection("labels").deleteMany({});
   await db.collection("connections").deleteOne({ provider: "gmail" });
 }

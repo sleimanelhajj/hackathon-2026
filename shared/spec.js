@@ -6,8 +6,16 @@ import { z } from "zod";
 export const GRID_COLS = 12;
 
 // Declared inline in z.enum so TypeScript keeps the literal values.
-export const StatMetric = z.enum(["awaitingYou", "awaitingThem", "received", "sent", "people"]);
+export const StatMetric = z.enum([
+  "awaitingYou", "awaitingThem", "received", "sent", "people",
+  "unreadImportant", "starred", "newContacts", "attachments",
+  "meetingInvites", "ccOnly", "newsletters", "yourReplyHours", "theirReplyHours",
+]);
 export const ThreadList = z.enum(["awaitingYou", "awaitingThem"]);
+export const ListRule = z.enum([
+  "unreadImportant", "starred", "newContacts", "attachments", "meetingInvites", "ccOnly",
+]);
+export const BreakdownRule = z.enum(["topDomains", "newsletters", "busiestHours", "labels"]);
 
 const id = z.string().regex(/^[a-z0-9-]{1,40}$/);
 const title = z.string().trim().min(1).max(60);
@@ -15,9 +23,32 @@ const title = z.string().trim().min(1).max(60);
 export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("stat"), title, metric: StatMetric }),
   z.object({ id, type: z.literal("thread-list"), title, list: ThreadList }),
+  z.object({ id, type: z.literal("rule-list"), title, rule: ListRule }),
+  z.object({ id, type: z.literal("breakdown"), title, rule: BreakdownRule }),
   z.object({ id, type: z.literal("activity-chart"), title, days: z.number().int().min(7).max(30) }),
   z.object({ id, type: z.literal("top-people"), title, limit: z.number().int().min(3).max(10) }),
 ]);
+
+// ---------------------------------------------------------------------------
+// Default business rules. Computed on the server in server/dashboard.js.
+// `how` is shown under each widget so users know exactly what's counted.
+// ---------------------------------------------------------------------------
+export const LIST_RULES = {
+  unreadImportant: { title: "Unread and important", how: "Unread, marked Important by Gmail, newsletters left out.", empty: "Nothing important is unread." },
+  starred: { title: "Starred", how: "Emails you starred in Gmail.", empty: "No starred emails." },
+  newContacts: { title: "New contacts this week", how: "People who emailed you for the first time in the last 7 days (external only).", empty: "No new contacts this week." },
+  attachments: { title: "Emails with attachments", how: "Received emails with real attachments (inline images left out).", empty: "No attachments received." },
+  meetingInvites: { title: "Meeting invites", how: "Emails that carry a calendar invite (.ics attachment).", empty: "No meeting invites." },
+  ccOnly: { title: "You're only Cc'd", how: "You're in Cc but not in To, usually lower priority.", empty: "No Cc-only emails." },
+};
+
+export const BREAKDOWN_RULES = {
+  topDomains: { title: "Top companies", how: "External sender domains by number of emails." },
+  newsletters: { title: "Newsletters and notifications", how: "Bulk senders (unsubscribe link, mailing list, Promotions/Updates tabs)." },
+  busiestHours: { title: "When email arrives", how: "Emails from people by hour of day (your computer's time zone)." },
+  labels: { title: "Unread by label", how: "Gmail's own unread counts per label, across your whole mailbox." },
+};
+
 
 export const LayoutItem = z.object({
   i: id,
@@ -51,7 +82,7 @@ export const DashboardSpec = z
 export const CATALOG = {
   stat: {
     label: "Number",
-    description: "One number, like replies waiting on you",
+    description: "One number: waiting on you, unread important, reply time…",
     size: { w: 3, h: 3, minW: 2, minH: 3, maxH: 4 },
     create: () => ({ type: "stat", title: "Waiting on you", metric: "awaitingYou" }),
   },
@@ -60,6 +91,18 @@ export const CATALOG = {
     description: "Threads waiting on you or on them",
     size: { w: 6, h: 9, minW: 4, minH: 5 },
     create: () => ({ type: "thread-list", title: "Waiting on your reply", list: "awaitingYou" }),
+  },
+  "rule-list": {
+    label: "Rule list",
+    description: "Emails matching a rule: starred, attachments, invites…",
+    size: { w: 6, h: 9, minW: 4, minH: 5 },
+    create: () => ({ type: "rule-list", title: "Unread and important", rule: "unreadImportant" }),
+  },
+  breakdown: {
+    label: "Breakdown",
+    description: "Top companies, newsletters, busiest hours, labels",
+    size: { w: 4, h: 8, minW: 3, minH: 5 },
+    create: () => ({ type: "breakdown", title: "Top companies", rule: "topDomains" }),
   },
   "activity-chart": {
     label: "Activity chart",
@@ -75,34 +118,52 @@ export const CATALOG = {
   },
 };
 
+/** format: "count" (default) or "hours" (shown as a duration). */
 export const STAT_LABELS = {
   awaitingYou: { title: "Waiting on you", note: "Last message is theirs" },
   awaitingThem: { title: "Waiting on them", note: "No reply for 3+ days" },
-  received: { title: "Received", note: "Emails in" },
-  sent: { title: "Sent", note: "Emails out" },
+  received: { title: "Received", note: "Emails in, last 30 days" },
+  sent: { title: "Sent", note: "Emails out, last 30 days" },
   people: { title: "People", note: "Wrote to you" },
+  unreadImportant: { title: "Unread important", note: "Gmail's Important + unread" },
+  starred: { title: "Starred", note: "Your own follow-up list" },
+  newContacts: { title: "New contacts", note: "First email in the last 7 days" },
+  attachments: { title: "With attachments", note: "Received, last 30 days" },
+  meetingInvites: { title: "Meeting invites", note: "Calendar invites received" },
+  ccOnly: { title: "Cc only", note: "You're not in To" },
+  newsletters: { title: "Newsletters", note: "Bulk emails received" },
+  yourReplyHours: { title: "Your reply time", note: "Median, last 30 days", format: "hours" },
+  theirReplyHours: { title: "Their reply time", note: "Median, last 30 days", format: "hours" },
 };
 
 export const DEFAULT_SPEC = {
   title: "Gmail overview",
   widgets: [
     { id: "stat-awaiting-you", type: "stat", title: "Waiting on you", metric: "awaitingYou" },
-    { id: "stat-awaiting-them", type: "stat", title: "Waiting on them", metric: "awaitingThem" },
-    { id: "stat-received", type: "stat", title: "Received", metric: "received" },
-    { id: "stat-people", type: "stat", title: "People", metric: "people" },
+    { id: "stat-unread-important", type: "stat", title: "Unread important", metric: "unreadImportant" },
+    { id: "stat-starred", type: "stat", title: "Starred", metric: "starred" },
+    { id: "stat-reply-time", type: "stat", title: "Your reply time", metric: "yourReplyHours" },
     { id: "list-awaiting-you", type: "thread-list", title: "Waiting on your reply", list: "awaitingYou" },
+    { id: "rule-unread-important", type: "rule-list", title: "Unread and important", rule: "unreadImportant" },
     { id: "list-awaiting-them", type: "thread-list", title: "Waiting on their reply", list: "awaitingThem" },
-    { id: "top-people", type: "top-people", title: "Who emails you most", limit: 5 },
+    { id: "rule-meeting-invites", type: "rule-list", title: "Meeting invites", rule: "meetingInvites" },
     { id: "activity", type: "activity-chart", title: "Email activity", days: 14 },
+    { id: "breakdown-domains", type: "breakdown", title: "Top companies", rule: "topDomains" },
+    { id: "rule-attachments", type: "rule-list", title: "Emails with attachments", rule: "attachments" },
+    { id: "breakdown-newsletters", type: "breakdown", title: "Newsletters and notifications", rule: "newsletters" },
   ],
   layout: [
     { i: "stat-awaiting-you", x: 0, y: 0, w: 3, h: 3 },
-    { i: "stat-awaiting-them", x: 3, y: 0, w: 3, h: 3 },
-    { i: "stat-received", x: 6, y: 0, w: 3, h: 3 },
-    { i: "stat-people", x: 9, y: 0, w: 3, h: 3 },
-    { i: "list-awaiting-you", x: 0, y: 3, w: 12, h: 9 },
+    { i: "stat-unread-important", x: 3, y: 0, w: 3, h: 3 },
+    { i: "stat-starred", x: 6, y: 0, w: 3, h: 3 },
+    { i: "stat-reply-time", x: 9, y: 0, w: 3, h: 3 },
+    { i: "list-awaiting-you", x: 0, y: 3, w: 7, h: 9 },
+    { i: "rule-unread-important", x: 7, y: 3, w: 5, h: 9 },
     { i: "list-awaiting-them", x: 0, y: 12, w: 7, h: 9 },
-    { i: "top-people", x: 7, y: 12, w: 5, h: 9 },
-    { i: "activity", x: 0, y: 21, w: 12, h: 8 },
+    { i: "rule-meeting-invites", x: 7, y: 12, w: 5, h: 9 },
+    { i: "activity", x: 0, y: 21, w: 8, h: 8 },
+    { i: "breakdown-domains", x: 8, y: 21, w: 4, h: 8 },
+    { i: "rule-attachments", x: 0, y: 29, w: 7, h: 8 },
+    { i: "breakdown-newsletters", x: 7, y: 29, w: 5, h: 8 },
   ],
 };

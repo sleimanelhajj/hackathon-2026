@@ -1,5 +1,12 @@
 import type { z } from "zod";
-import type { DashboardSpec, LayoutItem as LayoutItemSchema, Widget as WidgetSchema } from "../../shared/spec.js";
+import type {
+  BreakdownRule as BreakdownRuleSchema,
+  DashboardSpec,
+  LayoutItem as LayoutItemSchema,
+  ListRule as ListRuleSchema,
+  StatMetric as StatMetricSchema,
+  Widget as WidgetSchema,
+} from "../../shared/spec.js";
 
 export type GmailConnection = {
   mode: "live" | "sample";
@@ -10,6 +17,8 @@ export type GmailConnection = {
   lastSyncCount: number | null;
   error: string | null;
   connectedAt: string | null;
+  syncProgress: { done: number; total: number; phase: string } | null;
+  mailbox: { messagesTotal: number; threadsTotal: number } | null;
 };
 
 export type Status = {
@@ -39,12 +48,31 @@ export type Dashboard =
       status: GmailConnection["status"];
       error: string | null;
       windowDays: number;
-      totals: { received: number; sent: number; people: number; awaitingYou: number; awaitingThem: number };
+      /** Every stat metric; reply times are median hours (null when there's no data). */
+      totals: Record<Exclude<StatMetric, "yourReplyHours" | "theirReplyHours">, number> & {
+        yourReplyHours: number | null;
+        theirReplyHours: number | null;
+      };
       awaitingYou: ThreadRow[];
       awaitingThem: ThreadRow[];
       topPeople: { name: string; email: string; count: number }[];
       activity: { date: string; received: number; sent: number }[];
+      rules: Record<ListRule, { count: number; items: RuleItem[] }>;
+      breakdowns: Record<BreakdownRule, { key: string; label: string; value: number }[]>;
     };
+
+export type RuleItem = {
+  id: string;
+  threadId: string;
+  contact: string;
+  title: string;
+  detail: string;
+  at: string;
+  link: string | null;
+};
+export type StatMetric = z.infer<typeof StatMetricSchema>;
+export type ListRule = z.infer<typeof ListRuleSchema>;
+export type BreakdownRule = z.infer<typeof BreakdownRuleSchema>;
 
 export type Widget = z.infer<typeof WidgetSchema>;
 export type WidgetType = Widget["type"];
@@ -64,7 +92,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export type Address = { name: string; email: string; domain?: string };
+export type Attachment = { filename: string; mimeType: string; size: number; attachmentId: string | null; partId: string; inline: boolean };
+/** One email exactly as stored after fetching it from Gmail (format=full). */
+export type StoredMessage = {
+  gmailId: string; threadId: string; historyId: string | null;
+  date: string; sentAt: string | null; sizeEstimate: number | null;
+  labelIds: string[]; category: string | null;
+  from: Address; replyTo: Address | null; to: Address[]; cc: Address[]; bcc: Address[]; deliveredTo: string | null;
+  subject: string; snippet: string;
+  messageId: string | null; inReplyTo: string | null; references: string[];
+  listUnsubscribe: string | null; listId: string | null; precedence: string | null; autoSubmitted: string | null; contentType: string | null;
+  attachments: Attachment[]; hasAttachments: boolean; hasCalendarInvite: boolean; hasHtml: boolean; bodyTruncated: boolean;
+  isUnread: boolean; isStarred: boolean; isImportant: boolean; direction: "in" | "out"; isInternal: boolean; isAutomated: boolean; isBulk: boolean;
+  source: "gmail" | "sample"; syncedAt: string;
+};
+export type StoredMessageDetail = StoredMessage & { headers: { name: string; value: string }[]; bodyText: string | null };
+export type MessagePage = { total: number; all: number; page: number; limit: number; messages: StoredMessage[] };
+
 export const api = {
+  messages: (p: { q?: string; page?: number; limit?: number; direction?: "in" | "out" | "" }) => {
+    const qs = new URLSearchParams();
+    if (p.q) qs.set("q", p.q);
+    if (p.page) qs.set("page", String(p.page));
+    if (p.limit) qs.set("limit", String(p.limit));
+    if (p.direction) qs.set("direction", p.direction);
+    return request<MessagePage>(`/api/messages?${qs}`);
+  },
+  message: (id: string) => request<StoredMessageDetail>(`/api/messages/${encodeURIComponent(id)}`),
   status: () => request<Status>("/api/status"),
   dashboard: () => request<Dashboard>("/api/dashboard"),
   sync: () => request<{ count: number }>("/api/integrations/gmail/sync", { method: "POST" }),

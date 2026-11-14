@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type SavedDashboard } from "./api";
 
 export function useStatus() {
@@ -46,3 +46,12 @@ function useSpecMutation<V>(fn: (v: V) => Promise<SavedDashboard>) {
 export const useSaveSpec = () => useSpecMutation(api.saveSpec);
 export const useUndoSpec = () => useSpecMutation(() => api.undoSpec());
 export const useResetSpec = () => useSpecMutation(() => api.resetSpec());
+
+/** Stored emails, exactly as fetched from Gmail. Keeps the previous page on screen while the next loads. */
+export function useMessages(params: Parameters<typeof api.messages>[0]) {
+  return useQuery({ queryKey: ["messages", params], queryFn: () => api.messages(params), placeholderData: keepPreviousData });
+}
+
+export function useMessage(id: string | null) {
+  return useQuery({ queryKey: ["message", id], queryFn: () => api.message(id!), enabled: !!id });
+}

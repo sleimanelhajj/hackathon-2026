@@ -18,13 +18,15 @@
 | `recharts` | Email activity chart |
 | `lucide-react` | Icons |
 | `@fontsource-variable/inter` | Self-hosted Inter font |
-| `react-grid-layout` (v2) | **In use:** drag, drop and resize dashboard widgets |
-| `@dnd-kit/react` | Installed for later: drag-to-reorder lists only (roadmap #5, #6) |
+| `gridstack` 14 | **In use:** the dashboard canvas: free placement (`mode: "float"`), push on collision, corner resize, drag-in from the widget panel, touch support, one-column layout on narrow screens |
+| `react-is` | Required by recharts (was previously pulled in indirectly) |
 | `zod` | **In use:** dashboard spec validation (`shared/spec.js`); later also AI output |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
 Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages).
+
+Regression checks: `npm test` runs pure coordinate tests plus Vitest/jsdom and React Testing Library tests against the real grid. These cover Cancel, Reset, explicit Save, and library preview alignment without writing to the connected database.
 
 ## Project layout
 
@@ -36,7 +38,8 @@ Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages)
 │   ├── index.js        ← Express routes
 │   ├── db.js           ← MongoDB connection + indexes
 │   ├── gmail.js        ← OAuth, token refresh, bounded sync, disconnect
-│   ├── dashboard.js    ← derived numbers (waiting on you / them, activity, top people)
+│   ├── dashboard.js    ← business rules engine: every number, list and breakdown the widgets show
+│   ├── gmail-parse.js  ← Gmail message (format=full) → canonical doc: headers, flags, body, attachments
 │   ├── dashboards.js   ← saved dashboard spec: get / save (versioned) / undo / reset
 │   ├── sample.js       ← labelled sample data for demos
 │   └── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
@@ -45,9 +48,9 @@ Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages)
 ├── src/
 │   ├── App.tsx         ← shell + hash routing (#/dashboard, #/integrations), lazy dashboard
 │   ├── components/     ← Sidebar (collapsible), Panel (collapsible), Callout, Gmail logo
-│   ├── dashboard/      ← DashboardGrid (react-grid-layout), WidgetFrame, WidgetLibrary, layout helpers, data context
+│   ├── dashboard/      ← DashboardGrid (GridStack), WidgetFrame, WidgetLibrary, layout model, data context
 │   ├── widgets/        ← Stat, ThreadList, ActivityChart (lazy), TopPeople + registry
-│   ├── pages/          ← IntegrationsPage, DashboardPage (edit mode, save/undo/reset)
+│   ├── pages/          ← IntegrationsPage, DashboardPage (edit mode, save/undo/reset), DataPage (emails as fetched)
 │   └── lib/            ← api client, react-query hooks, UI store
 ├── .env                ← secrets (git-ignored, never commit)
 └── .env.example        ← template for teammates
@@ -73,7 +76,9 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/integrations/gmail/sync` | Re-imports last 30 days (deduplicated by Gmail message id) |
 | POST | `/api/integrations/gmail/sample` | Loads labelled sample data |
 | DELETE | `/api/integrations/gmail` | Revokes token, deletes imported messages |
-| GET | `/api/dashboard` | Dashboard numbers and lists (shared by all widgets) |
+| GET | `/api/dashboard` | All business-rule results: totals, lists, breakdowns (shared by all widgets) |
+| GET | `/api/messages?q=&direction=in|out&page=0&limit=25` | Stored emails, searchable and paged (no body, no headers); used by the Email data page |
+| GET | `/api/messages/:gmailId` | One stored email with all headers and the decrypted body |
 | GET | `/api/dashboards/default` | Saved layout spec (widgets + desktop grid positions) |
 | PUT | `/api/dashboards/default` | Save a new version (zod-validated; 409 if the version changed meanwhile) |
 | POST | `/api/dashboards/default/undo` | Swap back to the previous version |

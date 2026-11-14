@@ -40,6 +40,8 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 | `express-session` + `connect-mongo` | to add | login sessions stored in MongoDB (6) |
 | `node-cron` | to add | scheduled sync (7) |
 
+**Current implementation (decision #21):** react-grid-layout v2 owns the dashboard grid again, with no automatic compaction and real saved coordinates. The widget library uses that same engine for external drops. Settings live in popovers; cards resize from the corner. Keyboard arrows move; Shift + arrows resize. Smaller screens derive readable layouts without modifying desktop coordinates until an edit occurs.
+
 **One drag-and-drop system per job:** `react-grid-layout` owns the dashboard grid (moving, resizing, dropping new widgets in from the library). `@dnd-kit/react` is only for reordering vertical lists. Don't mix them on the same surface.
 
 ---
@@ -52,7 +54,7 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 > - Data stays one call (`GET /api/dashboard`) shared through a React context, instead of one request per widget.
 > - Endpoints: `GET/PUT /api/dashboards/default` (version check → 409 on conflict), `POST …/undo`, `POST …/reset`.
 > - Edit mode: drag by the grip, resize from the corner, an **"Add widgets" panel on the right** (search, drag in or press +, with Save / Cancel / Reset at its foot), one setting per widget, remove, Undo after save, and a warning before leaving with unsaved changes. The sidebar folds while editing and comes back afterwards.
-> - Smoothness: the layout is read only on drag/resize **stop** (`onDragStop`/`onResizeStop`), never fed back mid-drag. Grid CSS overrides are prefixed with `.grid-host`, because the library stylesheet loads later.
+> - **Update (2026-11-14):** react-grid-layout was replaced by **@dnd-kit sortable on a CSS grid** (decision #20). The layout is an ordered list with preset sizes; the code sample below is historical.
 > - Widgets fold in view mode (the grid shrinks them to their header); stats don't fold.
 > - The dashboard page and the chart are lazy-loaded chunks.
 >
@@ -132,7 +134,9 @@ const { width, containerRef, mounted } = useContainerWidth();
 
 ---
 
-## 2. Agent chat panel ⬜
+## 2. Agent chat panel 🟡
+
+> **Spec:** [agent-gmail.md](agent-gmail.md) defines exactly what the agent fetches from Gmail, the tool contracts, per-turn limits and the custom-rule DSL. Build against the sample data first.
 
 **Goal:** a right-hand panel where the user asks questions ("who's waiting on me?") and edits the dashboard ("move follow-ups to the top"). See Figma screen 2.
 

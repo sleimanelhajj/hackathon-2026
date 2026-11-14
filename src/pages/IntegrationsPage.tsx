@@ -85,8 +85,14 @@ function NextStep({ status }: { status: Status }) {
         action={<a className="btn btn-secondary" href="#google-setup" onClick={(e) => { e.preventDefault(); useUi.getState().openPanel("google-setup"); requestAnimationFrame(() => document.getElementById("section-google-setup")?.scrollIntoView({ behavior: "smooth" })); }}>See setup steps</a>}
       />
     );
-  if (g.status === "syncing")
-    return <Callout icon={<Loader2 size={18} className="spin" />} title="Importing your email…" text="Reading the last 30 days. This page updates on its own." />;
+  if (g.status === "syncing") {
+    const p = g.syncProgress;
+    const text =
+      p && p.total > 0
+        ? `${p.phase}: ${p.done} of ${p.total} new emails. Gmail limits how fast we can read, so a first import of 300 emails takes about 3 minutes.`
+        : `${p?.phase ?? "Reading the last 30 days"}. This page updates on its own.`;
+    return <Callout icon={<Loader2 size={18} className="spin" />} title="Importing your email…" text={text} />;
+  }
   if (g.status === "error")
     return (
       <Callout
@@ -196,11 +202,11 @@ function GmailCard({ status }: { status: Status }) {
           </div>
           <div>
             <p className="fact-label">Last synced</p>
-            <p className="fact-value">{g.status === "syncing" ? "In progress" : timeAgo(g.lastSyncAt)}</p>
+            <p className="fact-value">{g.status === "syncing" ? (g.syncProgress?.total ? `${g.syncProgress.done} / ${g.syncProgress.total}` : "In progress") : timeAgo(g.lastSyncAt)}</p>
           </div>
           <div>
-            <p className="fact-label">Messages imported</p>
-            <p className="fact-value num">{g.lastSyncCount ?? "—"} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>from the last 30 days</span></p>
+            <p className="fact-label">Emails imported</p>
+            <p className="fact-value num">{g.lastSyncCount ?? "—"} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>from the last 30 days{g.mailbox ? ` · ${g.mailbox.messagesTotal.toLocaleString()} in your mailbox` : ""}</span></p>
           </div>
         </div>
       )}
@@ -209,7 +215,7 @@ function GmailCard({ status }: { status: Status }) {
         <div>
           <p className="fact-label" style={{ marginBottom: 10 }}>What we can do with your Gmail</p>
           <ul className="perm-list">
-            <li data-allowed="true"><Eye size={16} color="var(--success)" /> Read message details (sender, subject, date) to build your dashboard</li>
+            <li data-allowed="true"><Eye size={16} color="var(--success)" /> Read your email: headers, labels, body text and attachment names. Body text is stored encrypted</li>
             <li><PenLine size={16} /> Create drafts: coming later, and only after you approve each one</li>
             <li><Lock size={16} /> Send or delete email: never</li>
           </ul>
