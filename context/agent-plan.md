@@ -4,7 +4,9 @@ How we build the agent chat: users ask questions about their Gmail data and chan
 It also lays the base for #3 (dashboard from a prompt), #4 (extraction) and #5 (approved drafts).
 The rules in [`../AGENTS.md`](../AGENTS.md) apply to all of it. Decision #16 picked **Google Gemini** (`@google/genai`).
 
-Status: **plan only, nothing built yet** (2026-11-13).
+Status: **chat not built yet.** The Gemini client (`server/agent/llm.js`, plain `fetch`, decision #17) and the email classifier are built (2026-11-14).
+
+**Who it's for (feedback #04, decisions #23–#26):** a sales rep on Gmail, following up on **proposals, invoices and shipments**. "No reply" = 3 business days. The agent uses the priority rules in [README.md](README.md#definitions-decided-before-building) word for word, and when it explains a priority it names the rule that applied.
 
 ---
 
@@ -12,11 +14,12 @@ Status: **plan only, nothing built yet** (2026-11-13).
 
 | User says | Agent does | Tools |
 |---|---|---|
-| "Who's waiting on my reply?" | Lists the threads, each with an "Open in Gmail" link and how long it has waited | `query_metric` |
-| "Anything from Lena this month?" | Searches the synced threads and cites them | `search_threads` |
-| "Why is the contract thread flagged?" | Explains using the message direction, elapsed time and source link | `get_thread` |
-| "Move the waiting-on-you list to the top and make the chart 7 days" | Changes the saved dashboard and shows an Undo chip | `get_dashboard`, `update_dashboard` |
-| "Show me invoices that are unpaid" | Says that data isn't available (Gmail can't confirm payment). Never makes up a number | none |
+| "Which customers are waiting on me?" | Lists high-priority threads (they wrote last) about proposals, payments or deliveries, each with an "Open in Gmail" link and how long it has waited | `query_metric` |
+| "Which proposals have had no reply?" | Lists proposals where you wrote last 3+ business days ago (medium priority), with the business-day count | `query_metric`, `search_threads` |
+| "Any customer asking about a shipment?" | Searches the synced threads and cites them | `search_threads` |
+| "Why is the Reyes invoice high priority?" | Explains with the rule that applied (customer waiting on you about a payment), the message direction, elapsed time and source link | `get_thread` |
+| "Put invoices at the top and only show high priority" | Changes the saved dashboard and shows an Undo chip | `get_dashboard`, `update_dashboard` |
+| "Which invoices are unpaid?" | Says Gmail can't confirm payment and offers the invoice threads still waiting on a reply instead. Never makes up a number | `search_threads` |
 
 ## 2. Shape of the system
 
@@ -135,6 +138,8 @@ Then #3 reuses the same pieces. Onboarding sends the prompt, Gemini returns ops 
 8. "Show 90 days of activity" → explains that sync only covers 30 days.
 9. A made-up thread id is cited → the server drops it.
 10. Gemini key missing or wrong → a clear message in the panel, not a crash.
+11. "Which proposals have had no reply?" on a Monday → counts business days (a proposal sent last Friday has waited 1, not 3), so it isn't listed yet.
+12. "Check my WhatsApp" → says only Gmail is connected (Gmail-only weekend, decision #24).
 
 ## 11. Open questions
 

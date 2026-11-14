@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, ExternalLink, Info, KeyRound, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, Clock, ExternalLink, Info, KeyRound, Loader2, Sparkles } from "lucide-react";
 import { CATEGORY_LABELS } from "../../shared/spec.js";
 import { timeAgo, type InsightRow, type Insights, type Widget } from "../lib/api";
 import { useRunAnalysis } from "../lib/queries";
@@ -15,9 +15,22 @@ const CERTAINTY = {
 } as const;
 
 const FOCUS_EMPTY: Record<string, string> = {
-  "high-priority": "Nothing urgent right now.",
-  lead: "No potential leads in the last 30 days.",
+  "follow-up": "Nothing to follow up on right now.",
+  "high-priority": "No customer is waiting on you.",
+  proposal: "No proposals in the last 30 days.",
+  billing: "No invoice emails in the last 30 days.",
+  shipping: "No shipment emails in the last 30 days.",
+  lead: "No new inquiries in the last 30 days.",
 };
+
+/** Priority comes from the follow-up rules (shared/followup.js), not from the AI. */
+const PRIORITY_TAG = {
+  high: { label: "High", tone: "warn" },
+  medium: { label: "Follow up", tone: "accent" },
+} as const;
+
+/** Lists that mix categories show each row's category. */
+const MIXED_FOCUS = new Set(["follow-up", "high-priority"]);
 
 function RunButton({ label, force }: { label: string; force?: boolean }) {
   const run = useRunAnalysis();
@@ -84,12 +97,13 @@ function Footer({ insights }: { insights: Insights }) {
 
 function InsightItem({ row, showCategory }: { row: InsightRow; showCategory: boolean }) {
   const c = CERTAINTY[row.certainty] ?? CERTAINTY.inferred;
+  const p = row.priority === "low" ? null : PRIORITY_TAG[row.priority];
   return (
     <li className="insight">
       <div className="insight-top">
         <span className="thread-contact" title={row.contact}>{row.contact}</span>
-        {row.priority === "high" && <span className="tag" data-tone="warn">High priority</span>}
-        {showCategory && <span className="tag">{CATEGORY_LABELS[row.category].title}</span>}
+        {p && <span className="tag" data-tone={p.tone} title={row.priorityRule}>{p.label}</span>}
+        {showCategory && <span className="tag">{CATEGORY_LABELS[row.category]?.title ?? row.category}</span>}
         <span className="tag" data-tone={row.certainty} title={c.tip}>{c.label}</span>
         <span className="insight-age num">{timeAgo(row.lastAt)}</span>
         {row.link ? (
@@ -105,8 +119,11 @@ function InsightItem({ row, showCategory }: { row: InsightRow; showCategory: boo
       {row.suggestedAction && (
         <p className="insight-action"><ArrowRight size={13} aria-hidden /> {row.suggestedAction}</p>
       )}
+      <p className="insight-rule" title="Set by the follow-up rules, not by AI">
+        <Clock size={12} aria-hidden /> {row.priorityRule}
+      </p>
       <p className="insight-reason">
-        <Info size={12} aria-hidden /> Why: {row.reason}
+        <Info size={12} aria-hidden /> Why this category: {row.reason}
         {row.stale && " (a newer message arrived; this label will refresh on the next run)"}
       </p>
     </li>
@@ -121,16 +138,18 @@ export const InsightListWidget = memo(function InsightListWidget({ widget }: Lis
   if (gate) return gate;
 
   const rows =
-    widget.focus === "high-priority"
-      ? insights.rows.filter((r) => r.priority === "high")
-      : insights.rows.filter((r) => r.category === widget.focus);
+    widget.focus === "follow-up"
+      ? insights.rows.filter((r) => r.priority !== "low")
+      : widget.focus === "high-priority"
+        ? insights.rows.filter((r) => r.priority === "high")
+        : insights.rows.filter((r) => r.category === widget.focus);
 
   return (
     <div className="thread-widget">
       {rows.length ? (
         <ul className="insights">
           {rows.slice(0, 30).map((r) => (
-            <InsightItem key={r.threadId} row={r} showCategory={widget.focus === "high-priority"} />
+            <InsightItem key={r.threadId} row={r} showCategory={MIXED_FOCUS.has(widget.focus)} />
           ))}
         </ul>
       ) : (

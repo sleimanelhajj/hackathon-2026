@@ -14,7 +14,7 @@ import {
   Settings2,
   Sparkles,
 } from "lucide-react";
-import { api, timeAgo, type Status } from "../lib/api";
+import { api, timeAgo, timeUntil, type Status } from "../lib/api";
 import { useDisconnect, useLoadSample, useStatus, useSync } from "../lib/queries";
 import { Callout, GmailLogo, Panel } from "../components/ui";
 import { useUi } from "../lib/store";
@@ -199,6 +199,24 @@ function GmailCard({ status }: { status: Status }) {
             <p className="fact-label">Last synced</p>
             <p className="fact-value">{g.status === "syncing" ? "In progress" : timeAgo(g.lastSyncAt)}</p>
           </div>
+          {g.mode === "live" && (
+            <div>
+              <p className="fact-label">Checks for new email</p>
+              <p className="fact-value">
+                {status.autoSync.enabled ? (
+                  <>
+                    Every {status.autoSync.everyMinutes} min{" "}
+                    <span style={{ color: "var(--text-3)", fontWeight: 400 }}>
+                      · next {timeUntil(status.autoSync.nextRunAt)}
+                      {status.autoSync.failures > 0 && ` · last ${status.autoSync.failures === 1 ? "try" : `${status.autoSync.failures} tries`} failed`}
+                    </span>
+                  </>
+                ) : (
+                  <>Off <span style={{ color: "var(--text-3)", fontWeight: 400 }}>· use Sync now</span></>
+                )}
+              </p>
+            </div>
+          )}
           <div>
             <p className="fact-label">Messages imported</p>
             <p className="fact-value num">{g.lastSyncCount ?? "—"} <span style={{ color: "var(--text-3)", fontWeight: 400 }}>from the last 30 days</span></p>
