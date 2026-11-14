@@ -35,7 +35,7 @@ export const ADD_WIDGET_DECLARATION = {
   parameters: { type: "OBJECT", properties: { request: { type: "STRING" } }, required: ["request"] },
 };
 
-const SYSTEM = `You are the assistant inside the workspace of Cornerstone Hardware & Supply, a hardware and convenience store with four branches and an online shop. You help the owner and staff understand their sales, recommend products, and prepare invoices.
+const SYSTEM = `You are the assistant inside the workspace of Cedar Hardware & Supply, a hardware store in Lebanon with four branches (Beirut, Jounieh, Byblos, Saida) and an online shop. Prices are in USD; invoices carry 11% VAT. Lebanese customers often ask about power cuts, solar systems, generators and water shortages. You help the owner and staff understand their sales, recommend products, and prepare invoices.
 
 DATA RULES
 - Every number, price, stock level, customer detail or date you state must come from a tool result in this conversation. Never estimate or invent figures. If a tool can't answer, say what is missing.
@@ -61,12 +61,17 @@ INVOICES
 - If the user asks for changes after seeing a draft, update the details and call propose_invoice again.
 
 DASHBOARD WIDGETS
+- A question ("how did…", "which…", "why…") gets an answer in words from the read tools; for one product, branch or customer over time use sales_figures (e.g. units by month for a product to show its seasons). Only add a widget when the user asks to see, show, chart, track, add or put something on the dashboard.
 - When the user wants to see, chart, track or add something to the dashboard ("show me sales of the cordless drill", "add a chart of orders by branch", "put plumbing revenue on my dashboard"), call add_dashboard_widget with their request in plain words, including every detail they gave. Don't ask about chart types or axes: the builder chooses them.
 - Then tell them in one or two sentences what was added (its title and the headline figure from the result) and that it is on their Sales dashboard. Don't repeat the data as a list.
 - When the user wants a widget removed ("remove the plumbing chart", "delete the pipeline widget"), call list_dashboard_widgets, find the one they mean by its title, then call remove_dashboard_widget. If more than one could match, ask which one (name them); if none matches, say so and name what's there. Remove only what they asked for.
 - After removing, say what was removed in one sentence and that they can undo it from the chat.`;
 
 const MAX_RESULT_CHARS = 12_000;
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+/** "Saturday 14 November 2026": the model has no clock, and without it states periods with the wrong year. */
+const today = (d) => `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 
 const State = Annotation.Root({
   contents: Annotation({ reducer: (a, b) => a.concat(b), default: () => [] }),
@@ -100,7 +105,7 @@ const draftSummary = (d) => ({
  * @param deps.tools       { run(name, args), draftInvoice(args) }                (sales-tools.js)
  * @param deps.saveInvoice (draft) => public invoice with pdfUrl                  (stores the confirmed invoice)
  */
-export function createSalesAgent({ generate, tools, saveInvoice, addWidget = null, listWidgets = null, removeWidget = null, maxSteps = 10, checkpointer = new MemorySaver() }) {
+export function createSalesAgent({ generate, tools, saveInvoice, addWidget = null, listWidgets = null, removeWidget = null, now = () => new Date(), maxSteps = 10, checkpointer = new MemorySaver() }) {
   const declarations = [
     ...TOOL_DECLARATIONS,
     ...(addWidget ? [ADD_WIDGET_DECLARATION] : []),
@@ -111,7 +116,9 @@ export function createSalesAgent({ generate, tools, saveInvoice, addWidget = nul
     if (state.steps >= maxSteps) {
       return { contents: [{ role: "model", parts: [{ text: "Sorry, I couldn't finish that one. Try asking in a simpler way, or split it into smaller questions." }] }], stopped: true };
     }
-    const { content } = await generate({ system: SYSTEM, contents: state.contents, tools: declarations });
+    const { content } = await generate({ system: `${SYSTEM}
+
+Today is ${today(now())}.`, contents: state.contents, tools: declarations });
     return { contents: [content], steps: state.steps + 1 };
   }
 

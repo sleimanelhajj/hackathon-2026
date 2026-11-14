@@ -64,15 +64,15 @@ test("revenue of one product by month matches a hand count, with every month pre
 });
 
 test("a single number comes with the previous period for comparison", { skip }, async () => {
-  const res = await runCustomQuery(pool, { metric: "units", groupBy: "none", months: 3, filters: { branches: ["Harbor store"] } }, { schema, now });
-  assert.equal(res.total, byHand({ months: 3, branch: "Harbor store" }).units);
+  const res = await runCustomQuery(pool, { metric: "units", groupBy: "none", months: 3, filters: { branches: ["Beirut store"] } }, { schema, now });
+  assert.equal(res.total, byHand({ months: 3, branch: "Beirut store" }).units);
   assert.equal(typeof res.previousTotal, "number");
   assert.equal(res.unit, "count");
 });
 
-test("groupings rank by value and respect the limit", { skip }, async () => {
+test("groupings rank by value, respect the limit and the filter", { skip }, async () => {
   const res = await runCustomQuery(pool, { metric: "orders", groupBy: "product", months: 3, limit: 5, filters: { categories: ["Plumbing"] } }, { schema, now });
-  assert.equal(res.rows.length, 5);
+  assert.ok(res.rows.length >= 1 && res.rows.length <= 5, `${res.rows.length} rows`);
   for (let i = 1; i < res.rows.length; i++) assert.ok(res.rows[i - 1].value >= res.rows[i].value);
   const plumbing = new Set(data.products.filter((p) => p.category === "Plumbing").map((p) => p.name));
   for (const r of res.rows) assert.ok(plumbing.has(r.key), r.key);

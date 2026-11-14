@@ -8,6 +8,8 @@ import { z } from "zod";
 import { DEFAULT_SCHEMA } from "../sales/db.js";
 import { salesDashboard, salesRange } from "../sales/metrics.js";
 import { prepareInvoice } from "./invoice.js";
+import { runCustomQuery } from "../sales/custom.js";
+import { CustomGroupBy, CustomMetric } from "../../shared/spec.js";
 
 const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 const LINE = "li.quantity * li.unit_price * (1 - li.discount_pct / 100)";
@@ -40,7 +42,15 @@ const Args = {
   find_customers: z.object({ query: z.string().trim().min(1).max(120), limit: z.coerce.number().int().min(1).max(10).default(5) }),
   customer_history: z.object({ customerId: z.coerce.number().int().positive() }),
   low_stock: z.object({ limit: z.coerce.number().int().min(1).max(30).default(15) }),
+  lapsed_customers: z.object({ days: z.coerce.number().int().min(14).max(365).default(60), limit: z.coerce.number().int().min(1).max(20).default(10) }),
   store_profile: z.object({}),
+  sales_figures: z.object({
+    metric: CustomMetric, groupBy: CustomGroupBy.default("none"),
+    months: z.coerce.number().int().min(1).max(24).default(12), limit: z.coerce.number().int().min(1).max(20).default(10),
+    products: z.array(z.string()).max(10).default([]), categories: z.array(z.string()).max(10).default([]),
+    branches: z.array(z.string()).max(10).default([]), segments: z.array(z.string()).max(10).default([]),
+    channels: z.array(z.string()).max(10).default([]), customers: z.array(z.coerce.number().int()).max(10).default([]),
+  }),
   staff_performance: z.object({ months: Months }),
   quote_pipeline: z.object({ limit: z.coerce.number().int().min(1).max(15).default(8) }),
 };
@@ -62,6 +72,16 @@ export const TOOL_DECLARATIONS = [
     parameters: { type: "OBJECT", properties: { query: { type: "STRING" }, limit: { type: "INTEGER" } }, required: ["query"] } },
   { name: "customer_history", description: "One customer's details, recent orders with their lines, and the products they buy most.",
     parameters: { type: "OBJECT", properties: { customerId: { type: "INTEGER" } }, required: ["customerId"] } },
+  { name: "lapsed_customers", description: "Customers who stopped ordering: regulars (3+ orders) with no order in the last N days (default 60), biggest past spenders first, with their last order date, how many orders they placed and what they spent. Use it for 'who stopped buying', 'lost customers' or 'who should we call'.",
+    parameters: { type: "OBJECT", properties: { days: { type: "INTEGER", description: "14-365, default 60" }, limit: { type: "INTEGER" } } } },
+  { name: "sales_figures", description: "Answer any sales question with one measure grouped one way, optionally filtered: e.g. units of a product by month (seasons, trends), revenue by branch for one category, orders by customer for one product. Same periods as sales_summary. Get product SKUs from find_products and customer ids from find_customers first. Returns every bucket (months with no sales show 0), the total and the previous-period total.",
+    parameters: { type: "OBJECT", properties: {
+      metric: { type: "STRING", enum: CustomMetric.options }, groupBy: { type: "STRING", enum: CustomGroupBy.options },
+      months: { type: "INTEGER", description: "1-24, default 12" }, limit: { type: "INTEGER", description: "for non-time groupings, 1-20" },
+      products: { type: "ARRAY", items: { type: "STRING" }, description: "product SKUs" }, categories: { type: "ARRAY", items: { type: "STRING" } },
+      branches: { type: "ARRAY", items: { type: "STRING" } }, segments: { type: "ARRAY", items: { type: "STRING" } },
+      channels: { type: "ARRAY", items: { type: "STRING" } }, customers: { type: "ARRAY", items: { type: "INTEGER" }, description: "customer ids" },
+    }, required: ["metric"] } },
   { name: "low_stock", description: "Products at or below their reorder level, with stock, reorder level and how many sold in the last 30 days.",
     parameters: { type: "OBJECT", properties: { limit: { type: "INTEGER" } } } },
   { name: "store_profile", description: "The store's own details used on invoices: name, contact, address, currency, sales tax rate and payment terms, plus the account discount per customer segment.",
@@ -210,6 +230,11 @@ export function createSalesTools({ pool, schema = DEFAULT_SCHEMA, now = () => ne
       });
     },
 
+    async sales_figures({ metric, groupBy, months, limit, ...filters }) {
+      // The custom-widget engine: fixed, parameterized, READ ONLY SQL picked from allow-lists.
+      return runCustomQuery(pool, { metric, groupBy, months, limit, filters }, { schema, now: now() });
+    },
+
     async low_stock({ limit }) {
       const { rows } = await readOnly((c) => c.query(
         `SELECT p.sku, p.name, p.category, p.stock, p.reorder_level,
@@ -217,6 +242,18 @@ export function createSalesTools({ pool, schema = DEFAULT_SCHEMA, now = () => ne
                            WHERE li.product_id = p.id AND o.ordered_at >= $2::timestamptz - interval '30 days'), 0)::int AS sold_30d
            FROM ${s}.products p WHERE p.stock <= p.reorder_level ORDER BY p.stock::float / greatest(p.reorder_level, 1), sold_30d DESC LIMIT $1`, [limit, now()]));
       return { products: rows.map((r) => ({ sku: r.sku, name: r.name, category: r.category, stock: r.stock, reorderLevel: r.reorder_level, soldLast30Days: r.sold_30d })) };
+    },
+
+    async lapsed_customers({ days, limit }) {
+      const { rows } = await readOnly((c) => c.query(
+        `SELECT c.id, c.name, c.segment, c.region, c.phone, count(DISTINCT o.id)::int AS orders, max(o.ordered_at) AS last_order, sum(${LINE})::float AS spent
+           FROM ${s}.customers c JOIN ${s}.orders o ON o.customer_id = c.id JOIN ${s}.order_items li ON li.order_id = o.id
+          WHERE o.status <> 'refunded'
+          GROUP BY c.id HAVING count(DISTINCT o.id) >= 3 AND max(o.ordered_at) < $1::timestamptz - make_interval(days => $2)
+          ORDER BY spent DESC LIMIT $3`, [now(), days, limit]));
+      return { sinceDays: days, currency: "USD", customers: rows.map((r) => ({
+        id: r.id, name: r.name, segment: r.segment, branch: r.region, phone: r.phone, orders: r.orders, lastOrder: iso(r.last_order),
+        daysSinceLastOrder: Math.floor((now().getTime() - new Date(r.last_order).getTime()) / 864e5), spentBefore: money(r.spent) })) };
     },
 
     async store_profile() {

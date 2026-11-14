@@ -32,7 +32,7 @@ const SUGGESTIONS = [
 /** Plain words for the tools the agent used, shown under its answer. */
 const TOOL_LABELS: Record<string, string> = {
   sales_summary: "sales summary", sales_breakdown: "sales breakdown", find_products: "product catalogue",
-  find_customers: "customer list", customer_history: "customer history", low_stock: "stock levels",
+  find_customers: "customer list", customer_history: "customer history", low_stock: "stock levels", lapsed_customers: "customer activity", sales_figures: "sales data",
   store_profile: "store profile", staff_performance: "staff targets", quote_pipeline: "trade quotes", propose_invoice: "invoice draft",
   add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets",
 };

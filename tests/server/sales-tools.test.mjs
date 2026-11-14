@@ -36,9 +36,9 @@ test("finds products for a situation, by what they're for", { skip }, async () =
 });
 
 test("respects a budget and a category", { skip }, async () => {
-  const { products } = await tools.run("find_products", { query: "drill", category: "Power tools", maxPrice: 100 });
+  const { products } = await tools.run("find_products", { query: "drill", category: "Power tools", maxPrice: 150 });
   assert.ok(products.length > 0);
-  for (const p of products) assert.ok(p.price <= 100 && p.category === "Power tools", `${p.name} $${p.price}`);
+  for (const p of products) assert.ok(p.price <= 150 && p.category === "Power tools", `${p.name} $${p.price}`);
 });
 
 test("breakdowns add up to the summary total", { skip }, async () => {
@@ -77,6 +77,26 @@ test("finds customers by part of their name and shows their history", { skip }, 
   const history = await tools.run("customer_history", { customerId: target.id });
   assert.equal(history.customer.name, target.name);
   assert.ok(Array.isArray(history.recentOrders) && Array.isArray(history.topProducts));
+});
+
+test("finds customers who stopped ordering: regulars with no order for a while, biggest first", { skip }, async () => {
+  const { customers, sinceDays } = await tools.run("lapsed_customers", { days: 60 });
+  assert.equal(sinceDays, 60);
+  const abiNader = customers.find((c) => c.name === "Abi Nader Construction");
+  assert.ok(abiNader, customers.map((c) => c.name).join(", "));
+  assert.ok(abiNader.daysSinceLastOrder >= 150 && abiNader.orders >= 15 && abiNader.spentBefore > 0);
+  for (const c of customers) assert.ok(c.daysSinceLastOrder >= 60 && c.orders >= 3);
+  for (let i = 1; i < customers.length; i++) assert.ok(customers[i - 1].spentBefore >= customers[i].spentBefore);
+});
+
+test("sales_figures answers any measure by any grouping, with product filters (same engine as custom widgets)", { skip }, async () => {
+  const heater = data.products.find((p) => p.name.includes("heater"));
+  const res = await tools.run("sales_figures", { metric: "units", groupBy: "month", months: 12, products: [heater.sku] });
+  assert.equal(res.rows.length, 12);
+  assert.deepEqual(res.filters, [`Product: ${heater.name}`]);
+  const winter = res.rows.filter((r) => ["12", "01", "02"].includes(r.key.slice(5))).reduce((s, r) => s + r.value, 0);
+  assert.ok(winter > res.total * 0.5, "the winter peak is visible");
+  await assert.rejects(tools.run("sales_figures", { metric: "salary", groupBy: "month" }));
 });
 
 test("lists items that need reordering", { skip }, async () => {

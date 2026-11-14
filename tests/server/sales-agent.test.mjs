@@ -10,8 +10,8 @@ const say = (text) => ({ role: "model", parts: [{ text }] });
 /** A fake model that plays back `script`, recording what it was shown each turn. */
 function fakeModel(script) {
   const seen = [];
-  const fn = async ({ contents, tools }) => {
-    seen.push({ contents: structuredClone(contents), tools });
+  const fn = async ({ system, contents, tools }) => {
+    seen.push({ system, contents: structuredClone(contents), tools });
     const next = script.shift();
     if (!next) throw new Error("script ran out");
     return { content: typeof next === "function" ? next(contents) : next, model: "fake" };
@@ -115,6 +115,13 @@ test("stops a runaway tool loop", async () => {
   const out = await agent.send({ threadId: "t6", message: "loop" });
   assert.ok(model.seen.length <= 4);
   assert.match(out.reply, /couldn't finish/i);
+});
+
+test("the model is told today's date, so it states periods with the right years", async () => {
+  const model = fakeModel([say("ok")]);
+  const agent = createSalesAgent({ generate: model, tools: fakeTools(), saveInvoice: async () => {}, now: () => new Date("2026-11-14T09:00:00Z") });
+  await agent.send({ threadId: "t8", message: "hi" });
+  assert.match(model.seen[0].system, /Today is Saturday 14 November 2026\./);
 });
 
 test("the model is given the tool list and never a write tool", async () => {

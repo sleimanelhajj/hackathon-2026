@@ -92,7 +92,7 @@ test("breakdowns add up and are sorted biggest first", { skip }, async () => {
   assert.equal(d.topProducts.length, 10);
   assert.equal(d.topCustomers.length, 10);
   assert.ok(d.topCustomers[0].revenue >= d.topCustomers[9].revenue);
-  assert.equal(d.reps.length, 12);
+  assert.equal(d.reps.length, data.reps.length);
   for (const r of d.reps) assert.ok(r.target > 0 && r.revenue >= 0);
   close(sum(d.reps, (r) => r.revenue), d.kpis.revenue, "reps add up");
   assert.equal(d.recentOrders.length, 10);

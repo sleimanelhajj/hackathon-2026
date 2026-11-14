@@ -36,7 +36,7 @@ export const WIDGET_TOOL_DECLARATIONS = [
 ];
 
 function systemPrompt(v) {
-  return `You are the widget builder for the Sales dashboard of Cornerstone Hardware & Supply (a hardware and convenience store). You receive one request for a chart or number and turn it into a widget by calling create_widget.
+  return `You are the widget builder for the Sales dashboard of Cedar Hardware & Supply (a hardware store in Lebanon). You receive one request for a chart or number and turn it into a widget by calling create_widget.
 
 Pick:
 - metric: revenue (USD after discounts), orders, units (units sold), aov (average order value), marginPct (gross margin %), customers (distinct customers).
