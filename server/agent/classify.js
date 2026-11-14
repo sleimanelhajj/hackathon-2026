@@ -16,7 +16,7 @@ import { getDb } from "../db.js";
 import { AUTOMATED } from "../dashboard.js";
 import { Category, Priority } from "../../shared/spec.js";
 import { generateJson, geminiConfigured, geminiModel } from "./llm.js";
-import { attachmentsText, messageBody } from "./content.js";
+import { READER_VERSION, attachmentsText, messageBody } from "./content.js";
 
 // 3 = reads bodies and attachment text. (2 was used by another branch writing to the shared database.)
 export const PROMPT_VERSION = 3;
@@ -28,8 +28,8 @@ const MESSAGES_PER_THREAD = 6;
 const SNIPPET_CHARS = 300;
 const LATEST_BODY_CHARS = 1500;
 const OLDER_BODY_CHARS = 500;
-const ATTACHMENT_CHARS = 1000;
-const ATTACHMENTS_PER_MESSAGE = 2;
+const ATTACHMENT_CHARS = 1500; // spreadsheets and ZIP listings need room (decision #43)
+const ATTACHMENTS_PER_MESSAGE = 3;
 const FREE_MAIL = /^(gmail|googlemail|outlook|hotmail|live|yahoo|icloud|me|aol|proton|protonmail|gmx)\./i;
 
 const SYSTEM = `You sort email threads for a small-business owner's dashboard (founders, sales teams, operators).
@@ -193,6 +193,7 @@ function saveOp(threadId, last, fields, certainty, model) {
           certainty,
           model,
           promptVersion: PROMPT_VERSION,
+          readerVersion: READER_VERSION, // re-sort when the attachment readers improve
           analyzedAt: new Date(),
         },
       },
@@ -285,7 +286,7 @@ async function runAnalysis(conn, runId, force) {
 
   const known = await db
     .collection("extractions")
-    .find({ _id: { $in: [...threads.keys()] } }, { projection: { lastMessageId: 1, promptVersion: 1 } })
+    .find({ _id: { $in: [...threads.keys()] } }, { projection: { lastMessageId: 1, promptVersion: 1, readerVersion: 1 } })
     .toArray();
   const prev = new Map(known.map((e) => [e._id, e]));
 
@@ -295,7 +296,7 @@ async function runAnalysis(conn, runId, force) {
   for (const [threadId, list] of threads) {
     const last = list.at(-1);
     const p = prev.get(threadId);
-    if (!force && p && p.lastMessageId === last.gmailId && p.promptVersion === PROMPT_VERSION) {
+    if (!force && p && p.lastMessageId === last.gmailId && p.promptVersion === PROMPT_VERSION && p.readerVersion === READER_VERSION) {
       unchanged++;
       continue;
     }

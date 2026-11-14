@@ -23,7 +23,7 @@
 | `react-is` | Required by recharts (was previously pulled in indirectly) |
 | `zod` | **In use:** dashboard spec validation (`shared/spec.js`) and every Gemini answer (`server/agent/classify.js`) |
 | `unpdf` | **In use:** text out of PDF attachments for the AI (`server/agent/content.js`); pure JS, no native build |
-| `mammoth` | **In use:** text out of Word (.docx) attachments for the AI |
+| `mammoth` | **In use:** fallback reader for Word (.docx); the main reader is `server/agent/files.js`, which keeps tables as rows |
 | `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
@@ -49,7 +49,11 @@ Regression checks: `npm test` runs pure coordinate tests plus Vitest/jsdom and R
 │   ├── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
 │   └── agent/
 │       ├── llm.js      ← the only file that calls Gemini (JSON output, retries, friendly errors)
-│       └── classify.js ← AI email analysis job: category, priority, summary, reason, next step per thread
+│       ├── classify.js ← AI email analysis job: category, priority, summary, reason, next step per thread
+│       ├── content.js  ← what the AI may read: cleaned bodies + attachment text (which files, cache, limits)
+│       ├── files.js    ← attachment readers: PDF, Word, Excel, PowerPoint, .ics, ZIP (with zip-bomb limits), text/HTML
+│       ├── vision.js   ← images and scanned PDFs read by Gemini vision: visible text + a short description
+│       └── reply.js    ← AI reply drafts (sent only after two clicks)
 ├── shared/
 │   └── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
 ├── src/
@@ -103,7 +107,7 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | `connections` | One doc per provider (tokens encrypted). `analysis` sub-doc: status, progress, counts, last run, error |
 | `messages` | Synced Gmail metadata (unique on `gmailId`) |
 | `sent_replies` | Metadata of replies sent from the app (threadId, Gmail id, recipients, subject, time). No text |
-| `attachment_text` | Text extracted from attachments for the AI, one doc per `gmailId:partId`: status (`ok`/`empty`/`failed`), `textEnc` (encrypted), kind, chars. Deleted on disconnect |
+| `attachment_text` | Text extracted from attachments for the AI, one doc per `gmailId:partId`: status (`ok`/`empty`/`failed`), `textEnc` (encrypted), kind (`pdf`, `docx`, `xlsx`, `pptx`, `image`, `calendar`, `zip`, `html`, `text`), chars, `reader` (version; older entries without text are read again). Temporary Gemini failures and images read without a key aren't cached. Deleted on disconnect |
 | `extractions` | AI labels, one doc per thread (`_id` = threadId): category, priority, needsReply, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId |
 | `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
 

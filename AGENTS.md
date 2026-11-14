@@ -27,7 +27,7 @@ UI designs live in Figma: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h (7
 - **Integrations page:** connect Gmail (read-only), sync, disconnect, sample-data mode.
 - **Dashboard page:** a free-position grid built on **GridStack** (gridstackjs.com). Edit layout → drag a card by its title and drop it anywhere (cards stay where dropped; dropping onto another card pushes that card down), resize from the bottom-right corner, drag new widgets in from the right-hand "Add widgets" panel or press +, configure, remove → Save; Undo and Reset to default. All numbers are derived from Gmail fields.
 - Collapsible sidebar (`[` key) and foldable widgets, remembered per browser.
-- **AI email analysis (Gemini, `server/agent/`):** after each sync, threads are sorted into a category and priority, with a summary, the reason and a suggested next step. Two widgets show it ("Needs your attention", "What your email is about"), labelled as AI guesses. Needs `GEMINI_API_KEY` in `.env`.
+- **AI email analysis (Gemini, `server/agent/`):** after each sync, threads are sorted into a category and priority, with a summary, the reason and a suggested next step. It reads email bodies and attachments: PDF, Word, Excel, PowerPoint, calendar invites, ZIP folders, and images or scanned PDFs through Gemini vision (decision #43, `server/agent/files.js`). Two widgets show it ("Needs your attention", "What your email is about"), labelled as AI guesses. Needs `GEMINI_API_KEY` in `.env`.
 - Not built yet: agent chat (next, see `context/agent-plan.md`), prompt-generated dashboards, user corrections for AI labels, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
 
 ## Commands

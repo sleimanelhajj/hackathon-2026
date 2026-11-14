@@ -90,13 +90,15 @@ async function callOnce(model, body) {
  * Ask Gemini for JSON that follows `schema` (Gemini Schema object: OpenAPI subset, uppercase types).
  * The schema guides the model; callers must still validate the result with zod before using it.
  * `system` holds our rules. `prompt` may contain untrusted email data, so it goes in the user turn only.
+ * `files` ([{ mimeType, data: Buffer }]) are sent inline in the user turn too, for vision (images, scanned PDFs).
  * Returns { data, model, usage } where `model` is the one that actually answered.
  */
-export async function generateJson({ system, prompt, schema, maxOutputTokens = 8192 }) {
+export async function generateJson({ system, prompt, schema, files = [], maxOutputTokens = 8192 }) {
   if (!geminiConfigured()) throw new GeminiError("Gemini isn't set up. Add GEMINI_API_KEY to .env and restart the server.");
+  const fileParts = files.map((f) => ({ inlineData: { mimeType: f.mimeType, data: Buffer.from(f.data).toString("base64") } }));
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [{ role: "user", parts: [...fileParts, { text: prompt }] }],
     generationConfig: { responseMimeType: "application/json", responseSchema: schema, maxOutputTokens },
   });
 
