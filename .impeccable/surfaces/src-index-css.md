@@ -5,20 +5,20 @@ primary_target: "src/index.css"
 related_targets: ["src/App.tsx"]
 ---
 
-Scope: the whole app shell and its working screens (Dashboard, Email data, Integrations, reply dialog). Mode: Operate.
+Scope: the whole app shell and its working screens (Dashboard, All email, Integrations, reply dialog, dropdowns). Mode: Operate.
 
-Audience and job: founders, SMB operators and sales reps triaging Gmail at a desk, daily. Task first: see what needs them, reply, find emails. Constraints: AA contrast, honest sync state, no new layout or controls; the world lends palette, material, density and one move.
+Audience and job: founders, SMB operators and sales reps, many not technical, triaging Gmail at a desk daily. Task first: see what needs them, reply, find emails. Constraints: AA contrast, honest sync state, plain words, large controls; the world lends palette, material, density and one move.
 
 ## Direction contract
 
-THESIS: Work panes float like frosted glass over an open sky. Refuses the grey-card SaaS default and decorative glass: glass marks the layers you work on, nothing else.
+THESIS: Calm white glass on a soft grey desk, one dark blue for everything you can do. Refuses colourful dashboards and decorative glass: glass marks only the layers you work on.
 
-OWN-WORLD: Sky ground from cloudy white (#e8f3fc) to clear blue (#9ccbee) with soft white cloud masses. Panes rgba(255,255,255,.62), 18px blur, white top-edge highlight, navy-tinted soft shadows. Sky-blue primary #0369a1 for every action; amber-red #ef5a1c (text #b13a0b) only for urgency. Inter, tabular numerals.
+OWN-WORLD: Grey ground #eef0f3 to #d5dae2 with soft white glows. Panes rgba(255,255,255,.72), 20px blur, white top-edge highlight, soft neutral shadows. Dark blue #1e3a8a for every action, link and selection; amber #d97706 (text #92400e) only for warnings. Inter, tabular numerals. Dropdowns are Radix Select with glass menus and 38px rows.
 
-STORY: The visitor sees the sky, then the panes, then the amber-red counts that need them; everything clickable is sky blue.
+STORY: The visitor sees calm white panes, the amber counts that need them, and one blue for anything clickable; filters say in words what they show.
 
-FIRST VIEWPORT: Glass sidebar left; dashboard title and Sync/Edit actions top right; the reply callout with its sky-blue primary button; four stat panes, amber-red where something waits on them; AI attention list and category pane below.
+FIRST VIEWPORT: Glass sidebar left (Dashboard, All email, Integrations); dashboard title with Sync now / Edit layout top right; the reply callout with its dark-blue primary button; four stat panes, amber where something waits; AI attention list and topic pane below.
 
-FORM: Pinned by the user. seed: none (pinned) — "update the UI to glassmorhpic and use sky blue, cloudy white, amber red accents". Signature move: clouds drift only while a sync or AI run is really working.
+FORM: Pinned by the user. seed: none (pinned) — "change the colors to white ad dark blue and use glass morphism. when it uses glass morphisim have it have grey background". Signature move: the glows drift only while a sync or AI run is really working.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

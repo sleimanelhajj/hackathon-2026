@@ -27,7 +27,7 @@ export default function App() {
   }, [busy]);
 
   useEffect(() => {
-    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "Email data" : "Dashboard"} · AI Workspace OS`;
+    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : "Dashboard"} · AI Workspace OS`;
   }, [route]);
 
   return (

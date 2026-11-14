@@ -79,7 +79,8 @@ MongoDB collections: `connections` (one doc per provider, tokens encrypted, hist
 
 ## UI conventions
 
-- The look is **glass over sky** (decision #33): frosted-glass panes over a cloudy-white-to-sky-blue ground, sky blue for actions, amber-red only for urgency. Layout and controls stay standard, held to Linear/Attio quality. Use the tokens in `src/index.css` (`--glass`, `--blur`, `--accent`, `--signal`…); don't hardcode new colours.
+- The look is **white and dark blue glass on grey** (decision #35): white frosted-glass panes over a soft grey ground, dark blue for actions, a calm amber only for warnings. Written for non-technical users: plain words, large controls. Use the tokens in `src/index.css` (`--glass`, `--blur`, `--accent`, `--signal`…); don't hardcode new colours.
+- Dropdowns: always the shared `Select` (`src/components/Select.tsx`, Radix UI). Never a native `<select>` (a test enforces it).
 - Every screen answers "what should I do next?" with a `Callout` plus one primary button.
 - Group content in `Panel` (collapsible, remembers state). Use real icons from `lucide-react`, never emoji.
 - Copy: plain words, buttons name their action ("Connect Gmail", "Sync now"), errors say what went wrong and how to fix it.

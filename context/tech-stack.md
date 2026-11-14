@@ -24,6 +24,7 @@
 | `zod` | **In use:** dashboard spec validation (`shared/spec.js`) and every Gemini answer (`server/agent/classify.js`) |
 | `unpdf` | **In use:** text out of PDF attachments for the AI (`server/agent/content.js`); pure JS, no native build |
 | `mammoth` | **In use:** text out of Word (.docx) attachments for the AI |
+| `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 

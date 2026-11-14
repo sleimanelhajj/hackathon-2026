@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Database, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles } from "lucide-react";
+import { Inbox, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles } from "lucide-react";
 import { useUi, type Route } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { timeAgo } from "../lib/api";
 
 const NAV: { route: Route; label: string; icon: typeof Plug }[] = [
   { route: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { route: "data", label: "Email data", icon: Database },
+  { route: "data", label: "All email", icon: Inbox },
   { route: "integrations", label: "Integrations", icon: Plug },
 ];
 

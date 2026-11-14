@@ -1,5 +1,5 @@
-// The visual theme (src/index.css): glass panes over a sky ground, sky-blue primary, cloudy-white surfaces,
-// amber-red for urgency — and still readable (WCAG AA contrast) and usable without transparency.
+// The visual theme (src/index.css): white glass panes over a soft grey ground, dark-blue primary, a calm amber kept
+// for warnings only — and still readable (WCAG AA contrast) and usable without transparency (decision #35).
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -43,26 +43,31 @@ const color = (name) => rgba(token(name));
 const grounds = () => ["bg", "bg-deep"].map((g) => over(color("glass"), color(g)));
 
 // ---- palette ----
-test("primary is a sky blue", () => {
-  const { h, s } = hsl(color("accent"));
-  assert.ok(h >= 190 && h <= 215, `hue ${h.toFixed(0)} is sky blue`);
-  assert.ok(s >= 0.6, `saturation ${s.toFixed(2)} reads as a colour, not grey`);
+test("primary is a dark blue", () => {
+  const { h, s, l } = hsl(color("accent"));
+  assert.ok(h >= 215 && h <= 235, `hue ${h.toFixed(0)} is blue, not sky or violet`);
+  assert.ok(l <= 0.4, `lightness ${l.toFixed(2)} is dark`);
+  assert.ok(s >= 0.4, `saturation ${s.toFixed(2)} reads as blue, not grey`);
 });
 
-test("surfaces are a cloudy white: near-white with a faint blue cast", () => {
-  for (const name of ["bg", "surface-solid"]) {
-    const c = color(name);
-    const { h, l } = hsl(c);
-    assert.ok(l >= 0.94, `--${name} lightness ${l.toFixed(2)} is near white`);
-    assert.ok(c[2] >= c[0], `--${name} leans blue, not cream`);
-    assert.ok(h === 0 || (h >= 180 && h <= 230), `--${name} hue ${h.toFixed(0)} is cool`);
+test("panes are white", () => {
+  const { l } = hsl(color("surface-solid"));
+  assert.ok(l >= 0.98, `--surface-solid lightness ${l.toFixed(2)}`);
+});
+
+test("the ground behind the glass is a soft grey, not a colour", () => {
+  for (const name of ["bg", "bg-deep"]) {
+    const { s, l } = hsl(color(name));
+    assert.ok(s <= 0.25, `--${name} saturation ${s.toFixed(2)} is grey`);
+    assert.ok(l >= 0.82 && l <= 0.97, `--${name} lightness ${l.toFixed(2)} is light grey`);
   }
+  assert.ok(lum(color("bg-deep")) < lum(color("bg")), "the grey deepens down the page so the glass has something to sit on");
 });
 
-test("the accent for urgency is amber-red", () => {
+test("warnings are a calm amber, the only colour besides blue", () => {
   const { h, s } = hsl(color("signal"));
-  assert.ok(h >= 8 && h <= 30, `hue ${h.toFixed(0)} is between red and amber`);
-  assert.ok(s >= 0.7, "it is saturated enough to signal");
+  assert.ok(h >= 25 && h <= 45, `hue ${h.toFixed(0)} is amber`);
+  assert.ok(s >= 0.6, "it is saturated enough to notice");
 });
 
 // ---- glass ----
@@ -115,7 +120,7 @@ test("buttons and tags pass AA", () => {
   }
 });
 
-test("warnings use the amber-red family", () => {
+test("warnings use the amber family", () => {
   assert.equal(token("warning"), "var(--signal-text)");
   assert.equal(token("warning-subtle"), "var(--signal-subtle)");
 });
@@ -149,10 +154,10 @@ test("the closest panes keep the white top-edge highlight", () => {
   assert.match(rule(".modal"), /border:\s*1px solid var\(--glass-edge\)/);
 });
 
-test("the 'Rule' tag uses tokens, readable and in the sky family", () => {
+test("the 'Rule' tag uses tokens, readable and in the blue family", () => {
   assert.match(rule('.tag[data-tone="derived"]'), /background:\s*var\(--derived-subtle\);\s*color:\s*var\(--derived\)/);
   const { h } = hsl(color("derived"));
-  assert.ok(h >= 190 && h <= 215, `hue ${h.toFixed(0)}`);
+  assert.ok(h >= 200 && h <= 235, `hue ${h.toFixed(0)}`);
   for (const ground of grounds()) assert.ok(contrast(color("derived"), over(color("derived-subtle"), ground)) >= 4.5);
 });
 

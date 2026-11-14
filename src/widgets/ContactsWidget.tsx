@@ -100,7 +100,7 @@ function ContactFolder({ c, open, onToggle }: { c: Contact; open: boolean; onTog
             ))}
           </ul>
           {c.threadCount > c.threads.length && (
-            <a className="folder-more" href={`#/data?from=${encodeURIComponent(c.email)}`}>See all {c.threadCount} conversations in Email data</a>
+            <a className="folder-more" href={`#/data?from=${encodeURIComponent(c.email)}`}>See all {c.threadCount} conversations in All email</a>
           )}
         </div>
       )}

@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Code2, Database, FlaskConical
 import { Reply } from "lucide-react";
 import { CATEGORY_LABELS, categoryInfo } from "../../shared/spec.js";
 import { useReply } from "../components/ReplyModal";
+import { Select } from "../components/Select";
 import type { Address, Category, MessageFilters, StoredMessage, StoredMessageDetail } from "../lib/api";
 import { useMessage, useMessages, usePeople, useStatus } from "../lib/queries";
 import { Callout } from "../components/ui";
@@ -82,9 +83,9 @@ export default function DataPage() {
     <div className="page page-wide">
       <header className="page-head">
         <div>
-          <h1 className="page-title">Email data</h1>
+          <h1 className="page-title">All email</h1>
           <p className="page-sub">
-            Exactly what was fetched from Gmail{data ? `: ${data.all} emails` : ""}. Priority and category come from the AI and can be wrong.
+            Every email from the last 30 days{data ? ` (${data.all})` : ""}. Priority and topic are suggested by AI and can be wrong.
           </p>
         </div>
       </header>
@@ -113,36 +114,30 @@ export default function DataPage() {
 
       <div className="filter-bar" role="group" aria-label="Filters">
         <SlidersHorizontal size={15} className="muted" aria-hidden />
-        <label className="select-wrap">
-          <span className="sr-only">Person</span>
-          <select className="select" value={from} onChange={(e) => setFrom(e.target.value)} data-active={Boolean(from)}>
-            <option value="">Anyone</option>
-            {personOptions.map((p) => (
-              <option key={p.email} value={p.email}>
-                {p.name && p.name !== p.email ? `${p.name} (${p.email})` : p.email}{p.count ? ` · ${p.count}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-wrap">
-          <span className="sr-only">Status</span>
-          <select className="select" value={mailStatus} onChange={(e) => setMailStatus(e.target.value as typeof mailStatus)} data-active={Boolean(mailStatus)}>
-            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-        </label>
-        <label className="select-wrap">
-          <span className="sr-only">Priority (AI)</span>
-          <select className="select" value={priority} onChange={(e) => setPriority(e.target.value as typeof priority)} data-active={Boolean(priority)}>
-            {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-        </label>
-        <label className="select-wrap">
-          <span className="sr-only">Category (AI)</span>
-          <select className="select" value={category} onChange={(e) => setCategory(e.target.value as typeof category)} data-active={Boolean(category)}>
-            <option value="">Any category</option>
-            {(Object.keys(CATEGORY_LABELS) as Category[]).map((c) => <option key={c} value={c}>{categoryInfo(c).title}</option>)}
-          </select>
-        </label>
+        <Select
+          label="Person"
+          value={from}
+          onChange={setFrom}
+          options={[
+            { value: "", label: "Anyone" },
+            ...personOptions.map((p) => ({
+              value: p.email,
+              label: p.name && p.name !== p.email ? p.name : p.email,
+              hint: `${p.name && p.name !== p.email ? p.email : ""}${p.count ? `${p.name && p.name !== p.email ? " · " : ""}${p.count} emails` : ""}` || undefined,
+            })),
+          ]}
+        />
+        <Select label="Status" value={mailStatus} onChange={(v) => setMailStatus(v as typeof mailStatus)} options={STATUSES} />
+        <Select label="Priority" value={priority} onChange={(v) => setPriority(v as typeof priority)} options={PRIORITIES} />
+        <Select
+          label="Topic"
+          value={category}
+          onChange={(v) => setCategory(v as typeof category)}
+          options={[
+            { value: "", label: "Any topic" },
+            ...(Object.keys(CATEGORY_LABELS) as Category[]).map((c) => ({ value: c, label: categoryInfo(c).title })),
+          ]}
+        />
         {filtered && <button className="btn btn-ghost btn-sm" onClick={clearFilters}><X size={14} /> Clear filters</button>}
       </div>
 
@@ -156,10 +151,10 @@ export default function DataPage() {
                 <th>Received</th>
                 <th>From</th>
                 <th>To</th>
-                <th>Subject and snippet</th>
-                <th title="From the AI analysis of the conversation. It can be wrong.">AI priority</th>
+                <th>Email</th>
+                <th title="From the AI analysis of the conversation. It can be wrong.">Priority</th>
                 <th>Labels</th>
-                <th className="num-col">Size</th>
+
               </tr>
             </thead>
             <tbody>
@@ -224,7 +219,7 @@ function Row({ m, active, onOpen }: { m: StoredMessage; active: boolean; onOpen:
         {(m.labelIds ?? []).slice(0, 3).map((l) => <span key={l} className="tag tag-sm">{labelName(l)}</span>)}
         {(m.labelIds ?? []).length > 3 && <span className="muted"> +{(m.labelIds ?? []).length - 3}</span>}
       </td>
-      <td className="num num-col nowrap">{kb(m.sizeEstimate)}</td>
+
     </tr>
   );
 }

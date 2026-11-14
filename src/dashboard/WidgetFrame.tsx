@@ -3,6 +3,7 @@ import { ChevronDown, GripVertical, Settings2, Trash2 } from "lucide-react";
 import type { Widget } from "../lib/api";
 import { REGISTRY, WidgetBody } from "../widgets/registry";
 import { WidgetErrorBoundary } from "./ErrorBoundary";
+import { Select } from "../components/Select";
 import type { Size } from "./layout";
 
 type Props = {
@@ -27,11 +28,14 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
 
   useEffect(() => {
     if (!configOpen) return;
+    // The dropdown's menu renders in a portal outside the popover; using it isn't "outside".
+    const inMenu = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(".select-menu"));
     const outside = (event: PointerEvent) => {
+      if (inMenu(event.target)) return;
       if (!configRef.current?.contains(event.target as Node) && !settingsRef.current?.contains(event.target as Node)) setConfigOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setConfigOpen(false); settingsRef.current?.focus(); }
+      if (event.key === "Escape" && !inMenu(event.target)) { setConfigOpen(false); settingsRef.current?.focus(); }
     };
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", escape);
@@ -62,10 +66,16 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
       </header>
       {editing && configOpen && <div ref={configRef} id={`widget-config-${widget.id}`} className="widget-config" role="group" aria-label={`Settings for ${widget.title}`}>
         <strong>Widget settings</strong>
-        {def.setting && <label className="widget-setting"><span>{def.setting.label}</span>
-          <select value={String(def.setting.get(widget))} onChange={(event) => onChange(def.setting!.set(widget, event.target.value))}>
-            {def.setting.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select></label>}
+        {def.setting && (
+          <Select
+            block
+            showLabel
+            label={def.setting.label}
+            value={String(def.setting.get(widget))}
+            onChange={(value) => onChange(def.setting!.set(widget, value))}
+            options={def.setting.options.map((option) => ({ value: String(option.value), label: option.label }))}
+          />
+        )}
         <div className="widget-dimensions">
           <label>Width<input type="number" min={2} max={12} value={size.w} onChange={(event) => {
             const value = event.target.valueAsNumber;
