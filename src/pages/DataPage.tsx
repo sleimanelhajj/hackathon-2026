@@ -1,8 +1,11 @@
 import { useDeferredValue, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ChevronLeft, ChevronRight, Code2, Database, FlaskConical, Paperclip, Search, X } from "lucide-react";
-import type { Address, StoredMessage, StoredMessageDetail } from "../lib/api";
-import { useMessage, useMessages, useStatus } from "../lib/queries";
+import { AlertTriangle, ChevronLeft, ChevronRight, Code2, Database, FlaskConical, Paperclip, Search, SlidersHorizontal, X } from "lucide-react";
+import { Reply } from "lucide-react";
+import { CATEGORY_LABELS, categoryInfo } from "../../shared/spec.js";
+import { useReply } from "../components/ReplyModal";
+import type { Address, Category, MessageFilters, StoredMessage, StoredMessageDetail } from "../lib/api";
+import { useMessage, useMessages, usePeople, useStatus } from "../lib/queries";
 import { Callout } from "../components/ui";
 
 const PAGE_SIZE = 25;
@@ -19,20 +22,61 @@ const dt = (iso: string | null) =>
 /** Gmail label ids → readable names (system labels only; user labels show their id). */
 const labelName = (l: string) => l.replace(/^CATEGORY_/, "").replace(/^Label_/, "").toLowerCase();
 
-/** Every email stored after the Gmail sync, shown as fetched. No rules, no inference. */
+const STATUSES: { value: NonNullable<MessageFilters["status"]>; label: string }[] = [
+  { value: "", label: "Any status" },
+  { value: "unread", label: "Unread" },
+  { value: "important", label: "Important" },
+  { value: "starred", label: "Starred" },
+  { value: "attachments", label: "Has attachments" },
+  { value: "needsReply", label: "Needs reply (AI)" },
+];
+const PRIORITIES: { value: NonNullable<MessageFilters["priority"]>; label: string }[] = [
+  { value: "", label: "Any priority" },
+  { value: "high", label: "High priority" },
+  { value: "medium", label: "Medium priority" },
+  { value: "low", label: "Low priority" },
+];
+const PRIORITY_TONE = { high: "warn", medium: "accent", low: undefined } as const;
+
+/** Person filter from the URL (#/data?from=a@b.com), so the Contacts widget can link here. */
+const fromInHash = () => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("from") ?? "";
+
+/** Every email stored after the Gmail sync, as fetched, with the AI's labels shown separately and marked as guesses. */
 export default function DataPage() {
   const { data: status } = useStatus();
+  const { data: people } = usePeople();
   const [query, setQuery] = useState("");
   const [direction, setDirection] = useState<"" | "in" | "out">("");
+  const [from, setFrom] = useState(fromInHash);
+  const [mailStatus, setMailStatus] = useState<NonNullable<MessageFilters["status"]>>("");
+  const [priority, setPriority] = useState<NonNullable<MessageFilters["priority"]>>("");
+  const [category, setCategory] = useState<NonNullable<MessageFilters["category"]>>("");
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const q = useDeferredValue(query.trim());
 
-  useEffect(() => setPage(0), [q, direction]);
-  const { data, isLoading, isFetching, error } = useMessages({ q, direction, page, limit: PAGE_SIZE });
+  useEffect(() => {
+    const onHash = () => setFrom(fromInHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => setPage(0), [q, direction, from, mailStatus, priority, category]);
+  const { data, isLoading, isFetching, error } = useMessages({ q, direction, from, status: mailStatus, priority, category, page, limit: PAGE_SIZE });
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   const sample = status?.gmail?.mode === "sample";
+  const filtered = Boolean(q || direction || from || mailStatus || priority || category);
+  const clearFilters = () => {
+    setQuery("");
+    setDirection("");
+    setFrom("");
+    setMailStatus("");
+    setPriority("");
+    setCategory("");
+    if (window.location.hash.includes("?")) history.replaceState(null, "", "#/data");
+  };
+  // Keep a person chosen from a link selectable even if they aren't in the top-200 list.
+  const personOptions = people && from && !people.some((p) => p.email === from) ? [{ email: from, name: "", count: 0 }, ...people] : people ?? [];
 
   return (
     <div className="page page-wide">
@@ -40,7 +84,7 @@ export default function DataPage() {
         <div>
           <h1 className="page-title">Email data</h1>
           <p className="page-sub">
-            Exactly what was fetched from Gmail{data ? `: ${data.all} emails` : ""}. Nothing here is guessed or classified.
+            Exactly what was fetched from Gmail{data ? `: ${data.all} emails` : ""}. Priority and category come from the AI and can be wrong.
           </p>
         </div>
       </header>
@@ -67,6 +111,41 @@ export default function DataPage() {
         <span className="data-count num">{data ? `${data.total} matching` : ""}</span>
       </div>
 
+      <div className="filter-bar" role="group" aria-label="Filters">
+        <SlidersHorizontal size={15} className="muted" aria-hidden />
+        <label className="select-wrap">
+          <span className="sr-only">Person</span>
+          <select className="select" value={from} onChange={(e) => setFrom(e.target.value)} data-active={Boolean(from)}>
+            <option value="">Anyone</option>
+            {personOptions.map((p) => (
+              <option key={p.email} value={p.email}>
+                {p.name && p.name !== p.email ? `${p.name} (${p.email})` : p.email}{p.count ? ` · ${p.count}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="select-wrap">
+          <span className="sr-only">Status</span>
+          <select className="select" value={mailStatus} onChange={(e) => setMailStatus(e.target.value as typeof mailStatus)} data-active={Boolean(mailStatus)}>
+            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </label>
+        <label className="select-wrap">
+          <span className="sr-only">Priority (AI)</span>
+          <select className="select" value={priority} onChange={(e) => setPriority(e.target.value as typeof priority)} data-active={Boolean(priority)}>
+            {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+        </label>
+        <label className="select-wrap">
+          <span className="sr-only">Category (AI)</span>
+          <select className="select" value={category} onChange={(e) => setCategory(e.target.value as typeof category)} data-active={Boolean(category)}>
+            <option value="">Any category</option>
+            {(Object.keys(CATEGORY_LABELS) as Category[]).map((c) => <option key={c} value={c}>{categoryInfo(c).title}</option>)}
+          </select>
+        </label>
+        {filtered && <button className="btn btn-ghost btn-sm" onClick={clearFilters}><X size={14} /> Clear filters</button>}
+      </div>
+
       <div className="surface data-table-wrap" aria-busy={isFetching}>
         {isLoading ? (
           <div className="skeleton" style={{ height: 320 }} />
@@ -78,6 +157,7 @@ export default function DataPage() {
                 <th>From</th>
                 <th>To</th>
                 <th>Subject and snippet</th>
+                <th title="From the AI analysis of the conversation. It can be wrong.">AI priority</th>
                 <th>Labels</th>
                 <th className="num-col">Size</th>
               </tr>
@@ -89,7 +169,9 @@ export default function DataPage() {
             </tbody>
           </table>
         ) : (
-          <p className="data-empty">{q ? `No email matches “${q}”.` : "No emails stored."}</p>
+          <p className="data-empty">
+            {filtered ? <>No email matches these filters. <button className="link-btn" onClick={clearFilters}>Clear filters</button></> : "No emails stored."}
+          </p>
         )}
       </div>
 
@@ -123,6 +205,20 @@ function Row({ m, active, onOpen }: { m: StoredMessage; active: boolean; onOpen:
         <span className="data-subject">{m.subject}</span>
         {(m.attachments ?? []).length > 0 && <Paperclip size={12} className="data-clip" aria-label={`${(m.attachments ?? []).length} attachments`} />}
         <span className="data-snippet">{m.snippet}</span>
+      </td>
+      <td className="labels-cell">
+        {m.ai ? (
+          <>
+            {/* Labels written by other versions of the analysis may lack fields: show what's there. */}
+            {m.ai.priority && (
+              <span className="tag tag-sm" data-tone={PRIORITY_TONE[m.ai.priority]}>{m.ai.priority[0].toUpperCase() + m.ai.priority.slice(1)}</span>
+            )}
+            {m.ai.category && <span className="tag tag-sm">{categoryInfo(m.ai.category).title}</span>}
+            {m.ai.needsReply && <span className="tag tag-sm" data-tone="accent">Reply</span>}
+          </>
+        ) : (
+          <span className="muted">—</span>
+        )}
       </td>
       <td className="labels-cell">
         {(m.labelIds ?? []).slice(0, 3).map((l) => <span key={l} className="tag tag-sm">{labelName(l)}</span>)}
@@ -165,6 +261,9 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
       {m && (
         <div className="detail-body">
           <div className="detail-actions">
+            <button className="btn btn-secondary btn-sm" onClick={() => useReply.getState().open(m.threadId, typeof m.from === "string" ? m.from : m.from?.name || m.from?.email)}>
+              <Reply size={14} /> Reply
+            </button>
             <button className="btn btn-ghost btn-sm" onClick={() => setJson((v) => !v)} aria-pressed={json}><Code2 size={14} /> {json ? "Show fields" : "Show raw JSON"}</button>
           </div>
           {json ? <pre className="code-block">{JSON.stringify(m, null, 2)}</pre> : <Detail m={m} />}

@@ -37,6 +37,8 @@ export type GmailConnection = {
   syncProgress: { done: number; total: number; phase: string } | null;
   mailbox: { messagesTotal: number; threadsTotal: number } | null;
   analysis: AnalysisState | null;
+  /** True when Gmail granted the send scope (needed to send approved replies). */
+  canSend: boolean;
 };
 
 export type Status = {
@@ -110,6 +112,8 @@ export type Dashboard =
       rules: Record<ListRule, { count: number; items: RuleItem[] }>;
       breakdowns: Record<BreakdownRule, { key: string; label: string; value: number }[]>;
       insights: Insights;
+      contacts: Contact[];
+      attachments: { total: number; items: AttachmentFile[] };
     };
 
 export type RuleItem = {
@@ -157,17 +161,71 @@ export type StoredMessage = {
   attachments: Attachment[]; hasAttachments: boolean; hasCalendarInvite: boolean; hasHtml: boolean; bodyTruncated: boolean;
   isUnread: boolean; isStarred: boolean; isImportant: boolean; direction: "in" | "out"; isInternal: boolean; isAutomated: boolean; isBulk: boolean;
   source: "gmail" | "sample"; syncedAt: string;
+  /** From the AI analysis of this message's conversation (a guess), or null when it wasn't analysed. */
+  ai?: { priority: Priority; category: Category; needsReply: boolean; certainty: InsightRow["certainty"] } | null;
+};
+
+/** One person you've emailed with, and their conversations (a "folder" in the Contacts widget). */
+export type Contact = {
+  email: string;
+  name: string;
+  domain: string;
+  received: number;
+  sent: number;
+  lastAt: string;
+  firstAt: string;
+  isNew: boolean;
+  isInternal: boolean;
+  aiLead: boolean;
+  needsReply: number;
+  threadCount: number;
+  threads: { threadId: string; subject: string; lastAt: string; link: string | null; category: Category | null; priority: Priority | null; needsReply: boolean }[];
+};
+
+export type AttachmentFile = {
+  id: string;
+  gmailId: string;
+  attachmentId: string | null;
+  filename: string;
+  mimeType: string;
+  size: number;
+  direction: "in" | "out";
+  contact: string;
+  subject: string;
+  at: string;
+  link: string | null;
+  downloadable: boolean;
+};
+
+export type ReplyDraft = {
+  threadId: string;
+  to: { name: string; email: string }[];
+  subject: string;
+  body: string;
+  note: string | null;
+  model: string;
+  /** Attachments whose text the draft was based on. */
+  filesRead: string[];
+  replyingTo: { from: string; date: string; snippet: string };
+};
+
+export type MessageFilters = {
+  q?: string;
+  page?: number;
+  limit?: number;
+  direction?: "in" | "out" | "";
+  from?: string;
+  status?: "" | "unread" | "starred" | "important" | "attachments" | "needsReply";
+  priority?: "" | Priority;
+  category?: "" | Category;
 };
 export type StoredMessageDetail = StoredMessage & { headers: { name: string; value: string }[]; bodyText: string | null };
 export type MessagePage = { total: number; all: number; page: number; limit: number; messages: StoredMessage[] };
 
 export const api = {
-  messages: (p: { q?: string; page?: number; limit?: number; direction?: "in" | "out" | "" }) => {
+  messages: (p: MessageFilters) => {
     const qs = new URLSearchParams();
-    if (p.q) qs.set("q", p.q);
-    if (p.page) qs.set("page", String(p.page));
-    if (p.limit) qs.set("limit", String(p.limit));
-    if (p.direction) qs.set("direction", p.direction);
+    for (const [k, v] of Object.entries(p)) if (v !== undefined && v !== "" && v !== 0) qs.set(k, String(v));
     return request<MessagePage>(`/api/messages?${qs}`);
   },
   message: (id: string) => request<StoredMessageDetail>(`/api/messages/${encodeURIComponent(id)}`),
@@ -182,6 +240,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ force }),
     }),
+  people: () => request<{ email: string; name: string; count: number }[]>("/api/messages/people"),
+  draftReply: (threadId: string) =>
+    request<ReplyDraft>("/api/replies/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId }),
+    }),
+  /** Sends for real. Only call this from the Send button after the user has reviewed the reply. */
+  sendReply: (reply: { threadId: string; to: { name: string; email: string }[]; subject: string; body: string }) =>
+    request<{ ok: true; id: string }>("/api/replies/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...reply, approved: true }),
+    }),
+  attachmentUrl: (gmailId: string, attachmentId: string) =>
+    `/api/attachments/${encodeURIComponent(gmailId)}/${encodeURIComponent(attachmentId)}`,
   connectUrl: "/api/auth/google/start",
   spec: () => request<SavedDashboard>("/api/dashboards/default"),
   saveSpec: (spec: DashboardSpecInput & { version: number }) =>

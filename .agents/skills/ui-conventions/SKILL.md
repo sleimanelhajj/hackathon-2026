@@ -5,16 +5,19 @@ description: Visual and interaction rules for the AI Workspace OS React app, cov
 
 # UI conventions
 
-Direction: **category standard, played straight**. A clean, light SaaS tool at the craft level of Linear and Attio. Minimal and easy to understand, with colour only where it carries meaning. The Figma file is the reference: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h
+Direction: **glass over sky** (decision #33). Frosted-glass work panes float over a cloudy-white-to-sky-blue ground. Layout, navigation and controls stay the standard ones, at the craft level of Linear and Attio. Glass marks the layers you work on (sidebar, widgets, panels, side panel, dialogs), never decoration. The Figma file shows the layouts: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h
 
 ## Tokens (in `src/index.css` `:root`)
 
-- Surfaces: `--bg` (page), `--surface` (cards/panels), `--subtle` (hover/fills), `--sidebar`.
-- Text: `--text`, `--text-2` (secondary), `--text-3` (tertiary; still ≥4.5:1 on white).
-- Accent: `--accent` (indigo `#4f46e5`) for primary actions, the active nav item and the main data series. One accent only.
-- State: `--success`, `--warning`, `--danger` (+ `-subtle` backgrounds). Use them only for real states: connected, waiting a long time, error.
-- Radius: `--radius-sm` 6, `--radius` 8, `--radius-lg` 12. Font: Inter Variable (self-hosted). Numbers in data use `.num` (tabular figures).
-- Never hardcode a new hex in a component. Add a token instead.
+- Sky: `--bg` (top, cloudy white) → `--bg-deep` (bottom, clear blue); `--surface-solid` when a pane must be opaque.
+- Glass: a pane is `background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);` with `border: 1px solid var(--glass-edge)` and `box-shadow: var(--shadow)`. Popovers and dialogs use `--glass-strong` and `--shadow-lift`. Fills inside panes: `--subtle`; row hover: `--hover`.
+- Text: `--text`, `--text-2`, `--text-3`, all ≥4.5:1 on glass over any part of the sky.
+- Sky blue `--accent` (`#0369a1`) for actions, the active nav item, links and the main data series.
+- Amber-red `--signal` for urgency only: high priority, "waiting on you" counts, warnings. Text in it uses `--signal-text`; `--warning` maps to it.
+- State: `--success`, `--danger` (+ `-subtle`). AI guesses: `--inferred`.
+- Radius: `--radius-sm` 8, `--radius` 10, `--radius-lg` 16. Font: Inter Variable (self-hosted). Numbers in data use `.num` (tabular figures).
+- Never hardcode a new hex in a component. Add a token instead. `tests/server/theme.test.mjs` fails if the palette, the glass or the contrast regress.
+- Clouds drift only while a sync or AI run is working (`html[data-sky="busy"]`, set in `App.tsx`). Don't add other ambient motion.
 
 ## Components
 

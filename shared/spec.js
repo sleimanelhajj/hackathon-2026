@@ -36,6 +36,16 @@ export const CATEGORY_LABELS = {
   other: { title: "Other", hint: "Personal or doesn't fit elsewhere" },
 };
 
+/**
+ * Title and hint for a category. The shared database can hold categories from a newer version of the analysis
+ * (e.g. a teammate's branch); show those by name instead of crashing.
+ * @param {string} c
+ * @returns {{ title: string, hint: string }}
+ */
+export function categoryInfo(c) {
+  return CATEGORY_LABELS[c] ?? { title: c ? c[0].toUpperCase() + c.slice(1) : "Unknown", hint: "A category added by a newer version of the AI analysis" };
+}
+
 /** @type {Record<z.infer<typeof InsightFocus>, string>} */
 export const INSIGHT_FOCUS_LABELS = {
   "high-priority": "Needs your attention",
@@ -54,6 +64,8 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("top-people"), title, limit: z.number().int().min(3).max(10) }),
   z.object({ id, type: z.literal("insight-list"), title, focus: InsightFocus }),
   z.object({ id, type: z.literal("category-breakdown"), title }),
+  z.object({ id, type: z.literal("contacts"), title, show: z.enum(["all", "new"]) }),
+  z.object({ id, type: z.literal("attachments"), title }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -155,6 +167,18 @@ export const CATALOG = {
     size: { w: 4, h: 10, minW: 3, minH: 6 },
     create: () => ({ type: "category-breakdown", title: "What your email is about" }),
   },
+  contacts: {
+    label: "Contacts",
+    description: "A folder per person with their conversations; new contacts marked",
+    size: { w: 6, h: 10, minW: 4, minH: 6 },
+    create: () => ({ type: "contacts", title: "Contacts", show: "all" }),
+  },
+  attachments: {
+    label: "Attachments",
+    description: "Every file you received or sent, with download",
+    size: { w: 6, h: 9, minW: 4, minH: 5 },
+    create: () => ({ type: "attachments", title: "Attachments" }),
+  },
 };
 
 /** format: "count" (default) or "hours" (shown as a duration). */
@@ -190,7 +214,8 @@ export const DEFAULT_SPEC = {
     { id: "rule-meeting-invites", type: "rule-list", title: "Meeting invites", rule: "meetingInvites" },
     { id: "activity", type: "activity-chart", title: "Email activity", days: 14 },
     { id: "breakdown-domains", type: "breakdown", title: "Top companies", rule: "topDomains" },
-    { id: "rule-attachments", type: "rule-list", title: "Emails with attachments", rule: "attachments" },
+    { id: "attachments", type: "attachments", title: "Attachments" },
+    { id: "contacts", type: "contacts", title: "Contacts", show: "all" },
     { id: "breakdown-newsletters", type: "breakdown", title: "Newsletters and notifications", rule: "newsletters" },
   ],
   layout: [
@@ -206,7 +231,8 @@ export const DEFAULT_SPEC = {
     { i: "rule-meeting-invites", x: 7, y: 22, w: 5, h: 9 },
     { i: "activity", x: 0, y: 31, w: 8, h: 8 },
     { i: "breakdown-domains", x: 8, y: 31, w: 4, h: 8 },
-    { i: "rule-attachments", x: 0, y: 39, w: 7, h: 8 },
+    { i: "attachments", x: 0, y: 39, w: 7, h: 8 },
+    { i: "contacts", x: 0, y: 47, w: 12, h: 10 },
     { i: "breakdown-newsletters", x: 7, y: 39, w: 5, h: 8 },
   ],
 };

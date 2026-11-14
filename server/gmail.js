@@ -3,7 +3,9 @@ import { getDb } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
 import { normalizeMessage } from "./gmail-parse.js";
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+// gmail.send is used only by sendReply(), after the user approves an edited reply in the app (decision #30).
+export const SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", SEND_SCOPE];
 const LOOKBACK_DAYS = Number(process.env.GMAIL_LOOKBACK_DAYS || 30);
 const MAX_MESSAGES = Number(process.env.GMAIL_MAX_MESSAGES || 300);
 
@@ -69,6 +71,7 @@ export async function handleCallback(code) {
   if (!existing || existing.mode !== "live" || existing.email !== profile.emailAddress) {
     await getDb().collection("messages").deleteMany({});
     await getDb().collection("labels").deleteMany({});
+    await getDb().collection("attachment_text").deleteMany({});
   }
   await getDb().collection("connections").updateOne(
     { provider: "gmail" },
@@ -329,5 +332,69 @@ export async function disconnectGmail() {
   await db.collection("messages").deleteMany({});
   await db.collection("labels").deleteMany({});
   await db.collection("extractions").deleteMany({}); // AI labels derived from those messages go too
+  await db.collection("attachment_text").deleteMany({}); // and text read out of their attachments
   await db.collection("connections").deleteOne({ provider: "gmail" });
+}
+
+// ---------------------------------------------------------------------------
+// Sending a reply. Only ever called from POST /api/replies/send, i.e. after the user has read, edited and
+// clicked Send on a reply in the app. Nothing is sent automatically (AGENTS.md rule 4, decision #30).
+// ---------------------------------------------------------------------------
+const oneLine = (s) => String(s ?? "").replace(/[\r\n]+/g, " ").trim(); // no header injection
+const encodeWord = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`);
+const mailbox = (a) => (a.name ? `${encodeWord(oneLine(a.name).replace(/"/g, ""))} <${oneLine(a.email)}>` : oneLine(a.email));
+const b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/**
+ * The reply as Gmail's `raw` field: a plain-text RFC 2822 message, base64url-encoded. Pure, so it's unit-tested.
+ * Header values are folded to one line (no header injection); non-ASCII subjects and names are RFC 2047 encoded.
+ */
+export function buildReplyMime({ from, to, cc = [], subject, body, inReplyTo, references }) {
+  const headers = [
+    `From: ${oneLine(from)}`,
+    `To: ${to.map(mailbox).join(", ")}`,
+    ...(cc.length ? [`Cc: ${cc.map(mailbox).join(", ")}`] : []),
+    `Subject: ${encodeWord(oneLine(subject))}`,
+    ...(inReplyTo ? [`In-Reply-To: ${oneLine(inReplyTo)}`] : []),
+    ...(references?.length ? [`References: ${references.map(oneLine).join(" ")}`] : []),
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+  ];
+  const encodedBody = Buffer.from(body.replace(/\r?\n/g, "\r\n"), "utf8").toString("base64").replace(/.{76}/g, "$&\r\n");
+  return b64url(Buffer.from(`${headers.join("\r\n")}\r\n\r\n${encodedBody}`, "utf8"));
+}
+
+export function canSend(conn) {
+  return conn?.mode === "live" && (conn.scopes || []).includes(SEND_SCOPE);
+}
+
+/** Sends a plain-text reply in an existing thread. `to`: [{ name, email }]. Returns Gmail's { id, threadId }. */
+export async function sendReply({ threadId, to, cc = [], subject, body, inReplyTo, references }) {
+  const conn = await getDb().collection("connections").findOne({ provider: "gmail" });
+  if (!conn) throw new Error("Gmail isn't connected.");
+  if (conn.mode !== "live") throw new Error("This is sample data, so nothing can be sent. Connect Gmail to send replies.");
+  if (!canSend(conn)) throw new Error("Gmail hasn't allowed sending yet. Disconnect and connect Gmail again to grant it.");
+
+  const raw = buildReplyMime({ from: conn.email, to, cc, subject, body, inReplyTo, references });
+  const token = await accessToken(conn);
+  await takeQuota(100); // messages.send costs 100 units
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw, threadId }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) throw new Error("Google refused to send. Disconnect and connect Gmail again to allow sending.");
+  if (!res.ok) throw new Error(`Gmail couldn't send the reply (${res.status}${json?.error?.message ? `: ${json.error.message}` : ""}).`);
+  return { id: json.id, threadId: json.threadId };
+}
+
+/** Downloads one attachment of a stored message (read-only scope). Returns { data: Buffer }. */
+export async function fetchAttachment(gmailId, attachmentId) {
+  const conn = await getDb().collection("connections").findOne({ provider: "gmail" });
+  if (conn?.mode !== "live") throw new Error("Sample attachments aren't real files, so they can't be downloaded.");
+  const token = await accessToken(conn);
+  const json = await gmailFetch(token, `messages/${encodeURIComponent(gmailId)}/attachments/${encodeURIComponent(attachmentId)}`, 5);
+  return { data: Buffer.from(json.data.replace(/-/g, "+").replace(/_/g, "/"), "base64") };
 }

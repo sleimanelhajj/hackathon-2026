@@ -11,7 +11,9 @@ const noOverlaps = (layout, cols = 12) => {
 };
 
 test('saved free positions and empty space survive normalization and serialization', () => {
-  const layout = DEFAULT_SPEC.layout.map((item) => item.i === 'stat-awaiting-you' ? { ...item, x: 0, y: 50 } : item);
+  // Park one card below everything, leaving a gap: the gap must survive.
+  const bottom = Math.max(...DEFAULT_SPEC.layout.map((item) => item.y + item.h));
+  const layout = DEFAULT_SPEC.layout.map((item) => item.i === 'stat-awaiting-you' ? { ...item, x: 0, y: bottom + 3 } : item);
   const draft = normalizeLayout(DEFAULT_SPEC.widgets, layout);
   assert.deepEqual(draft, layout);
   const saved = DashboardSpec.parse({ ...DEFAULT_SPEC, layout: cleanLayout(draft) });

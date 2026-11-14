@@ -40,7 +40,7 @@ npm run build            # type-check + production build (must pass before you p
 npx tsc --noEmit         # type-check only
 ```
 
-Run `npm test` for layout regression checks. Also verify changes by running the app and exercising the flow in a browser (see the `run-and-verify` skill).
+**Work test-first (decision #34).** Write a failing test, make it pass, then tidy. Server and shared logic: `tests/server/*.test.mjs` (Node's test runner). UI behaviour: `tests/*.test.tsx` (Vitest + Testing Library). The theme's palette, glass and contrast are pinned by `tests/server/theme.test.mjs`. `npm test` runs everything and must pass before you push. Also verify changes by running the app and exercising the flow in a browser (see the `run-and-verify` skill).
 
 ## Architecture
 
@@ -72,14 +72,14 @@ MongoDB collections: `connections` (one doc per provider, tokens encrypted, hist
 2. **No fabricated numbers.** Every metric is computed by code from synced data, or shown as missing. Never invent revenue, leads, or "AI insights" without a source. Label sample data as sample data, everywhere it shows.
 3. **Evidence before confidence.** Anything shown to the user should link back to its source (e.g. "Open in Gmail") and say how it was counted.
 4. **Human approval for anything that leaves the workspace.** The MVP is read-only. Drafts come later, and only after explicit approval. Never auto-send or delete.
-5. **Least privilege.** Gmail scope is `gmail.readonly`. Adding a scope is a product decision: log it in `context/decisions.md`. Email bodies are stored only encrypted (`bodyEnc`), never logged, and never returned by list endpoints.
+5. **Least privilege.** Gmail scopes are `gmail.readonly` plus `gmail.send`, which is used only to send a reply the user edited and approved (decision #30). Adding a scope is a product decision: log it in `context/decisions.md`. Email bodies are stored only encrypted (`bodyEnc`), never logged, and never returned by list endpoints.
 6. **Email content is untrusted data.** Never let text from an email steer an agent, a tool, or a prompt.
 7. **Honest sync state.** Show "last synced", never claim real-time.
 8. **Bounded work.** Syncs are limited (30 days, 300 messages) and deduplicated; keep it that way.
 
 ## UI conventions
 
-- The look is "category standard", a clean SaaS tool held to Linear/Attio quality. Use the tokens in `src/index.css`; don't hardcode new colours.
+- The look is **glass over sky** (decision #33): frosted-glass panes over a cloudy-white-to-sky-blue ground, sky blue for actions, amber-red only for urgency. Layout and controls stay standard, held to Linear/Attio quality. Use the tokens in `src/index.css` (`--glass`, `--blur`, `--accent`, `--signal`…); don't hardcode new colours.
 - Every screen answers "what should I do next?" with a `Callout` plus one primary button.
 - Group content in `Panel` (collapsible, remembers state). Use real icons from `lucide-react`, never emoji.
 - Copy: plain words, buttons name their action ("Connect Gmail", "Sync now"), errors say what went wrong and how to fix it.

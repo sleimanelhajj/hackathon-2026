@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
+import { ReplyModal } from "./components/ReplyModal";
 import { Sidebar } from "./components/Sidebar";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { useRoute, useSidebarShortcut } from "./lib/store";
@@ -18,6 +19,12 @@ export default function App() {
   useEffect(() => {
     if (!window.location.hash && status && !status.gmail) window.location.hash = "#/integrations";
   }, [status]);
+
+  // The sky's clouds drift only while something is really working (a Gmail sync or an AI run).
+  const busy = status?.gmail?.status === "syncing" || status?.gmail?.analysis?.status === "running";
+  useEffect(() => {
+    document.documentElement.dataset.sky = busy ? "busy" : "still";
+  }, [busy]);
 
   useEffect(() => {
     document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "Email data" : "Dashboard"} · AI Workspace OS`;
@@ -39,6 +46,7 @@ export default function App() {
       </main>
       {/* Right-hand panel slot: pages portal into it (e.g. the widget library while editing). Hidden when empty. */}
       <aside id="side-panel" className="side-panel-slot" />
+      <ReplyModal />
     </div>
   );
 }

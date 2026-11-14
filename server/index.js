@@ -1,13 +1,16 @@
 import "dotenv/config";
 import express from "express";
 import { connectDb, getDb, pingDb } from "./db.js";
-import { authUrl, consumeState, disconnectGmail, googleConfigured, handleCallback, syncGmail } from "./gmail.js";
+import { z } from "zod";
+import { authUrl, canSend, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, sendReply, syncGmail } from "./gmail.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
 import { decrypt } from "./crypto.js";
 import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
+import { draftReply, loadThread } from "./agent/reply.js";
+import { Category, Priority } from "../shared/spec.js";
 
 const app = express();
 app.use(express.json());
@@ -22,6 +25,7 @@ function publicConnection(conn) {
     email: conn.email,
     status: conn.status,
     scopes: conn.scopes || [],
+    canSend: canSend(conn),
     lastSyncAt: conn.lastSyncAt || null,
     lastSyncCount: conn.lastSyncCount ?? null,
     error: conn.error || null,
@@ -97,26 +101,74 @@ app.delete("/api/integrations/gmail", wrap(async (_req, res) => {
 }));
 app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboard())));
 
-// Inspect what's stored per email (for the team, to see exactly what Gmail gave us).
-// Local dev server only; there is no auth yet.
-// GET /api/messages?limit=50&page=0&q=lena&direction=in
+// Stored emails for the Email data page (local dev server only; there is no auth yet).
+// Gmail fields are as fetched; `ai` (priority, category, needs reply) comes from the AI analysis and the page
+// labels it as an AI guess.
+// GET /api/messages?q=&direction=in|out&from=a@b.com&status=unread|starred|important|attachments|needsReply
+//                  &priority=high|medium|low&category=lead&page=0&limit=25
+const STATUS_FILTERS = {
+  unread: { isUnread: true },
+  starred: { isStarred: true },
+  important: { isImportant: true },
+  attachments: { hasAttachments: true },
+};
 app.get("/api/messages", wrap(async (req, res) => {
+  const db = getDb();
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
   const page = Math.max(0, Number(req.query.page) || 0);
-  const filter = {};
+  const and = [];
   const q = String(req.query.q || "").trim().slice(0, 100);
   if (q) {
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    filter.$or = [{ subject: rx }, { snippet: rx }, { "from.email": rx }, { "from.name": rx }, { "to.email": rx }, { "attachments.filename": rx }];
+    and.push({ $or: [{ subject: rx }, { snippet: rx }, { "from.email": rx }, { "from.name": rx }, { "to.email": rx }, { "attachments.filename": rx }] });
   }
-  if (req.query.direction === "in" || req.query.direction === "out") filter.direction = req.query.direction;
-  const col = getDb().collection("messages");
+  if (req.query.direction === "in" || req.query.direction === "out") and.push({ direction: req.query.direction });
+  const from = String(req.query.from || "").trim().toLowerCase().slice(0, 320);
+  if (from) and.push({ $or: [{ "from.email": from }, { "to.email": from }] });
+  const status = String(req.query.status || "");
+  if (STATUS_FILTERS[status]) and.push(STATUS_FILTERS[status]);
+
+  // AI filters match whole conversations through their extraction.
+  const ai = {};
+  if (Priority.safeParse(req.query.priority).success) ai.priority = req.query.priority;
+  if (Category.safeParse(req.query.category).success)
+    ai.$or = [{ "correction.category": req.query.category }, { correction: { $exists: false }, category: req.query.category }];
+  if (status === "needsReply") ai.needsReply = true;
+  if (Object.keys(ai).length) and.push({ threadId: { $in: await db.collection("extractions").distinct("_id", ai) } });
+
+  const filter = and.length ? { $and: and } : {};
+  const col = db.collection("messages");
   const [docs, total, all] = await Promise.all([
     col.find(filter, { projection: { bodyEnc: 0, headers: 0, _id: 0 } }).sort({ date: -1 }).skip(page * limit).limit(limit).toArray(),
     col.countDocuments(filter),
     col.countDocuments(),
   ]);
-  res.json({ total, all, page, limit, messages: docs });
+  const ex = await db
+    .collection("extractions")
+    .find({ _id: { $in: [...new Set(docs.map((d) => d.threadId))] } }, { projection: { priority: 1, category: 1, needsReply: 1, correction: 1, certainty: 1 } })
+    .toArray();
+  const byThread = new Map(
+    ex.map((e) => [e._id, { priority: e.priority, category: e.correction?.category ?? e.category, needsReply: e.needsReply, certainty: e.correction ? "confirmed" : e.certainty }])
+  );
+  res.json({ total, all, page, limit, messages: docs.map((d) => ({ ...d, ai: byThread.get(d.threadId) ?? null })) });
+}));
+
+// People in the stored email (senders and recipients), for the "Person" filter.
+app.get("/api/messages/people", wrap(async (_req, res) => {
+  const conn = await getDb().collection("connections").findOne({ provider: "gmail" });
+  const self = (conn?.email || "").toLowerCase();
+  const rows = await getDb()
+    .collection("messages")
+    .aggregate([
+      { $project: { p: { $cond: [{ $eq: ["$direction", "in"] }, ["$from"], { $ifNull: ["$to", []] }] } } },
+      { $unwind: "$p" },
+      { $match: { "p.email": { $nin: [null, "", self] } } },
+      { $group: { _id: { $toLower: "$p.email" }, name: { $max: "$p.name" }, count: { $sum: 1 } } },
+      { $sort: { count: -1, _id: 1 } },
+      { $limit: 200 },
+    ])
+    .toArray();
+  res.json(rows.map((r) => ({ email: r._id, name: r.name || "", count: r.count })));
 }));
 app.get("/api/messages/:gmailId", wrap(async (req, res) => {
   const doc = await getDb().collection("messages").findOne({ gmailId: req.params.gmailId });
@@ -126,6 +178,60 @@ app.get("/api/messages/:gmailId", wrap(async (req, res) => {
   try { bodyText = bodyEnc ? decrypt(bodyEnc) : null; } catch { bodyText = "(can't decrypt: different TOKEN_SECRET)"; }
   res.json({ ...rest, bodyText });
 }));
+
+// ---- Replies: AI draft, then send only after the user edits and approves it (decision #30) ----
+app.post("/api/replies/draft", wrap(async (req, res) => {
+  const threadId = z.string().min(1).max(200).parse(req.body?.threadId);
+  res.json(await draftReply(threadId));
+}));
+
+const Addr = z.object({ name: z.string().max(200).default(""), email: z.string().trim().email().max(320) });
+const SendBody = z.object({
+  threadId: z.string().min(1).max(200),
+  to: z.array(Addr).min(1).max(20),
+  cc: z.array(Addr).max(20).default([]),
+  subject: z.string().trim().min(1).max(300),
+  body: z.string().trim().min(1).max(20000),
+  approved: z.literal(true), // the client sets this only from the Send button in the reply dialog
+});
+app.post("/api/replies/send", async (req, res) => {
+  const parsed = SendBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "The reply is incomplete: check the recipients, subject and message." });
+  const input = parsed.data;
+  try {
+    // Threading headers come from our own store, never from the request.
+    const list = await loadThread(input.threadId);
+    const last = list.at(-1);
+    const references = [...(last.references || []), last.messageId].filter(Boolean).slice(-20);
+    const sent = await sendReply({ ...input, inReplyTo: last.messageId || null, references });
+    // Metadata only: the text itself lives in Gmail's Sent folder.
+    await getDb().collection("sent_replies").insertOne({
+      threadId: input.threadId, gmailId: sent.id, to: input.to.map((a) => a.email), subject: input.subject, sentAt: new Date(),
+    });
+    syncGmail().then(analyseInBackground).catch(() => {}); // pick up the sent message so "waiting on you" updates
+    res.json({ ok: true, id: sent.id });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Download one attachment of a stored email (read-only scope). Only attachments on record can be fetched.
+app.get("/api/attachments/:gmailId/:attachmentId", async (req, res) => {
+  try {
+    const msg = await getDb().collection("messages").findOne({ gmailId: req.params.gmailId }, { projection: { attachments: 1 } });
+    const att = msg?.attachments?.find((a) => a.attachmentId && a.attachmentId === req.params.attachmentId);
+    if (!att) return res.status(404).json({ error: "Attachment not found." });
+    const { data } = await fetchAttachment(req.params.gmailId, att.attachmentId);
+    const name = (att.filename || "attachment").replace(/[\r\n"\\/]/g, "_");
+    // Always a download, never rendered on our origin.
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
 
 // Dashboard layout spec (widgets + grid positions)
 app.get("/api/dashboards/default", wrap(async (_req, res) => res.json(await getDashboard())));

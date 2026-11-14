@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, ExternalLink, Info, KeyRound, Loader2, Sparkles } from "lucide-react";
-import { CATEGORY_LABELS } from "../../shared/spec.js";
+import { AlertTriangle, ArrowRight, ExternalLink, Info, KeyRound, Loader2, Reply, Sparkles } from "lucide-react";
+import { useReply } from "../components/ReplyModal";
+import { categoryInfo } from "../../shared/spec.js";
 import { timeAgo, type InsightRow, type Insights, type Widget } from "../lib/api";
 import { useRunAnalysis } from "../lib/queries";
 import { useDashboardData } from "../dashboard/DataContext";
@@ -74,7 +75,7 @@ function Footer({ insights }: { insights: Insights }) {
     <p className="howto">
       {running ? <Loader2 size={13} className="spin" aria-hidden /> : <Info size={13} aria-hidden />}
       <span>
-        Sorted by AI from subjects and previews ({insights.analysedThreads} of {insights.totalThreads} threads
+        Sorted by AI from the email text and attachments ({insights.analysedThreads} of {insights.totalThreads} threads
         {running ? ", updating…" : insights.lastRunAt ? `, ${timeAgo(insights.lastRunAt)}` : ""}). Labels can be wrong.
         {insights.status === "error" && insights.error && <span className="insight-error"> {insights.error}</span>}
       </span>
@@ -82,29 +83,45 @@ function Footer({ insights }: { insights: Insights }) {
   );
 }
 
+/** The summary is the headline; who/what/when sits under it; then the next step and the actions. */
 function InsightItem({ row, showCategory }: { row: InsightRow; showCategory: boolean }) {
   const c = CERTAINTY[row.certainty] ?? CERTAINTY.inferred;
+  const openReply = useReply((s) => s.open);
   return (
-    <li className="insight">
-      <div className="insight-top">
-        <span className="thread-contact" title={row.contact}>{row.contact}</span>
+    <li className="insight" data-priority={row.priority}>
+      <p className="insight-headline">{row.summary}</p>
+      <p className="insight-meta">
+        <span className="insight-who" title={row.contact}>{row.contact}</span>
+        <span className="sep" aria-hidden>·</span>
+        <span className="insight-subject" title={row.subject}>{row.subject}</span>
+        <span className="sep" aria-hidden>·</span>
+        <span className="num nowrap">{timeAgo(row.lastAt)}</span>
+      </p>
+      <div className="insight-tags">
         {row.priority === "high" && <span className="tag" data-tone="warn">High priority</span>}
-        {showCategory && <span className="tag">{CATEGORY_LABELS[row.category].title}</span>}
-        <span className="tag" data-tone={row.certainty} title={c.tip}>{c.label}</span>
-        <span className="insight-age num">{timeAgo(row.lastAt)}</span>
-        {row.link ? (
-          <a className="btn btn-ghost btn-sm" href={row.link} target="_blank" rel="noreferrer" aria-label={`Open “${row.subject}” in Gmail`}>
-            Open <ExternalLink size={13} aria-hidden />
-          </a>
-        ) : (
-          <span className="thread-sample" title="Sample threads aren't in Gmail">Sample</span>
-        )}
+        {row.needsReply && <span className="tag" data-tone="accent">Needs reply</span>}
+        {showCategory && <span className="tag">{categoryInfo(row.category).title}</span>}
+        <span className="tag" data-tone={row.certainty} title={`${c.tip} Why: ${row.reason}`}>{c.label}</span>
       </div>
-      <p className="insight-subject" title={row.subject}>{row.subject}</p>
-      <p className="insight-summary">{row.summary}</p>
-      {row.suggestedAction && (
-        <p className="insight-action"><ArrowRight size={13} aria-hidden /> {row.suggestedAction}</p>
-      )}
+      <div className="insight-foot">
+        {row.suggestedAction ? (
+          <p className="insight-action"><ArrowRight size={13} aria-hidden /> {row.suggestedAction}</p>
+        ) : (
+          <span />
+        )}
+        <div className="insight-buttons">
+          <button className="btn btn-secondary btn-sm" onClick={() => openReply(row.threadId, row.contact)}>
+            <Reply size={13} aria-hidden /> Reply
+          </button>
+          {row.link ? (
+            <a className="btn btn-ghost btn-sm" href={row.link} target="_blank" rel="noreferrer" aria-label={`Open “${row.subject}” in Gmail`}>
+              Open <ExternalLink size={13} aria-hidden />
+            </a>
+          ) : (
+            <span className="thread-sample" title="Sample threads aren't in Gmail">Sample</span>
+          )}
+        </div>
+      </div>
       <p className="insight-reason">
         <Info size={12} aria-hidden /> Why: {row.reason}
         {row.stale && " (a newer message arrived; this label will refresh on the next run)"}
@@ -153,9 +170,9 @@ export const CategoryBreakdownWidget = memo(function CategoryBreakdownWidget(_pr
     <div>
       <ul className="people">
         {insights.categories.map(({ category, count }) => (
-          <li className="category-row" key={category} title={CATEGORY_LABELS[category].hint}>
+          <li className="category-row" key={category} title={categoryInfo(category).hint}>
             <div style={{ minWidth: 0 }}>
-              <p className="person-name">{CATEGORY_LABELS[category].title}</p>
+              <p className="person-name">{categoryInfo(category).title}</p>
               <div className="bar-track" aria-hidden><div className="bar-fill" style={{ width: `${(count / max) * 100}%` }} /></div>
             </div>
             <span className="num person-count" aria-label={`${count} threads`}>{count}</span>

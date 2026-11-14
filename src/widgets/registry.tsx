@@ -1,5 +1,7 @@
 import { lazy, Suspense, type ComponentType } from "react";
-import { BarChart3, Filter, Hash, ListTodo, PieChart, Sparkles, Tags, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Filter, FolderOpen, Hash, ListTodo, Paperclip, PieChart, Sparkles, Tags, Users, type LucideIcon } from "lucide-react";
+import { ContactsWidget } from "./ContactsWidget";
+import { AttachmentsWidget } from "./AttachmentsWidget";
 import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, STAT_LABELS } from "../../shared/spec.js";
 import type { InsightFocus, Widget, WidgetType } from "../lib/api";
 import { CategoryBreakdownWidget, InsightListWidget } from "./InsightWidgets";
@@ -112,6 +114,26 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
   "category-breakdown": {
     icon: Tags,
     component: CategoryBreakdownWidget as AnyWidgetComponent,
+    collapsible: true,
+  },
+  contacts: {
+    icon: FolderOpen,
+    component: ContactsWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: [
+        { value: "all", label: "Everyone" },
+        { value: "new", label: "New contacts only" },
+      ],
+      get: (w) => (w.type === "contacts" ? w.show : "all"),
+      set: (w, v) =>
+        w.type === "contacts" ? { ...w, show: v === "new" ? "new" : "all", title: v === "new" ? "New contacts" : "Contacts" } : w,
+    },
+  },
+  attachments: {
+    icon: Paperclip,
+    component: AttachmentsWidget as AnyWidgetComponent,
     collapsible: true,
   },
 };

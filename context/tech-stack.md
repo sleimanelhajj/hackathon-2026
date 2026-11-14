@@ -22,6 +22,8 @@
 | `gridstack` 14 | **In use:** the dashboard canvas: free placement (`mode: "float"`), push on collision, corner resize, drag-in from the widget panel, touch support, one-column layout on narrow screens |
 | `react-is` | Required by recharts (was previously pulled in indirectly) |
 | `zod` | **In use:** dashboard spec validation (`shared/spec.js`) and every Gemini answer (`server/agent/classify.js`) |
+| `unpdf` | **In use:** text out of PDF attachments for the AI (`server/agent/content.js`); pure JS, no native build |
+| `mammoth` | **In use:** text out of Word (.docx) attachments for the AI |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
@@ -81,8 +83,12 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/integrations/gmail/sample` | Loads labelled sample data |
 | DELETE | `/api/integrations/gmail` | Revokes token, deletes imported messages and their AI labels |
 | GET | `/api/dashboard` | All business-rule results: totals, lists, breakdowns (shared by all widgets) |
-| GET | `/api/messages?q=&direction=in|out&page=0&limit=25` | Stored emails, searchable and paged (no body, no headers); used by the Email data page |
+| GET | `/api/messages?q=&direction=&from=&status=&priority=&category=&page=0&limit=25` | Stored emails, searchable, filterable and paged (no body, no headers), each with its AI label (`ai`); used by the Email data page |
 | GET | `/api/messages/:gmailId` | One stored email with all headers and the decrypted body |
+| GET | `/api/messages/people` | Everyone in the stored email with message counts (Email data person filter) |
+| POST | `/api/replies/draft` | `{ threadId }` → AI-drafted reply (to, subject, body, note). Drafts only, never sends |
+| POST | `/api/replies/send` | Sends a reply the user edited and approved (`approved: true`); threading headers come from the store |
+| GET | `/api/attachments/:gmailId/:attachmentId` | Downloads one attachment from Gmail (always as a download) |
 | GET | `/api/dashboards/default` | Saved layout spec (widgets + desktop grid positions) |
 | PUT | `/api/dashboards/default` | Save a new version (zod-validated; 409 if the version changed meanwhile) |
 | POST | `/api/dashboards/default/undo` | Swap back to the previous version |
@@ -95,6 +101,8 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 |---|---|
 | `connections` | One doc per provider (tokens encrypted). `analysis` sub-doc: status, progress, counts, last run, error |
 | `messages` | Synced Gmail metadata (unique on `gmailId`) |
+| `sent_replies` | Metadata of replies sent from the app (threadId, Gmail id, recipients, subject, time). No text |
+| `attachment_text` | Text extracted from attachments for the AI, one doc per `gmailId:partId`: status (`ok`/`empty`/`failed`), `textEnc` (encrypted), kind, chars. Deleted on disconnect |
 | `extractions` | AI labels, one doc per thread (`_id` = threadId): category, priority, needsReply, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId |
 | `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
 

@@ -202,9 +202,83 @@ export async function buildDashboard() {
   );
   const breakdownOut = Object.fromEntries(Object.keys(BREAKDOWN_RULES).map((id) => [id, breakdowns[id] ?? []]));
 
+  const insights = await buildInsights(conn, threads, now);
+  const aiByThread = new Map(insights.rows.map((r) => [r.threadId, r]));
+
+  // ---- contacts: one folder per person you've emailed with (automated and bulk senders left out) ----
+  // "New" = their first email with you in the synced mail is from the last 7 days and they're outside your company.
+  // "Lead" is the AI's guess for one of their conversations, shown as such.
+  const contactMap = new Map();
+  for (const m of messages) {
+    if (m.direction === "in" && !human(m)) continue;
+    const who = m.direction === "in" ? [m.from] : [...m.to, ...m.cc];
+    for (const p of who) {
+      const email = (p?.email || "").toLowerCase();
+      if (!email || email === account) continue;
+      const c = contactMap.get(email) ?? {
+        email, name: "", domain: email.split("@")[1] ?? "", received: 0, sent: 0, lastAt: m.date, internal: false, threads: new Map(),
+      };
+      if (p.name && (!c.name || m.direction === "in")) c.name = p.name;
+      if (m.direction === "in") c.received += 1; else c.sent += 1;
+      if (m.isInternal) c.internal = true;
+      if (m.date > c.lastAt) c.lastAt = m.date;
+      c.threads.set(m.threadId, m); // messages are oldest first, so this ends on the newest message per thread
+      contactMap.set(email, c);
+    }
+  }
+  const contacts = [...contactMap.values()]
+    .map((c) => {
+      const threadsOut = [...c.threads.values()]
+        .sort(newest)
+        .map((m) => {
+          const ai = aiByThread.get(m.threadId);
+          return { threadId: m.threadId, subject: m.subject, lastAt: m.date, link: gmailLink(m), category: ai?.category ?? null, priority: ai?.priority ?? null, needsReply: ai?.needsReply ?? false };
+        });
+      return {
+        email: c.email,
+        name: c.name || c.email,
+        domain: c.domain,
+        received: c.received,
+        sent: c.sent,
+        lastAt: c.lastAt,
+        firstAt: new Date(firstAny.get(c.email) ?? c.lastAt),
+        isNew: !c.internal && (firstAny.get(c.email) ?? 0) >= recent,
+        isInternal: c.internal,
+        aiLead: threadsOut.some((t) => t.category === "lead"),
+        needsReply: threadsOut.filter((t) => t.needsReply).length,
+        threads: threadsOut.slice(0, 10),
+        threadCount: threadsOut.length,
+      };
+    })
+    .sort((a, b) => Number(b.isNew) - Number(a.isNew) || b.lastAt - a.lastAt)
+    .slice(0, 60);
+
+  // ---- every real attachment, newest first ----------------------------------------------------
+  const files = [];
+  for (const m of [...messages].sort(newest)) {
+    for (const a of realAttachments(m)) {
+      files.push({
+        id: `${m.gmailId}:${a.partId}`,
+        gmailId: m.gmailId,
+        attachmentId: a.attachmentId ?? null,
+        filename: a.filename || "(unnamed)",
+        mimeType: a.mimeType || "",
+        size: a.size ?? 0,
+        direction: m.direction,
+        contact: contactOf(m),
+        subject: m.subject,
+        at: m.date,
+        link: gmailLink(m),
+        downloadable: m.source === "gmail" && Boolean(a.attachmentId),
+      });
+    }
+  }
+
   return {
     connected: true,
-    insights: await buildInsights(conn, threads, now),
+    insights,
+    contacts,
+    attachments: { total: files.length, items: files.slice(0, 100) },
     mode: conn.mode,
     account: conn.email,
     lastSyncAt: conn.lastSyncAt || null,
@@ -267,7 +341,7 @@ async function buildInsights(conn, threads, now) {
       stale: e.lastMessageId !== last.gmailId,
     });
   }
-  rows.sort((x, y) => PRIORITY_RANK[x.priority] - PRIORITY_RANK[y.priority] || new Date(y.lastAt) - new Date(x.lastAt));
+  rows.sort((x, y) => (PRIORITY_RANK[x.priority] ?? 3) - (PRIORITY_RANK[y.priority] ?? 3) || new Date(y.lastAt) - new Date(x.lastAt));
 
   const counts = {};
   for (const r of rows) counts[r.category] = (counts[r.category] ?? 0) + 1;

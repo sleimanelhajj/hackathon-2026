@@ -220,11 +220,16 @@ function GmailCard({ status }: { status: Status }) {
             <li data-allowed={status.gemini.configured ? "true" : undefined}>
               <Sparkles size={16} color={status.gemini.configured ? "var(--success)" : undefined} />{" "}
               {status.gemini.configured
-                ? "Sort your email with AI: sender name and domain, subject and a short preview are sent to Google's Gemini API"
+                ? "Sort your email and draft replies with AI: sender names, subjects, email text and the text of PDF, Word and text attachments are sent to Google's Gemini API. Email addresses are removed first"
                 : "Sort your email with AI: off until a Gemini API key is added to .env"}
             </li>
-            <li><PenLine size={16} /> Create drafts: coming later, and only after you approve each one</li>
-            <li><Lock size={16} /> Send or delete email: never</li>
+            <li data-allowed={status.gmail?.canSend ? "true" : undefined}>
+              <PenLine size={16} color={status.gmail?.canSend ? "var(--success)" : undefined} />{" "}
+              {status.gmail?.canSend
+                ? "Send replies: only a reply you've read, edited and clicked Send on, twice. Nothing is sent automatically"
+                : "Send replies: off until you reconnect Gmail and allow sending. Even then, only after you click Send"}
+            </li>
+            <li><Lock size={16} /> Delete, archive or change your email: never</li>
           </ul>
         </div>
       </div>

@@ -46,7 +46,7 @@ Daily operational use at a desk: triaging leads, follow-ups, meetings and tasks 
 
 Name: **AI Workspace OS** (confirmed by user for the UI).
 
-Visual direction: **category standard, played straight** (user choice, 2026-11-13). A clean, conventional SaaS workspace held to the craft bar of Linear, Attio and HubSpot. No novelty world.
+Visual direction: **glass over sky** (user choice, 2026-11-14: "update the UI to glassmorhpic and use sky blue, cloudy white, amber red accents"). Frosted-glass work panes over a cloudy-white-to-sky-blue ground; sky blue for actions, amber-red only for urgency. Layout, navigation and controls stay the category standard, held to the craft bar of Linear, Attio and HubSpot. Replaces the 2026-11-13 "category standard, played straight" look.
 
 ## Evidence on Hand
 

@@ -56,6 +56,27 @@ export function useRunAnalysis() {
   });
 }
 
+/** Sends an approved reply, then refreshes the dashboard (the server re-syncs in the background). */
+export function useSendReply() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.sendReply,
+    onSuccess: () => {
+      // The sync that picks up the sent message takes a few seconds.
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["status"] });
+        qc.invalidateQueries({ queryKey: ["dashboard"] });
+        qc.invalidateQueries({ queryKey: ["messages"] });
+      }, 4000);
+    },
+  });
+}
+
+/** Everyone in the stored email, for the Email data page's person filter. */
+export function usePeople() {
+  return useQuery({ queryKey: ["people"], queryFn: api.people, staleTime: 60_000 });
+}
+
 function useSpecMutation<V>(fn: (v: V) => Promise<SavedDashboard>) {
   const qc = useQueryClient();
   return useMutation({
