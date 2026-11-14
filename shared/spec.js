@@ -66,6 +66,42 @@ export const SALES_TABLE_LABELS = { topProducts: "Top products", topCustomers: "
 const id = z.string().regex(/^[a-z0-9-]{1,40}$/);
 const title = z.string().trim().min(1).max(60);
 
+// Custom sales widgets, made by the assistant's widget builder (decision #48). The widget stores a typed query, never
+// SQL and never data: server/sales/custom.js turns it into fixed, parameterized SQL each time the widget loads.
+export const CustomMetric = z.enum(["revenue", "orders", "units", "aov", "marginPct", "customers"]);
+export const CustomGroupBy = z.enum(["none", "month", "week", "day", "category", "product", "branch", "staff", "channel", "segment", "customer"]);
+export const CustomChart = z.enum(["number", "line", "bar", "table"]);
+export const TIME_GROUPS = ["month", "week", "day"];
+export const CUSTOM_METRIC_LABELS = { revenue: "Revenue", orders: "Orders", units: "Units sold", aov: "Average order", marginPct: "Gross margin", customers: "Customers" };
+export const CUSTOM_GROUP_LABELS = { none: "Total", month: "Month", week: "Week", day: "Day", category: "Category", product: "Product", branch: "Branch", staff: "Staff", channel: "Channel", segment: "Customer type", customer: "Customer" };
+const names = z.array(z.string().trim().min(1).max(80)).max(10).default([]);
+export const CustomQuery = z.object({
+  metric: CustomMetric,
+  groupBy: CustomGroupBy.default("none"),
+  months: z.number().int().min(1).max(24).default(12),
+  limit: z.number().int().min(1).max(20).default(10),
+  filters: z.object({
+    products: names, // SKUs
+    categories: names,
+    branches: names,
+    segments: names,
+    channels: names,
+    customers: z.array(z.number().int().positive()).max(10).default([]),
+  }).prefault({}),
+});
+
+/** Plain-language reasons a custom widget's chart doesn't suit its query (empty when it's fine). */
+export function customWidgetProblems(widget) {
+  const { chart, query } = widget;
+  const time = TIME_GROUPS.includes(query.groupBy);
+  const problems = [];
+  if (chart === "number" && query.groupBy !== "none") problems.push("A single number can't be grouped; use groupBy 'none', or a bar or table chart.");
+  if (chart === "line" && !time) problems.push("A line chart shows change over time; group by month, week or day.");
+  if ((chart === "bar" || chart === "table") && query.groupBy === "none") problems.push("Bars and tables need a group (month, product, branch…); use a number chart for a single total.");
+  if (query.groupBy === "day" && query.months > 3) problems.push("Daily figures are limited to the last 3 months; group by week or month for longer periods.");
+  return problems;
+}
+
 export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("stat"), title, metric: StatMetric }),
   z.object({ id, type: z.literal("thread-list"), title, list: ThreadList }),
@@ -84,6 +120,7 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("sales-pipeline"), title }),
   z.object({ id, type: z.literal("sales-reps"), title }),
   z.object({ id, type: z.literal("sales-table"), title, table: SalesTable }),
+  z.object({ id, type: z.literal("sales-custom"), title, chart: CustomChart, query: CustomQuery, note: z.string().trim().max(160).optional() }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -292,6 +329,14 @@ export const SALES_CATALOG = {
     description: "Top products, top customers or recent orders",
     size: { w: 6, h: 9, minW: 4, minH: 5 },
     create: () => ({ type: "sales-table", title: "Top products", table: "topProducts" }),
+  },
+  // Made by the assistant from a plain-language request, so it isn't offered in the manual "Add widgets" panel.
+  "sales-custom": {
+    label: "Custom chart",
+    description: "Made by the assistant from your question",
+    size: { w: 6, h: 9, minW: 3, minH: 3 },
+    hidden: true,
+    create: () => ({ type: "sales-custom", title: "Revenue by month", chart: "line", query: { metric: "revenue", groupBy: "month", months: 12, limit: 10, filters: {} } }),
   },
 };
 

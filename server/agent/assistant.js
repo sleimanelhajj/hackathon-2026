@@ -7,6 +7,9 @@ import { generateContent, geminiConfigured, geminiModel } from "./llm.js";
 import { prepareInvoice, publicInvoice } from "./invoice.js";
 import { createSalesTools } from "./sales-tools.js";
 import { createSalesAgent } from "./sales-agent.js";
+import { createWidgetBuilder } from "./widget-builder.js";
+import { filterValues, runCustomQuery } from "../sales/custom.js";
+import { addWidgetToBoard, getDashboard, removeWidgetFromBoard } from "../dashboards.js";
 
 const invoiceNumber = (date = new Date()) =>
   `INV-${date.toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
@@ -28,7 +31,37 @@ let agent = null;
 export function getAssistant() {
   if (!geminiConfigured()) throw new Error("The assistant needs Gemini. Add GEMINI_API_KEY to .env and restart the server.");
   if (!postgresConfigured()) throw new Error("The assistant reads the sales database. Add POSTGRES_URL to .env and load the demo data on the Sales page.");
-  agent ??= createSalesAgent({ generate: generateContent, tools: createSalesTools({ pool: getPool() }), saveInvoice: (draft) => saveConfirmedInvoice(draft) });
+  if (!agent) {
+    const tools = createSalesTools({ pool: getPool() });
+    // The dashboard builder sub-agent: its own Gemini prompt and tools; the widget it makes goes on the Sales board.
+    const builder = createWidgetBuilder({
+      generate: generateContent, tools,
+      values: () => filterValues(getPool()),
+      runQuery: (query) => runCustomQuery(getPool(), query),
+    });
+    const addWidget = async (request) => {
+      const built = await builder.build(request);
+      const { widget } = await addWidgetToBoard("sales", built.widget);
+      await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_added", board: "sales", widgetId: widget.id, ok: true }).catch(() => {});
+      return { board: "sales", widget, preview: built.preview };
+    };
+    // Removing a widget the user names: list both boards so the model can match the title, then remove (gap closes).
+    const BOARD_NAMES = { sales: "Sales", default: "Email dashboard" };
+    const listWidgets = async () => Promise.all(Object.entries(BOARD_NAMES).map(async ([board, name]) => {
+      const spec = await getDashboard(board);
+      return { board, name, widgets: spec.widgets.map((w) => ({ id: w.id, title: w.title, type: w.type })) };
+    }));
+    const removeWidget = async (board, id) => {
+      if (!(board in BOARD_NAMES)) throw new Error(`Unknown dashboard "${board}".`);
+      const before = await getDashboard(board);
+      const title = before.widgets.find((w) => w.id === id)?.title;
+      if (!title) throw new Error("That widget is no longer on the dashboard. List the widgets again.");
+      const saved = await removeWidgetFromBoard(board, id);
+      await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_removed", board, widgetId: id, ok: true }).catch(() => {});
+      return { board, id, title, version: saved.version };
+    };
+    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), addWidget, listWidgets, removeWidget });
+  }
   return agent;
 }
 

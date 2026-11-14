@@ -13,6 +13,27 @@
 // drafts: an expired one just asks the user to start again).
 import { Annotation, Command, END, MemorySaver, START, StateGraph, interrupt } from "@langchain/langgraph";
 import { TOOL_DECLARATIONS } from "./sales-tools.js";
+import { widgetSummary } from "./widget-builder.js";
+
+/** Delegates to the widget-builder sub-agent (server/agent/widget-builder.js). */
+/** Lists the widgets on every dashboard, so the model can match "the plumbing chart" to an id. */
+export const LIST_WIDGETS_DECLARATION = {
+  name: "list_dashboard_widgets",
+  description: "List the widgets on each dashboard (Sales and the email dashboard): board, id, title and kind. Call it before removing a widget, to find the one the user means.",
+  parameters: { type: "OBJECT", properties: {} },
+};
+/** Removes one widget; the gap closes and the user can undo it from the chat. */
+export const REMOVE_WIDGET_DECLARATION = {
+  name: "remove_dashboard_widget",
+  description: "Remove one widget from a dashboard. Use the board and id from list_dashboard_widgets. The widgets below it move up, and the user can undo it from the chat.",
+  parameters: { type: "OBJECT", properties: { board: { type: "STRING", enum: ["sales", "default"] }, widgetId: { type: "STRING" } }, required: ["board", "widgetId"] },
+};
+
+export const ADD_WIDGET_DECLARATION = {
+  name: "add_dashboard_widget",
+  description: "Hand a chart or number request to the dashboard builder, which designs a widget (metric, grouping, period, filters, chart type) and adds it to the Sales dashboard. Pass the request in plain words with every detail the user gave (product, customer, branch, period, comparison). Use it whenever the user wants to see, track, chart or add something to the dashboard.",
+  parameters: { type: "OBJECT", properties: { request: { type: "STRING" } }, required: ["request"] },
+};
 
 const SYSTEM = `You are the assistant inside the workspace of Cornerstone Hardware & Supply, a hardware and convenience store with four branches and an online shop. You help the owner and staff understand their sales, recommend products, and prepare invoices.
 
@@ -37,7 +58,13 @@ INVOICES
 - When the user wants an invoice, collect: the customer (look them up with find_customers; if several match, ask which one), each product and quantity (resolve SKUs with find_products), and an optional note such as a job or PO number.
 - Ask for whatever is missing, one short question at a time. Don't ask about prices, tax, discounts or dates: the system fills those in from the database (trade accounts get 5% off, commercial accounts 10%, sales tax and payment terms come from the store profile).
 - When you have the customer and every item with a quantity, call propose_invoice. The app then shows the full draft to the user to confirm. You cannot create, send or email an invoice yourself.
-- If the user asks for changes after seeing a draft, update the details and call propose_invoice again.`;
+- If the user asks for changes after seeing a draft, update the details and call propose_invoice again.
+
+DASHBOARD WIDGETS
+- When the user wants to see, chart, track or add something to the dashboard ("show me sales of the cordless drill", "add a chart of orders by branch", "put plumbing revenue on my dashboard"), call add_dashboard_widget with their request in plain words, including every detail they gave. Don't ask about chart types or axes: the builder chooses them.
+- Then tell them in one or two sentences what was added (its title and the headline figure from the result) and that it is on their Sales dashboard. Don't repeat the data as a list.
+- When the user wants a widget removed ("remove the plumbing chart", "delete the pipeline widget"), call list_dashboard_widgets, find the one they mean by its title, then call remove_dashboard_widget. If more than one could match, ask which one (name them); if none matches, say so and name what's there. Remove only what they asked for.
+- After removing, say what was removed in one sentence and that they can undo it from the chat.`;
 
 const MAX_RESULT_CHARS = 12_000;
 
@@ -46,6 +73,8 @@ const State = Annotation.Root({
   pending: Annotation({ reducer: (_, b) => b, default: () => null }),
   invoice: Annotation({ reducer: (_, b) => b, default: () => null }),
   toolsUsed: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
+  widgets: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
+  removed: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
   steps: Annotation({ reducer: (_, b) => b, default: () => 0 }),
   stopped: Annotation({ reducer: (_, b) => b, default: () => false }),
 });
@@ -71,12 +100,18 @@ const draftSummary = (d) => ({
  * @param deps.tools       { run(name, args), draftInvoice(args) }                (sales-tools.js)
  * @param deps.saveInvoice (draft) => public invoice with pdfUrl                  (stores the confirmed invoice)
  */
-export function createSalesAgent({ generate, tools, saveInvoice, maxSteps = 10, checkpointer = new MemorySaver() }) {
+export function createSalesAgent({ generate, tools, saveInvoice, addWidget = null, listWidgets = null, removeWidget = null, maxSteps = 10, checkpointer = new MemorySaver() }) {
+  const declarations = [
+    ...TOOL_DECLARATIONS,
+    ...(addWidget ? [ADD_WIDGET_DECLARATION] : []),
+    ...(listWidgets ? [LIST_WIDGETS_DECLARATION] : []),
+    ...(removeWidget ? [REMOVE_WIDGET_DECLARATION] : []),
+  ];
   async function model(state) {
     if (state.steps >= maxSteps) {
       return { contents: [{ role: "model", parts: [{ text: "Sorry, I couldn't finish that one. Try asking in a simpler way, or split it into smaller questions." }] }], stopped: true };
     }
-    const { content } = await generate({ system: SYSTEM, contents: state.contents, tools: TOOL_DECLARATIONS });
+    const { content } = await generate({ system: SYSTEM, contents: state.contents, tools: declarations });
     return { contents: [content], steps: state.steps + 1 };
   }
 
@@ -85,10 +120,24 @@ export function createSalesAgent({ generate, tools, saveInvoice, maxSteps = 10, 
     const parts = [];
     let pending = null;
     const used = [];
+    const widgets = [];
+    const removed = [];
     for (const { name, args, id } of calls) {
       let response;
       try {
-        if (name === "propose_invoice") {
+        if (name === "list_dashboard_widgets" && listWidgets) {
+          response = { boards: await listWidgets() };
+        } else if (name === "remove_dashboard_widget" && removeWidget) {
+          const out = await removeWidget(String(args?.board ?? ""), String(args?.widgetId ?? ""));
+          removed.push(out);
+          response = { removed: true, board: out.board, title: out.title };
+        } else if (name === "add_dashboard_widget" && addWidget) {
+          const out = await addWidget(String(args?.request ?? ""));
+          const summary = widgetSummary(out.widget, out.preview);
+          widgets.push({ board: out.board, id: out.widget.id, title: out.widget.title, chart: out.widget.chart, summary });
+          response = { added: true, board: out.board, title: out.widget.title, chart: out.widget.chart, shows: summary,
+            total: out.preview.total, previousPeriodTotal: out.preview.previousTotal, unit: out.preview.unit, period: out.preview.period };
+        } else if (name === "propose_invoice") {
           pending = await tools.draftInvoice(args ?? {});
           response = draftSummary(pending);
         } else {
@@ -100,7 +149,7 @@ export function createSalesAgent({ generate, tools, saveInvoice, maxSteps = 10, 
       }
       parts.push({ functionResponse: { ...(id ? { id } : {}), name, response } });
     }
-    return { contents: [{ role: "user", parts }], toolsUsed: used, ...(pending ? { pending } : {}) };
+    return { contents: [{ role: "user", parts }], toolsUsed: used, widgets, removed, ...(pending ? { pending } : {}) };
   }
 
   async function confirm(state) {
@@ -134,7 +183,7 @@ export function createSalesAgent({ generate, tools, saveInvoice, maxSteps = 10, 
     const lastModel = [...snap.values.contents].reverse().find((c) => c.role === "model");
     let reply = textOf(lastModel);
     if (draft) reply = reply && !callsIn(lastModel).length ? reply : "Here's the invoice draft. Please review the customer, items and total, then confirm to create the PDF, or tell me what to change.";
-    return { reply: reply || "Done.", pendingInvoice: draft, invoice: draft ? null : snap.values.invoice, toolsUsed: [...new Set(snap.values.toolsUsed)] };
+    return { reply: reply || "Done.", pendingInvoice: draft, invoice: draft ? null : snap.values.invoice, toolsUsed: [...new Set(snap.values.toolsUsed)], widgets: snap.values.widgets ?? [], removed: snap.values.removed ?? [] };
   }
 
   async function waitingFor(config) {
@@ -143,7 +192,7 @@ export function createSalesAgent({ generate, tools, saveInvoice, maxSteps = 10, 
   }
 
   /** Each turn starts fresh bookkeeping (steps, tools used, last invoice); the conversation itself is kept. */
-  const turnStart = { steps: 0, stopped: false, invoice: null, toolsUsed: null };
+  const turnStart = { steps: 0, stopped: false, invoice: null, toolsUsed: null, widgets: null, removed: null };
 
   return {
     graph,

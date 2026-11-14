@@ -98,3 +98,6 @@ export function useMessages(params: Parameters<typeof api.messages>[0]) {
 export function useMessage(id: string | null) {
   return useQuery({ queryKey: ["message", id], queryFn: () => api.message(id!), enabled: !!id });
 }
+
+/** Removes one widget from a saved board (the widget's Remove button); the server closes the gap. */
+export const useRemoveWidget = (board: Board = "default") => useSpecMutation(board, (id: string) => api.removeWidget(board, id));

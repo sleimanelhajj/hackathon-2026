@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AlertTriangle, Check, LayoutGrid, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import { BOARDS } from "../../shared/spec.js";
 import type { Board, GridItem, Widget, WidgetType } from "../lib/api";
-import { useDashboardSpec, useSaveSpec, useUndoSpec } from "../lib/queries";
-import { useUi } from "../lib/store";
+import { useDashboardSpec, useRemoveWidget, useSaveSpec, useUndoSpec } from "../lib/queries";
+import { useHighlight, useUi } from "../lib/store";
 import { Callout } from "../components/ui";
 import { DashboardGrid } from "./DashboardGrid";
 import { WidgetFrame } from "./WidgetFrame";
@@ -48,6 +48,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
   const specQuery = useDashboardSpec(board);
   const save = useSaveSpec(board);
   const undo = useUndoSpec(board);
+  const removeSavedMutation = useRemoveWidget(board);
 
   const closedPanels = useUi((s) => s.closedPanels);
   const togglePanel = useUi((s) => s.togglePanel);
@@ -57,7 +58,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
   const [editSession, setEditSession] = useState(0);
   const sessionRef = useRef(0);
   const baselineRef = useRef<{ draft: Draft; version: number; title: string } | null>(null);
-  const [notice, setNotice] = useState<"saved" | "reset" | null>(null);
+  const [notice, setNotice] = useState<"saved" | "reset" | "removed" | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [addingType, setAddingType] = useState<WidgetType | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -170,6 +171,11 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
   }, [editSession, addWidget]);
   const toggleCollapse = useCallback((id: string) => togglePanel(panelKey(board, id)), [togglePanel, board]);
 
+  // Remove a widget from the saved board (its Remove button, after the user confirms). Undo is offered right after.
+  const removeSaved = useCallback((id: string) => {
+    removeSavedMutation.mutate(id, { onSuccess: () => setNotice("removed") });
+  }, [removeSavedMutation.mutate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const renderCard = useCallback(
     (widget: Widget) => (
       <WidgetFrame
@@ -182,9 +188,10 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
         onChange={changeWidget}
         onResize={resizeWidget}
         onMove={moveWidget}
+        onRemoveSaved={editing ? undefined : removeSaved}
       />
     ),
-    [editing, collapsed, positionsById, toggleCollapse, removeWidget, changeWidget, resizeWidget, moveWidget]
+    [editing, collapsed, positionsById, toggleCollapse, removeWidget, changeWidget, resizeWidget, moveWidget, removeSaved]
   );
 
   const saveDraft = () => {
@@ -211,11 +218,26 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
     requestAnimationFrame(() => document.getElementById(`widget-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, [openPanel, board]);
 
+  // A widget the assistant just added: once it's on this board, scroll to it and glow it briefly.
+  const highlight = useHighlight((s) => s.id);
+  const hasHighlight = Boolean(highlight && view?.widgets.some((w) => w.id === highlight));
+  useEffect(() => {
+    if (!highlight || !hasHighlight) return;
+    const start = window.setTimeout(() => {
+      openWidget(highlight);
+      const el = document.getElementById(`widget-${highlight}`);
+      el?.setAttribute("data-highlight", "true");
+      window.setTimeout(() => el?.removeAttribute("data-highlight"), 2600);
+      useHighlight.getState().set(null);
+    }, 300);
+    return () => window.clearTimeout(start);
+  }, [highlight, hasHighlight, openWidget]);
+
   if (specQuery.isLoading) return <BoardSkeleton kind={board === "sales" ? "sales" : "dashboard"} label="Loading your layout" />;
   if (specQuery.error) return <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load the dashboard layout" text={(specQuery.error as Error).message} />;
 
   const canEditHere = unknownTypes.length === 0;
-  const mutationError = save.error || undo.error || pageError;
+  const mutationError = save.error || undo.error || removeSavedMutation.error || pageError;
 
   return (
     <div className="board" data-layout-editing={editing}>
@@ -270,7 +292,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
         <Callout
           tone="ok"
           icon={<Check size={18} />}
-          title={notice === "saved" ? "Layout saved" : "Layout reset to the default"}
+          title={notice === "saved" ? "Layout saved" : notice === "removed" ? "Widget removed" : "Layout reset to the default"}
           action={
             spec?.canUndo ? (
               <button className="btn btn-secondary" onClick={() => undo.mutate(undefined, { onSuccess: () => setNotice(null) })} disabled={undo.isPending}>

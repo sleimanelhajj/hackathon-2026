@@ -5,7 +5,7 @@ import { GripVertical, Lightbulb, Plus, Search } from "lucide-react";
 import { CATALOG } from "../../shared/spec.js";
 
 /** A board's widget catalogue (CATALOG for email, SALES_CATALOG for sales). */
-export type Catalog = Record<string, { label: string; description: string; size: { w: number; h: number } }>;
+export type Catalog = Record<string, { label: string; description: string; size: { w: number; h: number }; hidden?: boolean }>;
 import type { WidgetType } from "../lib/api";
 import { REGISTRY } from "../widgets/registry";
 import { LIBRARY_ITEM_CLASS, NEW_PREFIX } from "./DashboardGrid";
@@ -43,7 +43,8 @@ function LibraryItem({ type, onAdd, full, catalog }: { type: WidgetType; onAdd: 
 
 /** Right-hand "Add widgets" panel shown while editing. Rendered into the shell's #side-panel slot. */
 export const WidgetLibrary = memo(function WidgetLibrary({ onAdd, footer, full, busy, catalog = CATALOG as Catalog }: Props) {
-  const TYPES = Object.keys(catalog) as WidgetType[];
+  // Hidden entries (custom charts) are made by the assistant, not picked from the panel.
+  const TYPES = (Object.keys(catalog) as WidgetType[]).filter((t) => !catalog[t].hidden);
   const [query, setQuery] = useState("");
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => setSlot(document.getElementById("side-panel")), []);

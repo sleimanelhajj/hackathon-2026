@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  AlertTriangle, Bot, CheckCircle2, Download, FileCheck2, FileText, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, X,
+  AlertTriangle, ArrowRight, BarChart3, Bot, CheckCircle2, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, Table2, Trash2, Undo2, X,
 } from "lucide-react";
-import { api, type AssistantReply, type InvoiceDraft, type InvoiceProposal, type Status } from "../lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { api, type AddedWidget, type AssistantReply, type InvoiceDraft, type InvoiceProposal, type Status } from "../lib/api";
+import { useHighlight } from "../lib/store";
 import { useStatus } from "../lib/queries";
 
 type ChatMessage = {
@@ -14,6 +16,8 @@ type ChatMessage = {
   /** What happened to the proposal on this message: still waiting, confirmed, or handed back for changes. */
   proposalState?: "waiting" | "confirmed" | "changed";
   invoice?: InvoiceDraft | null;
+  widgets?: AddedWidget[];
+  removed?: AssistantReply["removed"];
   error?: boolean;
 };
 
@@ -21,6 +25,7 @@ const SUGGESTIONS = [
   "How did sales go this month compared with last month?",
   "Which items need reordering?",
   "I'm repainting a 12 by 12 ft bedroom. What do I need?",
+  "Show me monthly sales of the cordless drill",
   "Create an invoice for a trade customer",
 ];
 
@@ -29,6 +34,7 @@ const TOOL_LABELS: Record<string, string> = {
   sales_summary: "sales summary", sales_breakdown: "sales breakdown", find_products: "product catalogue",
   find_customers: "customer list", customer_history: "customer history", low_stock: "stock levels",
   store_profile: "store profile", staff_performance: "staff targets", quote_pipeline: "trade quotes", propose_invoice: "invoice draft",
+  add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets",
 };
 
 const newThread = () => crypto.randomUUID();
@@ -112,6 +118,100 @@ function ProposalCard({ proposal, state, busy, onConfirm, onChange }: {
   );
 }
 
+const CHART_ICON = { number: Hash, line: LineChart, bar: BarChart3, table: Table2 } as const;
+const BOARD_NAME = { sales: "Sales", default: "email" } as const;
+
+/** A widget the dashboard builder added: what it shows, where it went, and a way to open or undo it. */
+function WidgetCard({ widget }: { widget: AddedWidget }) {
+  const qc = useQueryClient();
+  const [state, setState] = useState<"added" | "removing" | "removed">("added");
+  const [error, setError] = useState<string | null>(null);
+  const Icon = CHART_ICON[widget.chart] ?? BarChart3;
+  const href = widget.board === "sales" ? "#/sales" : "#/dashboard";
+  const remove = async () => {
+    setState("removing");
+    setError(null);
+    try {
+      await api.removeWidget(widget.board, widget.id);
+      setState("removed");
+      void qc.invalidateQueries({ queryKey: ["dashboard-spec", widget.board] });
+    } catch (err) {
+      setState("added");
+      setError((err as Error).message);
+    }
+  };
+  return (
+    <section className="widget-card" role="region" aria-label={`Widget ${widget.title}`} data-state={state}>
+      <span className="widget-card-icon"><Icon size={18} aria-hidden /></span>
+      <div className="widget-card-text">
+        <strong>{widget.title}</strong>
+        <span>{widget.summary}</span>
+        <span className="widget-card-status">
+          {state === "removed" ? "Removed from the dashboard" : <><CheckCircle2 size={12} aria-hidden /> {`Added to ${BOARD_NAME[widget.board]} dashboard`}</>}
+        </span>
+      </div>
+      {state !== "removed" && (
+        <div className="widget-card-actions">
+          <a className="btn btn-secondary btn-sm" href={href} onClick={() => useHighlight.getState().set(widget.id)}>Open <ArrowRight size={13} aria-hidden /></a>
+          <button type="button" className="icon-btn icon-btn-sm" onClick={remove} disabled={state === "removing"} aria-label={`Remove ${widget.title}`} title="Remove from the dashboard">
+            {state === "removing" ? <Loader2 size={14} className="spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+          </button>
+        </div>
+      )}
+      {error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {error}</p>}
+    </section>
+  );
+}
+
+/**
+ * A widget the assistant removed, with Undo. Undo restores the board's previous version, so it only runs when the board
+ * hasn't changed since the removal; otherwise it would roll back something else, and it says so instead.
+ */
+function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
+  const qc = useQueryClient();
+  const [state, setState] = useState<"removed" | "working" | "restored">("removed");
+  const [error, setError] = useState<string | null>(null);
+  const board = BOARD_NAME[item.board];
+  const undo = async () => {
+    setState("working");
+    setError(null);
+    try {
+      const current = await api.spec(item.board);
+      if (current.version !== item.version) {
+        setState("removed");
+        setError(`The ${board} dashboard changed after this, so Undo here would undo that instead. Ask me to add it again.`);
+        return;
+      }
+      await api.undoSpec(item.board);
+      setState("restored");
+      useHighlight.getState().set(item.id);
+      void qc.invalidateQueries({ queryKey: ["dashboard-spec", item.board] });
+    } catch (err) {
+      setState("removed");
+      setError((err as Error).message);
+    }
+  };
+  return (
+    <section className="widget-card" role="region" aria-label={`Removed ${item.title}`} data-state={state === "restored" ? "added" : "removed-card"}>
+      <span className="widget-card-icon" data-tone={state === "restored" ? undefined : "muted"}>{state === "restored" ? <CheckCircle2 size={18} aria-hidden /> : <Trash2 size={18} aria-hidden />}</span>
+      <div className="widget-card-text">
+        <strong>{item.title}</strong>
+        <span className="widget-card-status" data-tone={state === "restored" ? undefined : "muted"}>
+          {state === "restored" ? `Put back on ${board} dashboard` : `Removed from ${board} dashboard`}
+        </span>
+      </div>
+      {state !== "restored" && (
+        <div className="widget-card-actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={undo} disabled={state === "working"}>
+            {state === "working" ? <Loader2 size={13} className="spin" aria-hidden /> : <Undo2 size={13} aria-hidden />} Undo
+          </button>
+        </div>
+      )}
+      {error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {error}</p>}
+    </section>
+  );
+}
+
 function InvoiceCard({ initial, status }: { initial: InvoiceDraft; status: Status | undefined }) {
   const [invoice, setInvoice] = useState(initial);
   const [reviewing, setReviewing] = useState(false);
@@ -189,6 +289,7 @@ function InvoiceCard({ initial, status }: { initial: InvoiceDraft; status: Statu
 
 export function AgentAssistant() {
   const { data: status } = useStatus();
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [threadId, setThreadId] = useState(newThread);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -211,11 +312,15 @@ export function AgentAssistant() {
   const settleWaiting = (state: "confirmed" | "changed") =>
     setMessages((current) => current.map((m) => (m.proposalState === "waiting" ? { ...m, proposalState: state } : m)));
 
-  const addReply = (result: AssistantReply) =>
+  const addReply = (result: AssistantReply) => {
+    // A widget was added: refresh that board and highlight the newest one when it opens.
+    for (const board of new Set([...(result.widgets ?? []), ...(result.removed ?? [])].map((w) => w.board))) void qc.invalidateQueries({ queryKey: ["dashboard-spec", board] });
+    if (result.widgets?.length) useHighlight.getState().set(result.widgets.at(-1)!.id);
     setMessages((current) => [...current, {
       id: crypto.randomUUID(), role: "assistant", text: result.reply, toolsUsed: result.toolsUsed,
-      proposal: result.pendingInvoice, proposalState: result.pendingInvoice ? "waiting" : undefined, invoice: result.invoice,
+      proposal: result.pendingInvoice, proposalState: result.pendingInvoice ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed,
     }]);
+  };
   const addError = (err: unknown) =>
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: (err as Error).message, error: true }]);
 
@@ -297,6 +402,8 @@ export function AgentAssistant() {
                   <ProposalCard proposal={message.proposal} state={message.proposalState} busy={working}
                     onConfirm={() => void answerDraft(true)} onChange={() => void answerDraft(false)} />
                 )}
+                {message.widgets?.map((w) => <WidgetCard key={w.id} widget={w} />)}
+                {message.removed?.map((w) => <RemovedCard key={w.id} item={w} />)}
                 {message.invoice && <InvoiceCard initial={message.invoice} status={status} />}
               </article>
             ))}

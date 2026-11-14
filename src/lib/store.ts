@@ -75,3 +75,9 @@ export function useSidebarShortcut() {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggle]);
 }
+
+/** A widget to scroll to and briefly highlight when its board opens (set when the assistant adds one). Not persisted. */
+export const useHighlight = create<{ id: string | null; set: (id: string | null) => void }>()((set) => ({
+  id: null,
+  set: (id) => set({ id }),
+}));

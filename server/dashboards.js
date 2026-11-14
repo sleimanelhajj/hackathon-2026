@@ -81,6 +81,77 @@ export async function undoDashboard(board = "default") {
   return publicSpec({ _id: board, ...swapped });
 }
 
+// ---- widgets the assistant adds (decision #48) ----
+/** Grid size per chart type for assistant-made widgets. */
+export const CUSTOM_SIZES = { number: { w: 4, h: 5 }, line: { w: 12, h: 9 }, bar: { w: 6, h: 10 }, table: { w: 6, h: 10 } };
+const MAX_WIDGETS = 24;
+const COLS = 12;
+const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "chart";
+
+/**
+ * Adds a widget to a spec without moving anything already there: it goes in the first free spot at or below the
+ * board's last row, so it lands at the bottom and small widgets made one after another sit side by side.
+ * Pure; returns a new spec.
+ */
+export function placeWidget(spec, widget) {
+  if (spec.widgets.length >= MAX_WIDGETS) throw new Error(`This dashboard is full (${MAX_WIDGETS} widgets). Remove one, then ask again.`);
+  const ids = new Set(spec.widgets.map((w) => w.id));
+  let id;
+  do id = `ai-${slug(widget.title)}-${Math.random().toString(36).slice(2, 6)}`; while (ids.has(id));
+  const size = CUSTOM_SIZES[widget.chart] ?? { w: 6, h: 9 };
+  const start = spec.layout.length ? Math.max(...spec.layout.map((l) => l.y)) : 0;
+  let slot = null;
+  for (let y = start; !slot; y++) {
+    for (let x = 0; x + size.w <= COLS && !slot; x++) {
+      const candidate = { i: id, x, y, w: size.w, h: size.h };
+      if (!spec.layout.some((l) => overlaps(l, candidate))) slot = candidate;
+    }
+  }
+  return { ...spec, widgets: [...spec.widgets, { ...widget, id }], layout: [...spec.layout, slot] };
+}
+
+/** Adds an assistant-made widget to a board and saves it as a new version (so Undo removes it). */
+export async function addWidgetToBoard(board, widget) {
+  const current = await getDashboard(board);
+  const next = placeWidget(current, widget);
+  const saved = await saveDashboard({ title: current.title, widgets: next.widgets, layout: next.layout, version: current.version }, board);
+  return { widget: next.widgets.at(-1), spec: saved };
+}
+
+/**
+ * Removes a widget and closes the gap it leaves: widgets below it, in the columns it covered (and any chained below
+ * those), move up by at most its height. Widgets elsewhere, and any free space the user left on purpose, stay put.
+ * Pure; returns a new spec.
+ */
+export function withoutWidget(spec, id) {
+  const gone = spec.layout.find((l) => l.i === id);
+  const layout = spec.layout.filter((l) => l.i !== id).map((l) => ({ ...l }));
+  const widgets = spec.widgets.filter((w) => w.id !== id);
+  if (!gone) return { ...spec, widgets, layout };
+  const spans = [[gone.x, gone.x + gone.w]];
+  const shares = (l) => spans.some(([a, b]) => l.x < b && a < l.x + l.w);
+  for (const item of layout.filter((l) => l.y >= gone.y).sort((a, b) => a.y - b.y || a.x - b.x)) {
+    if (!shares(item)) continue;
+    const start = item.y;
+    while (item.y > 0 && start - item.y < gone.h) {
+      const up = { ...item, y: item.y - 1 };
+      if (layout.some((o) => o !== item && overlaps(o, up))) break;
+      item.y -= 1;
+    }
+    if (item.y !== start) spans.push([item.x, item.x + item.w]);
+  }
+  return { ...spec, widgets, layout };
+}
+
+/** Removes one widget (the chat's "Remove" button) and closes the gap. */
+export async function removeWidgetFromBoard(board, id) {
+  const current = await getDashboard(board);
+  if (!current.widgets.some((w) => w.id === id)) throw new Error("That widget is no longer on the dashboard.");
+  const next = withoutWidget(current, id);
+  return saveDashboard({ title: current.title, widgets: next.widgets, layout: next.layout, version: current.version }, board);
+}
+
 export async function resetDashboard(board = "default") {
   const def = checkBoard(board, null);
   const current = await getDashboard(board);

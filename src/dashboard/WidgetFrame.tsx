@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { ChevronDown, GripVertical, Settings2, Trash2 } from "lucide-react";
+import { ChevronDown, GripVertical, Settings2, Trash2, X } from "lucide-react";
 import type { Widget } from "../lib/api";
 import { REGISTRY, WidgetBody } from "../widgets/registry";
 import { WidgetErrorBoundary } from "./ErrorBoundary";
@@ -16,15 +16,33 @@ type Props = {
   onChange: (widget: Widget) => void;
   onResize: (id: string, size: Size) => void;
   onMove: (id: string, dx: number, dy: number, resize: boolean) => void;
+  /** Removes the widget from the saved dashboard (outside edit mode), after the user confirms. */
+  onRemoveSaved?: (id: string) => void;
 };
 
-export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapsed, size, onToggleCollapse, onRemove, onChange, onResize, onMove }: Props) {
+export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapsed, size, onToggleCollapse, onRemove, onChange, onResize, onMove, onRemoveSaved }: Props) {
   const def = REGISTRY[widget.type];
   const canCollapse = def.collapsible && !editing;
   const bodyId = `widget-body-${widget.id}`;
   const [configOpen, setConfigOpen] = useState(false);
   const configRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLButtonElement>(null);
+  // Remove (outside edit mode): a small confirmation anchored to the widget. Only its Remove button removes.
+  const [confirming, setConfirming] = useState(false);
+  const confirmRef = useRef<HTMLDivElement>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
+  const canRemove = Boolean(onRemoveSaved) && !editing;
+  useEffect(() => {
+    if (!confirming) return;
+    confirmRef.current?.querySelector<HTMLButtonElement>(".btn-danger")?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!confirmRef.current?.contains(event.target as Node) && !removeRef.current?.contains(event.target as Node)) setConfirming(false);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setConfirming(false); removeRef.current?.focus(); } };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
+  }, [confirming]);
 
   useEffect(() => {
     if (!configOpen) return;
@@ -43,7 +61,7 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
   }, [configOpen]);
 
   return (
-    <section className="widget" data-editing={editing} data-config-open={configOpen && editing || undefined}
+    <section className="widget" data-editing={editing} data-config-open={(configOpen && editing) || confirming || undefined}
       data-collapsed={collapsed && !editing} data-kind={widget.type} aria-label={widget.title}>
       <header className="widget-head">
         {editing ? (
@@ -61,9 +79,30 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
             <ChevronDown size={16} className="widget-chevron" aria-hidden /><h2 className="widget-title">{widget.title}</h2>
           </button>
         ) : <h2 className={widget.type === "stat" ? "widget-title widget-title-stat" : "widget-title"}>{widget.title}</h2>}
+        {canRemove && (
+          <button ref={removeRef} type="button" className="icon-btn icon-btn-sm widget-remove-btn" aria-label={`Remove ${widget.title}`}
+            title="Remove from the dashboard" aria-expanded={confirming} aria-haspopup="dialog" onClick={() => setConfirming((open) => !open)}>
+            <Trash2 size={14} aria-hidden />
+          </button>
+        )}
         {editing && <button ref={settingsRef} className="icon-btn icon-btn-sm" aria-label={`Configure ${widget.title}`}
           aria-expanded={configOpen} aria-controls={`widget-config-${widget.id}`} onClick={() => setConfigOpen((open) => !open)}><Settings2 size={15} /></button>}
       </header>
+      {canRemove && confirming && (
+        <div ref={confirmRef} className="widget-config widget-confirm" role="alertdialog" aria-label={`Remove ${widget.title}?`} aria-describedby={`widget-confirm-${widget.id}`}>
+          <div className="widget-confirm-head">
+            <strong>Remove this widget?</strong>
+            <button type="button" className="icon-btn icon-btn-sm" aria-label="Close" onClick={() => setConfirming(false)}><X size={14} aria-hidden /></button>
+          </div>
+          <p id={`widget-confirm-${widget.id}`} className="muted small">“{widget.title}” comes off this dashboard and the widgets below move up. You can undo this right after.</p>
+          <div className="widget-confirm-actions">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setConfirming(false); removeRef.current?.focus(); }}>Cancel</button>
+            <button type="button" className="btn btn-danger btn-sm" aria-label="Remove widget" onClick={() => { setConfirming(false); onRemoveSaved?.(widget.id); }}>
+              <Trash2 size={14} aria-hidden /> Remove
+            </button>
+          </div>
+        </div>
+      )}
       {editing && configOpen && <div ref={configRef} id={`widget-config-${widget.id}`} className="widget-config" role="group" aria-label={`Settings for ${widget.title}`}>
         <strong>Widget settings</strong>
         {def.setting && (
@@ -98,4 +137,4 @@ export const WidgetFrame = memo(function WidgetFrame({ widget, editing, collapse
   a.size.w === b.size.w && a.size.h === b.size.h &&
   a.widget === b.widget && a.editing === b.editing && a.collapsed === b.collapsed &&
   a.onToggleCollapse === b.onToggleCollapse && a.onRemove === b.onRemove && a.onChange === b.onChange &&
-  a.onResize === b.onResize && a.onMove === b.onMove);
+  a.onResize === b.onResize && a.onMove === b.onMove && a.onRemoveSaved === b.onRemoveSaved);

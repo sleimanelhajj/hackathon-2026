@@ -6,6 +6,7 @@ import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, SALES_BREAKDOWN_LABE
 import { SalesBreakdownWidget, SalesKpiWidget, SalesPipelineWidget, SalesRepsWidget, SalesTableWidget, SalesTrendWidget } from "./SalesWidgets";
 import type { InsightFocus, Widget, WidgetType } from "../lib/api";
 import { CategoryBreakdownWidget, InsightListWidget } from "./InsightWidgets";
+import { CustomSalesWidget } from "./CustomSalesWidget";
 import { StatWidget } from "./StatWidget";
 import { ThreadListWidget } from "./ThreadListWidget";
 import { TopPeopleWidget } from "./TopPeopleWidget";
@@ -175,6 +176,8 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
       set: (w, v) => (w.type === "sales-table" ? { ...w, table: v as typeof w.table, title: SALES_TABLE_LABELS[v as typeof w.table] } : w),
     },
   },
+  // Made by the assistant's dashboard builder; no manual setting (ask the assistant for a different chart).
+  "sales-custom": { icon: Sparkles, component: CustomSalesWidget as AnyWidgetComponent, collapsible: true },
 };
 
 export function WidgetBody({ widget }: { widget: Widget }) {

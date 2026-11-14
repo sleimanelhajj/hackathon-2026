@@ -40,7 +40,7 @@ const invoice: InvoiceDraft = {
   status: "draft", readiness: { ready: true, reasons: [] }, pdfUrl: "/api/invoices/invoice-1/pdf",
 };
 
-const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, invoice: null, toolsUsed: [], ...extra });
+const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, invoice: null, toolsUsed: [], widgets: [], removed: [], ...extra });
 
 async function ask(text: string) {
   fireEvent.change(screen.getByRole("textbox", { name: "Ask the assistant" }), { target: { value: text } });
@@ -115,6 +115,50 @@ test("an invoice draft is shown for review; nothing is created until Confirm", a
   expect(confirm.mock.calls[0][1]).toBe(true);
   expect((await screen.findByRole("link", { name: /Download invoice PDF/ })).getAttribute("href")).toBe("/api/invoices/invoice-1/pdf");
   expect(within(card).queryByRole("button", { name: "Confirm and create PDF" })).toBeNull();
+});
+
+test("a widget the assistant added shows as a card with Open and Remove, and the Sales board refreshes", async () => {
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({
+    reply: "Added **Cordless drill sales** to your Sales dashboard.",
+    widgets: [{ board: "sales", id: "ai-cordless-drill-1a2b", title: "Cordless drill sales", chart: "line", summary: "Cordless drill/driver 20V kit · last 6 months" }],
+    toolsUsed: ["add_dashboard_widget"],
+  }));
+  const remove = vi.spyOn(api, "removeWidget").mockResolvedValue({} as never);
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("Show me the sales of the cordless drill");
+  const card = await screen.findByRole("region", { name: "Widget Cordless drill sales" });
+  expect(within(card).getByText("Added to Sales dashboard")).toBeTruthy();
+  expect(within(card).getByText("Cordless drill/driver 20V kit · last 6 months")).toBeTruthy();
+  expect(within(card).getByRole("link", { name: /Open/ }).getAttribute("href")).toBe("#/sales");
+  expect(screen.getByText(/Checked: dashboard builder/)).toBeTruthy();
+  fireEvent.click(within(card).getByRole("button", { name: /Remove/ }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith("sales", "ai-cordless-drill-1a2b"));
+  expect(await within(card).findByText("Removed from the dashboard")).toBeTruthy();
+});
+
+test("a widget the assistant removed shows a card with Undo, which only restores if nothing changed since", async () => {
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({
+    reply: "Removed **Plumbing revenue by branch**.",
+    removed: [{ board: "sales", id: "ai-plumbing-1", title: "Plumbing revenue by branch", version: 23 }],
+  }));
+  const spec = vi.spyOn(api, "spec").mockResolvedValueOnce({ version: 24 } as never).mockResolvedValueOnce({ version: 23 } as never);
+  const undo = vi.spyOn(api, "undoSpec").mockResolvedValue({} as never);
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("remove the plumbing chart");
+  const card = await screen.findByRole("region", { name: "Removed Plumbing revenue by branch" });
+  expect(within(card).getByText("Removed from Sales dashboard")).toBeTruthy();
+
+  // The board changed after the removal: Undo would roll back something else, so it refuses and says why.
+  fireEvent.click(within(card).getByRole("button", { name: /Undo/ }));
+  expect(await within(card).findByRole("alert")).toBeTruthy();
+  expect(undo).not.toHaveBeenCalled();
+
+  fireEvent.click(within(card).getByRole("button", { name: /Undo/ }));
+  await waitFor(() => expect(undo).toHaveBeenCalledWith("sales"));
+  expect(await within(card).findByText("Put back on Sales dashboard")).toBeTruthy();
+  expect(spec).toHaveBeenCalledWith("sales");
 });
 
 test("Change something hands the draft back to the conversation", async () => {

@@ -6,7 +6,7 @@ import { authUrl, canSend, consumeState, disconnectGmail, fetchAttachment, googl
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
 import { decrypt } from "./crypto.js";
-import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
+import { ConflictError, getDashboard, removeWidgetFromBoard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
 import { draftReply, loadThread } from "./agent/reply.js";
@@ -14,6 +14,7 @@ import { threadView } from "./threads.js";
 import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgresConfigured, tableCounts } from "./sales/db.js";
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
+import { runCustomQuery } from "./sales/custom.js";
 import { chat } from "./agent/chat.js";
 import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
 import { assistantError, getAssistant } from "./agent/assistant.js";
@@ -402,6 +403,24 @@ app.put("/api/dashboards/:board", async (req, res) => {
 });
 app.post("/api/dashboards/:board/undo", wrap(async (req, res) => res.json(await undoDashboard(req.params.board))));
 app.post("/api/dashboards/:board/reset", wrap(async (req, res) => res.json(await resetDashboard(req.params.board))));
+// The chat's "Remove" button for a widget the assistant added.
+app.delete("/api/dashboards/:board/widgets/:id", async (req, res) => {
+  try {
+    res.json(await removeWidgetFromBoard(req.params.board, z.string().regex(/^[a-z0-9-]{1,40}$/).parse(req.params.id)));
+  } catch (err) {
+    res.status(err instanceof ConflictError ? 409 : 400).json({ error: err?.issues ? "That isn't a widget id." : err.message });
+  }
+});
+
+// Data for a custom widget (made by the assistant): the widget's typed query, run as fixed, parameterized SQL.
+app.post("/api/sales/custom", async (req, res) => {
+  try {
+    if (!postgresConfigured()) return res.status(400).json({ error: "Postgres isn't set up. Add POSTGRES_URL to .env and restart the server." });
+    res.json(await runCustomQuery(getPool(), req.body?.query));
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "This widget's settings aren't valid." : friendlyPgError(err) });
+  }
+});
 
 // API_PORT (not PORT): dev tools often set PORT for the web server.
 const port = Number(process.env.API_PORT || 8787);

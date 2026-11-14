@@ -60,10 +60,11 @@ Regression checks: `npm test` runs pure coordinate tests plus Vitest/jsdom and R
 │   │   ├── chat.js     ← company-data Q&A, verified sources and invoice orchestration (older endpoint)
 │   │   ├── sales-agent.js ← the assistant: LangGraph graph (model → tools → confirm)
 │   │   ├── sales-tools.js ← read-only Postgres tools + invoice drafts from database facts
-│   │   ├── assistant.js   ← wires Gemini, tools and invoice storage for the API
+│   │   ├── widget-builder.js ← sub-agent: plain request → validated custom sales widget
+│   │   ├── assistant.js   ← wires Gemini, tools, the widget builder and invoice storage for the API
 │   │   └── invoice.js  ← validated invoice maths + deterministic PDF rendering
 │   ├── company-data/   ← bounded read-only gateway + provider.js handoff for the real company database
-│   └── sales/          ← Postgres sales data: connection, demo seed, metrics
+│   └── sales/          ← Postgres sales data: connection, demo seed, metrics, custom widget queries (custom.js)
 ├── shared/
 │   └── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
 ├── src/
@@ -116,6 +117,8 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/analysis/run` | Start AI email analysis in the background (`{ "force": true }` re-sorts every thread). Also runs on its own after a sync or sample load |
 | POST | `/api/agent/chat` | Last 10 text turns → answer from bounded company-data records, verified sources and optional stored invoice draft |
 | POST | `/api/assistant/message` | `{ threadId, message }` → the LangGraph assistant's reply, tools used, and an invoice draft waiting for confirmation (if any) |
+| POST | `/api/sales/custom` | `{ query }` (a custom widget's typed query) → rows, total, previous-period total and what it counts; fixed, parameterized, read-only SQL |
+| DELETE | `/api/dashboards/:board/widgets/:id` | Removes one widget (the chat's Remove button for an assistant-made widget) |
 | POST | `/api/assistant/confirm` | `{ threadId, approve }` → confirms the waiting draft (stores the invoice, returns its PDF link) or hands it back for changes |
 | GET | `/api/invoices/:id/pdf` | Download a deterministic PDF generated from one stored invoice draft |
 | POST | `/api/invoices/:id/send` | Send the reviewed PDF through Gmail; requires edited subject/body and `approved: true`, and cannot be called by the model |

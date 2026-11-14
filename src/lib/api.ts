@@ -90,12 +90,30 @@ export type InvoiceProposal = {
   warnings?: string[];
 };
 
+/** A widget the assistant's dashboard builder added to a board. */
+export type AddedWidget = { board: Board; id: string; title: string; chart: "number" | "line" | "bar" | "table"; summary: string };
+
 /** One turn of the assistant (POST /api/assistant/message or /confirm). */
 export type AssistantReply = {
   reply: string;
   pendingInvoice: InvoiceProposal | null;
   invoice: InvoiceDraft | null;
   toolsUsed: string[];
+  widgets: AddedWidget[];
+  /** Widgets the assistant removed; `version` is the board's version right after, so Undo can check nothing changed. */
+  removed: { board: Board; id: string; title: string; version: number }[];
+};
+
+/** Data for a custom sales widget (POST /api/sales/custom). */
+export type CustomResult = {
+  metric: string;
+  groupBy: string;
+  unit: "USD" | "count" | "percent";
+  period: { from: string; to: string; months: number };
+  rows: { key: string; value: number | null }[];
+  total: number;
+  previousTotal: number | null;
+  filters: string[];
 };
 
 export type AgentChatResponse = {
@@ -387,6 +405,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: messages.slice(-10) }),
     }),
+  salesCustom: (query: Extract<Widget, { type: "sales-custom" }>["query"]) =>
+    request<CustomResult>("/api/sales/custom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }),
+  removeWidget: (board: Board, id: string) =>
+    request<SavedDashboard>(`/api/dashboards/${board}/widgets/${encodeURIComponent(id)}`, { method: "DELETE" }),
   assistantMessage: (threadId: string, message: string) =>
     request<AssistantReply>("/api/assistant/message", {
       method: "POST",

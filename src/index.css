@@ -689,6 +689,16 @@ input, textarea { caret-color: var(--accent); }
   background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); z-index: 10;
 }
 .widget-config > strong { font-size: 13px; }
+/* Remove (outside edit mode): the button shows on hover or keyboard focus, and always on touch screens. */
+.widget-remove-btn { opacity: 0; transition: opacity 120ms, background 120ms, color 120ms; }
+.widget:hover .widget-remove-btn, .widget:focus-within .widget-remove-btn, .widget-remove-btn[aria-expanded="true"] { opacity: 1; }
+.widget-remove-btn:hover, .widget-remove-btn[aria-expanded="true"] { color: var(--danger); background: var(--danger-subtle); }
+@media (hover: none) { .widget-remove-btn { opacity: 1; } }
+.widget-confirm { top: 44px; width: 280px; gap: 10px; }
+.widget-confirm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.widget-confirm-head strong { font-size: 13.5px; }
+.widget-confirm p { line-height: 1.45; }
+.widget-confirm-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .widget-config .widget-setting { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-2); }
 .widget-dimensions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .widget-dimensions label { display: flex; flex-direction: column; gap: 5px; color: var(--text-2); font-size: 12px; }
@@ -1200,6 +1210,36 @@ a.agent-source:hover { border-color: var(--border-strong); background: var(--hov
 
 /* Invoice inside an assistant answer */
 .invoice-card { width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--glass-strong); box-shadow: var(--shadow); }
+
+/* ---------- A widget the assistant added (chat card) ---------- */
+.widget-card {
+  width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--glass-strong); box-shadow: var(--shadow);
+  animation: widget-card-in 320ms var(--ease);
+}
+@keyframes widget-card-in { from { opacity: 0; transform: translateY(6px); } }
+.widget-card-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-subtle); color: var(--accent); }
+.widget-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.widget-card-text strong { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.widget-card-text > span:not(.widget-card-status) { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.widget-card-status { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--success); }
+.widget-card[data-state="removed"] { opacity: 0.7; }
+.widget-card[data-state="removed"] .widget-card-status { color: var(--text-3); }
+.widget-card-actions { display: flex; align-items: center; gap: 4px; }
+.widget-card-icon[data-tone="muted"] { background: var(--subtle); color: var(--text-3); }
+.widget-card-status[data-tone="muted"] { color: var(--text-3); }
+.widget-card .agent-error { grid-column: 1 / -1; }
+
+/* ---------- Custom widgets on the board ---------- */
+.custom-caption { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-3); margin-top: auto; }
+.custom-caption > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-by { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); white-space: nowrap; }
+.custom-number { flex: 1; justify-content: center; }
+.custom-widget[data-chart="number"] { gap: 6px; }
+.custom-widget[data-chart="number"] .custom-caption { flex-wrap: nowrap; }
+.custom-loading { height: 100%; display: flex; flex-direction: column; gap: 12px; }
+/* The newest widget glows briefly when the board opens on it. */
+.dashboard-canvas .grid-stack-item[data-highlight] .widget { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-subtle), var(--shadow-lift); transition: box-shadow 400ms var(--ease), border-color 400ms var(--ease); }
 .invoice-card-head { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); }
 .invoice-icon { width: 31px; height: 31px; }
 .invoice-card-head > div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
