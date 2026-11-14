@@ -7,6 +7,7 @@ import { seedSample } from "./sample.js";
 import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
+import { autoSyncInfo, startScheduler } from "./scheduler.js";
 
 const app = express();
 app.use(express.json());
@@ -47,6 +48,7 @@ app.get("/api/status", wrap(async (_req, res) => {
     database: await pingDb(),
     googleConfigured: googleConfigured(),
     gemini: { configured: geminiConfigured(), model: geminiModel() },
+    autoSync: autoSyncInfo(),
     gmail: publicConnection(conn),
   });
 }));
@@ -92,7 +94,12 @@ app.delete("/api/integrations/gmail", wrap(async (_req, res) => {
   await disconnectGmail();
   res.json({ ok: true });
 }));
-app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboard())));
+app.get("/api/dashboard", wrap(async (_req, res) => {
+  const d = await buildDashboard();
+  // Background checks only apply to a live Gmail connection, never to sample data.
+  if (d.connected) d.autoSync = d.mode === "live" ? autoSyncInfo() : null;
+  res.json(d);
+}));
 
 // Dashboard layout spec (widgets + grid positions)
 app.get("/api/dashboards/default", wrap(async (_req, res) => res.json(await getDashboard())));
@@ -110,7 +117,12 @@ app.post("/api/dashboards/default/reset", wrap(async (_req, res) => res.json(awa
 const port = Number(process.env.API_PORT || 8787);
 connectDb()
   .then(resetStaleAnalysis)
-  .then(() => app.listen(port, () => console.log(`API ready on http://localhost:${port} (MongoDB connected)`)))
+  .then(() =>
+    app.listen(port, () => {
+      console.log(`API ready on http://localhost:${port} (MongoDB connected)`);
+      startScheduler();
+    })
+  )
   .catch((err) => {
     console.error("Could not connect to MongoDB:", err.message);
     process.exit(1);

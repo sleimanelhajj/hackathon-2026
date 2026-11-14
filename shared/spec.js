@@ -9,28 +9,31 @@ export const GRID_COLS = 12;
 export const StatMetric = z.enum(["awaitingYou", "awaitingThem", "received", "sent", "people"]);
 export const ThreadList = z.enum(["awaitingYou", "awaitingThem"]);
 
-// AI email analysis (server/agent/classify.js). Every value here is *inferred* by a model and labelled so in the UI,
+// AI email analysis (server/agent/classify.js). The category is *inferred* by a model and labelled so in the UI,
 // except "automated", which code can also detect on its own (then it's *derived*).
-export const Category = z.enum(["lead", "proposal", "request", "scheduling", "billing", "support", "internal", "automated", "other"]);
+// Priority is not stored: it's derived from the follow-up rules in shared/followup.js each time the dashboard loads.
+// Built around the hackathon persona (decision #23): a sales rep following up on proposals, invoices and shipments.
+export const Category = z.enum(["proposal", "billing", "shipping", "lead", "request", "scheduling", "internal", "automated", "other"]);
 export const Priority = z.enum(["high", "medium", "low"]);
-/** What an "AI-sorted emails" list shows: one category, or everything marked high priority. */
-export const InsightFocus = z.enum(["high-priority", "lead", "proposal", "request", "scheduling", "billing", "support", "internal", "automated", "other"]);
+/** What an "AI-sorted emails" list shows: everything to follow up on, only high priority, or one category. */
+export const InsightFocus = z.enum(["follow-up", "high-priority", "proposal", "billing", "shipping", "lead", "request", "scheduling", "internal", "automated", "other"]);
 
 export const CATEGORY_LABELS = {
-  lead: { title: "Potential leads", hint: "Someone new who may want to buy or work with you" },
-  proposal: { title: "Proposals and deals", hint: "Quotes, pricing, contracts, negotiations" },
-  request: { title: "Customer requests", hint: "An existing customer or partner asking for something" },
-  scheduling: { title: "Scheduling", hint: "Meetings, calls, demos, rescheduling" },
-  billing: { title: "Billing and invoices", hint: "Invoices, payments, receipts" },
-  support: { title: "Problems and complaints", hint: "Something is broken or someone is unhappy" },
+  proposal: { title: "Proposals and deals", hint: "Quotes, pricing, proposals, contracts, negotiations" },
+  billing: { title: "Invoices and payments", hint: "Invoices, payment dates, overdue or disputed payments" },
+  shipping: { title: "Shipments and deliveries", hint: "Where is my order, delays, tracking, delivery problems" },
+  lead: { title: "New inquiries", hint: "Someone new asking about buying from you" },
+  request: { title: "Customer requests", hint: "An existing customer asking for something else" },
+  scheduling: { title: "Meetings", hint: "Booking, moving or confirming calls and demos" },
   internal: { title: "Internal", hint: "Your own team" },
-  automated: { title: "Automated", hint: "Newsletters, notifications, no-reply senders" },
-  other: { title: "Other", hint: "Personal or doesn't fit elsewhere" },
+  automated: { title: "Automated", hint: "Newsletters, notifications, tracking updates, no-reply senders" },
+  other: { title: "Other", hint: "Personal or not a sales follow-up" },
 };
 
 /** @type {Record<z.infer<typeof InsightFocus>, string>} */
 export const INSIGHT_FOCUS_LABELS = {
-  "high-priority": "Needs your attention",
+  "follow-up": "Needs a follow-up",
+  "high-priority": "Waiting on you",
   ...Object.fromEntries(Object.entries(CATEGORY_LABELS).map(([k, v]) => [k, v.title])),
 };
 
@@ -102,9 +105,9 @@ export const CATALOG = {
   },
   "insight-list": {
     label: "AI-sorted emails",
-    description: "Leads, requests, invoices… sorted by AI, with the reason",
+    description: "Proposals, invoices, shipments… that need a follow-up, with the reason",
     size: { w: 8, h: 10, minW: 4, minH: 6 },
-    create: () => ({ type: "insight-list", title: "Needs your attention", focus: "high-priority" }),
+    create: () => ({ type: "insight-list", title: "Needs a follow-up", focus: "follow-up" }),
   },
   "category-breakdown": {
     label: "What your email is about",
@@ -116,7 +119,7 @@ export const CATALOG = {
 
 export const STAT_LABELS = {
   awaitingYou: { title: "Waiting on you", note: "Last message is theirs" },
-  awaitingThem: { title: "Waiting on them", note: "No reply for 3+ days" },
+  awaitingThem: { title: "Waiting on them", note: "No reply in 3+ business days" },
   received: { title: "Received", note: "Emails in" },
   sent: { title: "Sent", note: "Emails out" },
   people: { title: "People", note: "Wrote to you" },
@@ -129,8 +132,11 @@ export const DEFAULT_SPEC = {
     { id: "stat-awaiting-them", type: "stat", title: "Waiting on them", metric: "awaitingThem" },
     { id: "stat-received", type: "stat", title: "Received", metric: "received" },
     { id: "stat-people", type: "stat", title: "People", metric: "people" },
-    { id: "ai-attention", type: "insight-list", title: "Needs your attention", focus: "high-priority" },
+    { id: "ai-attention", type: "insight-list", title: "Needs a follow-up", focus: "follow-up" },
     { id: "ai-categories", type: "category-breakdown", title: "What your email is about" },
+    { id: "ai-proposals", type: "insight-list", title: "Proposals and deals", focus: "proposal" },
+    { id: "ai-invoices", type: "insight-list", title: "Invoices and payments", focus: "billing" },
+    { id: "ai-shipments", type: "insight-list", title: "Shipments and deliveries", focus: "shipping" },
     { id: "list-awaiting-you", type: "thread-list", title: "Waiting on your reply", list: "awaitingYou" },
     { id: "list-awaiting-them", type: "thread-list", title: "Waiting on their reply", list: "awaitingThem" },
     { id: "top-people", type: "top-people", title: "Who emails you most", limit: 5 },
@@ -141,11 +147,14 @@ export const DEFAULT_SPEC = {
     { i: "stat-awaiting-them", x: 3, y: 0, w: 3, h: 3 },
     { i: "stat-received", x: 6, y: 0, w: 3, h: 3 },
     { i: "stat-people", x: 9, y: 0, w: 3, h: 3 },
-    { i: "ai-attention", x: 0, y: 3, w: 8, h: 10 },
-    { i: "ai-categories", x: 8, y: 3, w: 4, h: 10 },
-    { i: "list-awaiting-you", x: 0, y: 13, w: 12, h: 9 },
-    { i: "list-awaiting-them", x: 0, y: 22, w: 7, h: 9 },
-    { i: "top-people", x: 7, y: 22, w: 5, h: 9 },
-    { i: "activity", x: 0, y: 31, w: 12, h: 8 },
+    { i: "ai-attention", x: 0, y: 3, w: 8, h: 11 },
+    { i: "ai-categories", x: 8, y: 3, w: 4, h: 11 },
+    { i: "ai-proposals", x: 0, y: 14, w: 4, h: 10 },
+    { i: "ai-invoices", x: 4, y: 14, w: 4, h: 10 },
+    { i: "ai-shipments", x: 8, y: 14, w: 4, h: 10 },
+    { i: "list-awaiting-you", x: 0, y: 24, w: 12, h: 9 },
+    { i: "list-awaiting-them", x: 0, y: 33, w: 7, h: 9 },
+    { i: "top-people", x: 7, y: 33, w: 5, h: 9 },
+    { i: "activity", x: 0, y: 42, w: 12, h: 8 },
   ],
 };

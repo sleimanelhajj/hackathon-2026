@@ -6,7 +6,9 @@ Claude Code reads this through `CLAUDE.md`. Keep this file the single source of 
 ## What we're building
 
 AlphaHack 2026 project. Connect your tools, describe what matters, get a dashboard that understands your work and helps you act on it.
-Loop: **Connect → Understand → Visualize → Ask → Act → Monitor**. Gmail first.
+Loop: **Connect → Understand → Visualize → Ask → Act → Monitor**.
+
+**Weekend focus (after AlphaHack feedback):** one person, **a sales rep**, using **Gmail only**, who needs to follow up on **proposals, invoices and shipments**. "No reply" means **3 business days** with no answer to something you sent. The priority rules and the one trigger are in `context/README.md` → *Definitions*. If a change doesn't serve that person on Gmail, it waits.
 
 **Read before changing anything:**
 

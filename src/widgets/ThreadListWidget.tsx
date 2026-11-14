@@ -13,7 +13,7 @@ const COPY = {
   },
   awaitingThem: {
     empty: "No conversations have gone quiet.",
-    how: "You wrote last and haven't heard back in 3+ days.",
+    how: "You wrote last, to someone outside your company, and haven't heard back in 3+ business days (Mon–Fri).",
     oldAfter: 5,
   },
 } as const;
@@ -22,6 +22,11 @@ export function waitingLabel(days: number) {
   if (days <= 0) return "Today";
   if (days === 1) return "1 day";
   return `${days} days`;
+}
+
+/** "No reply" is counted in business days (decision #25), so that list shows them. */
+export function businessDaysLabel(days: number) {
+  return `${days} business day${days === 1 ? "" : "s"}`;
 }
 
 export const ThreadListWidget = memo(function ThreadListWidget({ widget }: Props) {
@@ -41,7 +46,11 @@ export const ThreadListWidget = memo(function ThreadListWidget({ widget }: Props
               <p className="thread-subject">{r.subject}</p>
               <p className="thread-snippet">{r.snippet}</p>
             </div>
-            <span className="thread-wait num" data-old={r.waitingDays >= copy.oldAfter}>{waitingLabel(r.waitingDays)}</span>
+            {widget.list === "awaitingThem" ? (
+              <span className="thread-wait num" data-old={r.waitingBusinessDays >= copy.oldAfter}>{businessDaysLabel(r.waitingBusinessDays)}</span>
+            ) : (
+              <span className="thread-wait num" data-old={r.waitingDays >= copy.oldAfter}>{waitingLabel(r.waitingDays)}</span>
+            )}
             {r.link ? (
               <a className="btn btn-ghost btn-sm" href={r.link} target="_blank" rel="noreferrer" aria-label={`Open “${r.subject}” in Gmail`}>
                 Open <ExternalLink size={13} aria-hidden />

@@ -14,13 +14,13 @@ React 19 + Vite + TypeScript (user decision: "React only", no Next.js). Librarie
 
 - **Super admin** — owns the workspace. Connects tools, manages RBAC (grants access to anyone), and **tailors a dashboard for each specific person**.
 - **Admin** — manages access via RBAC within what the super admin allows.
-- **Member (end user)** — e.g. a founder, sales rep or operator. Receives a dashboard tailored for them, then customizes it themselves through the **agentic chat layer** and by **dragging and dropping components**.
+- **Member (end user)**: for the hackathon, **a sales rep** (see below). Receives a dashboard tailored for them, then customizes it themselves through the **agentic chat layer** and by **dragging and dropping components**.
 
-Beachhead: founders, SMB operators and sales teams who run their business through Gmail.
+**The one person we build for (AlphaHack feedback, 2026-11-14):** a sales rep who sells and follows up from Gmail: proposals and quotes, invoices waiting on payment, and customers asking about shipments. Gmail only for the weekend; no WhatsApp, CRM or accounting tool. Founders, operators and whole teams come later. Definitions of "no reply" and priority are in `context/README.md`.
 
 ## Product Purpose
 
-Connect business tools, describe what matters in plain language, and get a dashboard that understands the work and helps act on it. Loop: Connect → Understand → Visualize → Ask → Act → Monitor. Success for the demo: blank workspace → Gmail connected → dashboard generated from a prompt → edited conversationally → source-backed insight → approved Gmail draft.
+Connect business tools, describe what matters in plain language, and get a dashboard that understands the work and helps act on it. Loop: Connect → Understand → Visualize → Ask → Act → Monitor. Success for the demo: blank workspace → Gmail connected → the rep sees which proposals, invoices and shipments need a follow-up and why → edits the view conversationally → approves a drafted Gmail follow-up. Nothing is sent automatically.
 
 ## Positioning
 
@@ -28,7 +28,7 @@ Goal-to-workspace: a natural-language request produces a working, source-backed 
 
 ## Operating Context
 
-Daily operational use at a desk: triaging leads, follow-ups, meetings and tasks extracted from Gmail (Google Calendar as stretch). Admin setup happens occasionally; members return daily.
+Daily use at a desk: the rep opens the dashboard to see who is waiting on them and who hasn't replied, across proposals, invoices and shipments, all from Gmail (Google Calendar after the hackathon). Admin setup happens occasionally; members return daily.
 
 ## Capabilities and Constraints
 

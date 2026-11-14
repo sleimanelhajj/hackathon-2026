@@ -6,6 +6,12 @@
 > **Status:** Proposed scope and design; not an implementation or evidence of completed features  
 > **Last updated:** 2026-11-13
 
+> **Update 2026-11-14, AlphaHack feedback #04.** This is the original, broad idea document. For the hackathon the scope is narrower, and where this file disagrees, [README.md](README.md) and [decisions.md](decisions.md) (#23–#26) win:
+> - **One persona:** a sales rep who follows up on **proposals, invoices and shipments** from Gmail (not founders, operators or teams).
+> - **Gmail only** for the weekend: no WhatsApp; Calendar comes after.
+> - **"No reply" = 3 business days**, and the priority rules are written down in one sentence each.
+> - Recheck every number before the pitch (the AUP card had "1 hour × 500 times a month", which is 500 hours a month).
+
 ---
 
 ## 0. Executive Summary
@@ -87,6 +93,8 @@ A user with an authorized Gmail test account can go from blank workspace to a pe
 | **Developer / SaaS vendor (future)** | Time-consuming custom dashboard/agent infrastructure | Embedded dashboards and connectors | API, SDK, webhooks |
 
 **Recommended beachhead:** Sales-oriented small businesses and founders who already conduct operations through Gmail. The pain is demonstrable with one source, and the experience can be expanded to a second connector in a hackathon.
+
+> **Updated 2026-11-14 (feedback #04):** narrowed to **one person, a sales rep** whose Gmail holds proposals, invoices waiting on payment, and customer questions about shipments. The table above stays as the long-term market view.
 
 **Do not attempt to serve every persona equally in the MVP.** Offer persona templates later after validating one workflow.
 
@@ -734,6 +742,8 @@ All sample numbers are **mock data**, not findings.
 
 **Recommended stretch goal:** Google Calendar connection and a timeline/list of upcoming meetings linked to contacts.
 
+> **Updated 2026-11-14 (feedback #04):** Gmail only for the weekend, so Calendar moves to after the hackathon. Item 3 above becomes: detect proposals, invoices and shipments that need a follow-up, using "no reply = 3 business days" and the priority rules in [README.md](README.md#definitions-decided-before-building).
+
 ### 12.2 Out of scope for the hackathon
 
 - Full support for dozens of live connectors.
@@ -788,6 +798,8 @@ With fewer people, combine roles, but assign ownership of the critical path: aut
 ## 13. Demo Script: End-to-End Experience
 
 **Demo identity:** Sales manager at a hypothetical SMB. Use consented demo data or a specially created test inbox. Do not expose real private customer information.
+
+> **Updated 2026-11-14 (feedback #04):** the demo identity is now **a sales rep** following up on proposals, invoices and shipments, and the prompts below should be read that way. The short version of the script is in [README.md](README.md#demo-story-short).
 
 ### Scene A — Blank workspace
 
@@ -1151,10 +1163,10 @@ Competing products may implement some or many of these features. Validate differ
 1. **Name and positioning:** “AI Workspace OS”, “Agentic Command Center”, or an original brand?
 2. **Data scope:** Process only selected Gmail labels/threads, or broad mailbox access with opt-in exclusions?
 3. **Data storage:** Store raw message bodies, minimal excerpts, or mostly metadata and derived entities?
-4. **Primary buyer:** Founder/operator, sales manager, or service/agency teams?
+4. **Primary buyer:** Founder/operator, sales manager, or service/agency teams? → **Decided for the hackathon: a sales rep** (decision #23).
 5. **Primary value proof:** Time saved in triage, more follow-ups completed, or faster reporting?
 6. **Action boundary:** Draft-only during MVP; what limited reversible mutations follow?
-7. **MVP second connector:** Google Calendar (strongest narrative) or Google Sheets (simpler structured metrics)?
+7. **MVP second connector:** Google Calendar (strongest narrative) or Google Sheets (simpler structured metrics)? → **None for the weekend: Gmail only** (decision #24).
 8. **Realtime promise:** Provider event-driven where possible, or labeled scheduled sync?
 9. **Platform timing:** When to expose API/SDK versus focusing on the end-user experience?
 10. **Deployment and model choice:** Team skills, budget, privacy obligations, and hackathon infrastructure constraints?

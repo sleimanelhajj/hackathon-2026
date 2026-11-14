@@ -40,12 +40,14 @@ Packages still to add, and when, are listed in [roadmap.md](roadmap.md#packages)
 │   ├── dashboard.js    ← derived numbers (waiting on you / them, activity, top people)
 │   ├── dashboards.js   ← saved dashboard spec: get / save (versioned) / undo / reset
 │   ├── sample.js       ← labelled sample data for demos
+│   ├── scheduler.js    ← auto-sync: re-checks live Gmail every SYNC_INTERVAL_MINUTES, then runs AI analysis
 │   ├── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
 │   └── agent/
 │       ├── llm.js      ← the only file that calls Gemini (JSON output, retries, friendly errors)
-│       └── classify.js ← AI email analysis job: category, priority, summary, reason, next step per thread
+│       └── classify.js ← AI email analysis job: category, summary, reason, next step per thread (priority: shared/followup.js)
 ├── shared/
-│   └── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
+│   ├── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
+│   └── followup.js     ← follow-up rules: business days, "no reply", high/medium/low priority (decisions #25–#27)
 ├── src/
 │   ├── App.tsx         ← shell + hash routing (#/dashboard, #/integrations), lazy dashboard
 │   ├── components/     ← Sidebar (collapsible), Panel (collapsible), Callout, Gmail logo
@@ -71,7 +73,7 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/status` | DB health, whether Google OAuth and Gemini are configured, Gmail connection + AI analysis state |
+| GET | `/api/status` | DB health, whether Google OAuth and Gemini are configured, auto-sync schedule, Gmail connection + AI analysis state |
 | GET | `/api/auth/google/start` | Redirects to Google consent |
 | GET | `/api/auth/google/callback` | Stores encrypted tokens, starts first sync |
 | POST | `/api/integrations/gmail/sync` | Re-imports last 30 days (deduplicated by Gmail message id) |
@@ -90,7 +92,7 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 |---|---|
 | `connections` | One doc per provider (tokens encrypted). `analysis` sub-doc: status, progress, counts, last run, error |
 | `messages` | Synced Gmail metadata (unique on `gmailId`) |
-| `extractions` | AI labels, one doc per thread (`_id` = threadId): category, priority, needsReply, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId |
+| `extractions` | AI labels, one doc per thread (`_id` = threadId): category, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId. Priority isn't stored: `shared/followup.js` derives it when the dashboard loads |
 | `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
 
 ## Gemini setup

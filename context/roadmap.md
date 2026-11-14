@@ -6,17 +6,19 @@ Screens for each feature are in [Figma](https://www.figma.com/design/XTZ64s5ZqMs
 
 Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 
+> **Weekend focus (AlphaHack feedback, decisions #23–#26):** one sales rep, Gmail only, and follow-ups on **proposals, invoices and shipments**. "No reply" = 3 business days. Priority rules are in [README.md](README.md#definitions-decided-before-building). Anything that doesn't serve that person on Gmail waits until after the weekend.
+
 | # | Feature | Status | Demo-critical | Figma screen |
 |---|---|---|---|---|
 | 0 | Gmail connect + sync + derived dashboard, collapsible UI | ✅ | yes | 1, 2, 7 |
 | 1 | Dashboard as saved widget spec + **drag-and-drop layout** | ✅ | yes | 3 |
 | 2 | Agent chat panel (ask questions, edit the dashboard) | 🟡 | yes | 2 |
 | 3 | Generate a dashboard from a prompt (onboarding) | ⬜ | yes | 1 |
-| 4 | AI extraction: leads, follow-ups, tasks (with certainty labels) | 🟡 first cut built | yes | 2, 6 |
+| 4 | AI sorting: proposals, invoices, shipments needing a follow-up (with certainty labels) | 🟡 first cut built, align with definitions | yes | 2, 6 |
 | 5 | Action center + approval-gated Gmail drafts | ⬜ | yes | 4, 6 |
 | 6 | Sign-in, workspaces, RBAC, admin tailors dashboards per person | ⬜ | strong | 5 |
-| 7 | Scheduled sync + freshness | ⬜ | nice | – |
-| 8 | Google Calendar connector | 💤 | stretch | 7 |
+| 7 | Scheduled sync + freshness | 🟡 polling built | nice | – |
+| 8 | Google Calendar connector | 💤 | after the weekend (Gmail only, #24) | 7 |
 | 9 | Automations / workflow view | 💤 | after hackathon | – |
 
 ---
@@ -156,6 +158,15 @@ const { width, containerRef, mounted } = useContainerWidth();
 
 > **First cut built (2026-11-14), not yet run end to end.** `server/agent/classify.js` sorts each thread (not each message) into a category, priority, needsReply, summary, reason and suggested action. Results go to `extractions` (one doc per thread). It runs after sync and sample load, or via `POST /api/analysis/run`, and only re-sends threads with a new message. Automated senders are labelled by a rule with no model call. Widgets: `insight-list` and `category-breakdown`. The sample data includes a prompt-injection email.
 > **Still to do:** user corrections ("not a lead") stored in `correction` (the field is reserved and never overwritten), deadline extraction, a hand-labelled test set.
+>
+> **Aligned with the feedback definitions (decisions #23–#27), done 2026-11-14:**
+> 1. ✅ **Business days.** `shared/followup.js` has `businessDaysBetween` (Mon–Fri, by UTC date). "Waiting on them" uses it, only counts people outside your company, and shows "N business days".
+> 2. ✅ **Shipment category.** `shipping` was added. `support` was folded into `request`, and `lead` is shown as "New inquiries". The prompt is now written for the sales rep (`PROMPT_VERSION` 2).
+> 3. ✅ **Priority by code.** Gemini only picks the category. `followUpPriority()` derives high/medium/low at read time, and each row shows the rule that applied ("No reply for 4 business days").
+> 4. ✅ **Sample data.** Proposal, invoice and shipment threads (including a carrier delay and tracking updates), with separate preview text per message and the expected priority noted per thread.
+> 5. ✅ **Default dashboard.** "Needs a follow-up" first, then one list each for proposals, invoices and shipments. Existing saved layouts don't change until they're reset or the lists are added from the widget panel.
+>
+> Checked on 2026-11-14 against MongoDB + Gemini with sample data: all 17 threads matched their expected priority, and the prompt-injection email stayed low. Known limits: business days ignore public holidays and use UTC dates, not the rep's time zone.
 
 - Batch job after each sync, over new messages only (metadata + snippet; fetch full bodies only if a decision allows it).
 - Output goes to an `extractions` collection: `{ messageId, kind: "lead" | "follow_up" | "task" | "deadline", value, certainty: "inferred", modelVersion, createdAt }`.
@@ -178,7 +189,9 @@ const { width, containerRef, mounted } = useContainerWidth();
 - **Tailoring (Figma screen 5):** the super admin builds a template dashboard for a person and publishes it. The member gets a copy with `templateId`. Their drag-and-drop changes stay on their copy, and **Reset to admin default** re-copies the template.
 - Connections belong to a user; one person's Gmail data is never shown to another member unless they explicitly share it.
 
-## 7. Scheduled sync ⬜
+## 7. Scheduled sync 🟡
+
+> **Polling built (2026-11-14), not yet run against a real inbox.** `server/scheduler.js` re-syncs a live Gmail connection every `SYNC_INTERVAL_MINUTES` (default 15), then runs the AI analysis on what's new. It skips if someone synced in the last ~80% of the interval, stops after "Reconnect Gmail" errors and backs off on failures. It uses plain timers in the API process, so `node-cron` isn't needed. The UI shows "Next check in N min". **Still to do:** Gmail push (Pub/Sub + `history.list`), which needs a public HTTPS endpoint.
 
 - `node-cron` in the API process: every 15 minutes, `syncGmail()` for each live connection, with backoff on errors.
 - Later: Gmail push notifications (Pub/Sub) plus `history.list` incremental sync. Keep showing an honest "Synced X min ago" either way.

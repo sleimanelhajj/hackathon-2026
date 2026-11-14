@@ -15,7 +15,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { CATALOG } from "../../shared/spec.js";
-import { timeAgo, type GridItem, type Widget, type WidgetType } from "../lib/api";
+import { timeAgo, timeUntil, type GridItem, type Widget, type WidgetType } from "../lib/api";
 import { useDashboard, useDashboardSpec, useResetSpec, useSaveSpec, useSync, useUndoSpec } from "../lib/queries";
 import { useUi } from "../lib/store";
 import { Callout } from "../components/ui";
@@ -218,6 +218,14 @@ export function DashboardPage() {
                 <span>Last {d.windowDays} days</span>
                 <span className="sep">·</span>
                 <span>{syncing ? "Syncing…" : `Synced ${timeAgo(d.lastSyncAt)}`}</span>
+                {d.autoSync?.enabled && !syncing && (
+                  <>
+                    <span className="sep">·</span>
+                    <span title={`Checks Gmail for new email every ${d.autoSync.everyMinutes} minutes. Not real-time.`}>
+                      Next check {timeUntil(d.autoSync.nextRunAt)}
+                    </span>
+                  </>
+                )}
               </>
             )}
           </p>

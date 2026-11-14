@@ -1,9 +1,11 @@
 import { getDb } from "./db.js";
 import { geminiConfigured } from "./agent/llm.js";
+import { AUTOMATED_ADDRESS, businessDaysBetween, followUpPriority, isNoReply } from "../shared/followup.js";
+import { Category } from "../shared/spec.js";
 
 const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
 
-export const AUTOMATED = /(no-?reply|do-?not-?reply|notifications?@|mailer-daemon|newsletter|bounce)/i;
+export const AUTOMATED = AUTOMATED_ADDRESS;
 const DAY = 24 * 60 * 60 * 1000;
 
 function gmailLink(m) {
@@ -39,14 +41,16 @@ export async function buildDashboard() {
       contact: last.direction === "in" ? last.from.name || last.from.email : (last.to || "").replace(/<.*>/, "").trim(),
       lastAt: last.date,
       waitingDays,
+      waitingBusinessDays: businessDaysBetween(last.date, now),
       messages: list.length,
       link: gmailLink(last),
     };
     if (last.direction === "in" && !AUTOMATED.test(last.from.email)) awaitingYou.push(row);
-    if (last.direction === "out" && waitingDays >= 3) awaitingThem.push(row);
+    // "No reply" (decision #25): you wrote last, to someone outside your company, 3+ business days ago.
+    if (isNoReply({ last, selfEmail: conn.email, now })) awaitingThem.push(row);
   }
   awaitingYou.sort((a, b) => b.waitingDays - a.waitingDays);
-  awaitingThem.sort((a, b) => b.waitingDays - a.waitingDays);
+  awaitingThem.sort((a, b) => b.waitingBusinessDays - a.waitingBusinessDays);
 
   const inbound = messages.filter((m) => m.direction === "in");
   const outbound = messages.filter((m) => m.direction === "out");
@@ -95,7 +99,9 @@ export async function buildDashboard() {
 }
 
 // AI labels from server/agent/classify.js, joined to the threads in the current window.
-// These are *inferred* by a model (or *derived* for automated senders) and the UI says so on every row.
+// The category is *inferred* by a model (or *derived* for automated senders) and the UI says so on every row.
+// Priority is *derived* here from the follow-up rules (shared/followup.js), at read time, because
+// "3 business days without a reply" can become true without any new email arriving.
 async function buildInsights(conn, threads, now) {
   const a = conn.analysis ?? {};
   const docs = threads.size
@@ -107,16 +113,23 @@ async function buildInsights(conn, threads, now) {
     const list = threads.get(e._id);
     const last = list[list.length - 1];
     const latestIn = [...list].reverse().find((m) => m.direction === "in");
+    // Labels made before the category list changed (e.g. the old "support") count as customer requests
+    // until the next analysis run re-labels them (PROMPT_VERSION was bumped).
+    const raw = e.correction?.category ?? e.category;
+    const category = Category.options.includes(raw) ? raw : "request";
+    const p = followUpPriority({ category, last, selfEmail: conn.email, now });
     rows.push({
       threadId: e._id,
       subject: last.subject,
       contact: latestIn ? latestIn.from.name || latestIn.from.email : (last.to || "").replace(/<.*>/, "").trim(),
       lastAt: last.date,
       waitingDays: Math.floor((now - last.date.getTime()) / DAY),
+      waitingBusinessDays: p.waitingBusinessDays,
       link: gmailLink(last),
-      category: e.correction?.category ?? e.category,
-      priority: e.priority,
-      needsReply: e.needsReply,
+      category,
+      priority: p.priority,
+      priorityRule: p.rule,
+      needsReply: p.needsReply,
       summary: e.summary,
       reason: e.reason,
       suggestedAction: e.suggestedAction ?? null,

@@ -19,9 +19,12 @@ export function useDashboard() {
     queryKey: ["dashboard"],
     queryFn: api.dashboard,
     // AI analysis runs in the background after a sync; refresh until it finishes so new labels appear.
+    // With live Gmail the server also re-syncs on a schedule, so check back every minute to pick that up.
     refetchInterval: (q) => {
       const d = q.state.data;
-      return d?.connected && (d.status === "syncing" || d.insights.status === "running") ? 3000 : false;
+      if (!d?.connected) return false;
+      if (d.status === "syncing" || d.insights.status === "running") return 3000;
+      return d.autoSync?.enabled ? 60_000 : false;
     },
   });
 }

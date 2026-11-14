@@ -34,10 +34,14 @@ export type GmailConnection = {
   analysis: AnalysisState | null;
 };
 
+/** Background Gmail checks (server/scheduler.js). Scheduled polling, not real-time. */
+export type AutoSync = { enabled: boolean; everyMinutes: number; nextRunAt: string | null; failures: number };
+
 export type Status = {
   database: boolean;
   googleConfigured: boolean;
   gemini: { configured: boolean; model: string };
+  autoSync: AutoSync;
   gmail: GmailConnection | null;
 };
 
@@ -48,9 +52,13 @@ export type InsightRow = {
   contact: string;
   lastAt: string;
   waitingDays: number;
+  waitingBusinessDays: number;
   link: string | null;
   category: Category;
+  /** Derived by code from the follow-up rules (shared/followup.js), not by the AI. */
   priority: Priority;
+  /** The rule that set the priority, in plain words, e.g. "No reply for 4 business days". */
+  priorityRule: string;
   needsReply: boolean;
   summary: string;
   reason: string;
@@ -79,6 +87,7 @@ export type ThreadRow = {
   contact: string;
   lastAt: string;
   waitingDays: number;
+  waitingBusinessDays: number;
   messages: number;
   link: string | null;
 };
@@ -90,6 +99,8 @@ export type Dashboard =
       mode: "live" | "sample";
       account: string;
       lastSyncAt: string | null;
+      /** Only for live Gmail; null for sample data. */
+      autoSync: AutoSync | null;
       status: GmailConnection["status"];
       error: string | null;
       windowDays: number;
@@ -142,6 +153,16 @@ export const api = {
   undoSpec: () => request<SavedDashboard>("/api/dashboards/default/undo", { method: "POST" }),
   resetSpec: () => request<SavedDashboard>("/api/dashboards/default/reset", { method: "POST" }),
 };
+
+/** "in 12 min" / "any moment" for a future time. */
+export function timeUntil(iso: string | null): string {
+  if (!iso) return "soon";
+  const m = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  if (m <= 0) return "any moment";
+  if (m < 60) return `in ${m} min`;
+  const h = Math.round(m / 60);
+  return `in ${h} hr`;
+}
 
 export function timeAgo(iso: string | null): string {
   if (!iso) return "never";
