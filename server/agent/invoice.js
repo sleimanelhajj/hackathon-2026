@@ -162,8 +162,14 @@ export async function renderInvoicePdf(invoice) {
   draw("Amount", { x: 505, y, size: 9, font: bold, color: rgb(1, 1, 1) });
   y -= 30;
   for (const item of data.lineItems) {
-    const description = wrap(item.description, 48)[0];
-    draw(description, { x: left + 8, y, size: 9, font: regular, color: ink });
+    // Long descriptions wrap onto a second line instead of being cut off.
+    const [first, ...rest] = wrap(item.description, 52);
+    const second = rest.join(" ");
+    draw(first, { x: left + 8, y, size: 9, font: regular, color: ink });
+    if (second) {
+      draw(second.length > 56 ? `${second.slice(0, 55)}...` : second, { x: left + 8, y: y - 11, size: 9, font: regular, color: ink });
+      y -= 11;
+    }
     draw(String(item.quantity), { x: 360, y, size: 9, font: regular, color: ink });
     const unit = pdfText(money(item.unitPriceMinor, data.currency));
     const amount = pdfText(money(item.totalMinor, data.currency));

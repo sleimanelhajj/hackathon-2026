@@ -75,6 +75,19 @@ export async function createSchema(pool, schema = DEFAULT_SCHEMA) {
       amount numeric(12,2) NOT NULL CHECK (amount > 0), created_at timestamptz NOT NULL, closed_at timestamptz, expected_close timestamptz);
     CREATE INDEX IF NOT EXISTS orders_ordered_at ON ${s}.orders (ordered_at);
     CREATE INDEX IF NOT EXISTS deals_stage ON ${s}.deals (stage);
+    -- Hardware store details (2026-11-14): what the assistant needs to recommend products and issue invoices.
+    -- Added with IF NOT EXISTS so an older database upgrades in place.
+    ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS brand text;
+    ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS unit text;
+    ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS description text;
+    ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS uses text;
+    ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS stock integer;
+    ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS reorder_level integer;
+    ALTER TABLE ${s}.customers ADD COLUMN IF NOT EXISTS phone text;
+    ALTER TABLE ${s}.customers ADD COLUMN IF NOT EXISTS address text;
+    CREATE TABLE IF NOT EXISTS ${s}.store_profile (
+      id integer PRIMARY KEY CHECK (id = 1), name text NOT NULL, email text NOT NULL, phone text, address text,
+      currency text NOT NULL, tax_rate_bps integer NOT NULL, payment_terms_days integer NOT NULL);
   `);
 }
 
@@ -96,13 +109,19 @@ export async function loadData(pool, schema, data) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`TRUNCATE ${s}.order_items, ${s}.orders, ${s}.deals, ${s}.customers, ${s}.products, ${s}.reps`);
+    await client.query(`TRUNCATE ${s}.order_items, ${s}.orders, ${s}.deals, ${s}.customers, ${s}.products, ${s}.reps, ${s}.store_profile`);
+    if (data.profile) {
+      const p = data.profile;
+      await client.query(`INSERT INTO ${s}.store_profile (id, name, email, phone, address, currency, tax_rate_bps, payment_terms_days) VALUES (1, $1, $2, $3, $4, $5, $6, $7)`,
+        [p.name, p.email, p.phone, p.address, p.currency, p.taxRateBps, p.paymentTermsDays]);
+    }
     await insert(client, `${s}.reps`, ["id", "name", "region", "monthly_target"], ["int", "text", "text", "numeric"],
       data.reps.map((r) => [r.id, r.name, r.region, r.monthlyTarget]));
-    await insert(client, `${s}.customers`, ["id", "name", "region", "industry", "segment", "email", "created_at"], ["int", "text", "text", "text", "text", "text", "timestamptz"],
-      data.customers.map((c) => [c.id, c.name, c.region, c.industry, c.segment, c.email, c.createdAt]));
-    await insert(client, `${s}.products`, ["id", "sku", "name", "category", "unit_price", "unit_cost"], ["int", "text", "text", "text", "numeric", "numeric"],
-      data.products.map((p) => [p.id, p.sku, p.name, p.category, p.unitPrice, p.unitCost]));
+    await insert(client, `${s}.customers`, ["id", "name", "region", "industry", "segment", "email", "phone", "address", "created_at"], ["int", "text", "text", "text", "text", "text", "text", "text", "timestamptz"],
+      data.customers.map((c) => [c.id, c.name, c.region, c.industry, c.segment, c.email, c.phone ?? null, c.address ?? null, c.createdAt]));
+    await insert(client, `${s}.products`, ["id", "sku", "name", "category", "unit_price", "unit_cost", "brand", "unit", "description", "uses", "stock", "reorder_level"],
+      ["int", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "text", "int", "int"],
+      data.products.map((p) => [p.id, p.sku, p.name, p.category, p.unitPrice, p.unitCost, p.brand ?? null, p.unit ?? null, p.description ?? null, (p.uses ?? []).join(", "), p.stock ?? null, p.reorderLevel ?? null]));
     await insert(client, `${s}.orders`, ["id", "number", "customer_id", "rep_id", "ordered_at", "status", "channel"], ["int", "text", "int", "int", "timestamptz", "text", "text"],
       data.orders.map((o) => [o.id, o.number, o.customerId, o.repId, o.orderedAt, o.status, o.channel]));
     await insert(client, `${s}.order_items`, ["order_id", "product_id", "quantity", "unit_price", "discount_pct"], ["int", "int", "int", "numeric", "numeric"],

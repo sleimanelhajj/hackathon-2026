@@ -57,7 +57,7 @@ function parseJson(text) {
 }
 
 /** One HTTP call to one model. Throws GeminiError with `retryable` set for 429 / 5xx / network / timeout. */
-async function callOnce(model, body) {
+async function callOnce(model, body, read = readJsonAnswer) {
   let res;
   try {
     res = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
@@ -78,6 +78,10 @@ async function callOnce(model, body) {
   }
 
   if (json.promptFeedback?.blockReason) throw new GeminiError(`Gemini blocked the request (${json.promptFeedback.blockReason}).`);
+  return read(json);
+}
+
+function readJsonAnswer(json) {
   const candidate = json.candidates?.[0];
   // Thinking models can return "thought" parts; only the answer parts matter here.
   const text = (candidate?.content?.parts ?? []).filter((p) => !p.thought).map((p) => p.text ?? "").join("");
@@ -102,6 +106,12 @@ export async function generateJson({ system, prompt, schema, files = [], maxOutp
     generationConfig: { responseMimeType: "application/json", responseSchema: schema, maxOutputTokens },
   });
 
+  const { result: { data, usage }, model } = await withFallback(body, readJsonAnswer);
+  return { data, model, usage };
+}
+
+/** Main model, retry, then fallback (see the top of the file). Returns { result, model }. */
+async function withFallback(body, read) {
   const models = geminiModels();
   // Skip a model that just failed from overload, as long as there's another one to try.
   const usable = models.filter((m) => !(cooling.get(m) > Date.now()));
@@ -109,9 +119,9 @@ export async function generateJson({ system, prompt, schema, files = [], maxOutp
   for (const model of usable.length ? usable : models) {
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
-        const { data, usage } = await callOnce(model, body);
+        const result = await callOnce(model, body, read);
         cooling.delete(model);
-        return { data, model, usage };
+        return { result, model };
       } catch (err) {
         lastError = err;
         if (!err.retryable && err.status !== 404) throw err; // bad key, blocked, unreadable: switching models won't help
@@ -122,6 +132,32 @@ export async function generateJson({ system, prompt, schema, files = [], maxOutp
     }
   }
   throw lastError;
+}
+
+/**
+ * One turn of a tool-using conversation (Gemini function calling), for the assistant's LangGraph agent.
+ * `contents` is the Gemini-native history ({ role: "user" | "model", parts }); `tools` are functionDeclarations.
+ * Returns the model's content as-is (text and/or functionCall parts, including any thoughtSignature, which must be sent
+ * back unchanged on the next turn), plus the model that answered.
+ */
+export async function generateContent({ system, contents, tools = [], maxOutputTokens = 4096, temperature = 0.3 }) {
+  if (!geminiConfigured()) throw new GeminiError("Gemini isn't set up. Add GEMINI_API_KEY to .env and restart the server.");
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents,
+    ...(tools.length ? { tools: [{ functionDeclarations: tools }], toolConfig: { functionCallingConfig: { mode: "AUTO" } } } : {}),
+    generationConfig: { maxOutputTokens, temperature },
+  });
+  const { result, model } = await withFallback(body, readContent);
+  return { content: result.content, usage: result.usage, model };
+}
+
+function readContent(json) {
+  const candidate = json.candidates?.[0];
+  if (candidate?.finishReason === "MAX_TOKENS" && !candidate?.content?.parts?.length) throw new GeminiError("Gemini's answer was cut off (too long).");
+  const parts = candidate?.content?.parts ?? [];
+  if (!parts.length) throw new GeminiError(`Gemini returned no answer (${candidate?.finishReason ?? "no candidates"}).`);
+  return { content: { role: "model", parts }, usage: json.usageMetadata ?? null };
 }
 
 const COOL_DOWN_MS = 5 * 60_000;

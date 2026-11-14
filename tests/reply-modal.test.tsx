@@ -55,6 +55,27 @@ test('shows the AI draft as editable fields, with the files it read and what to 
   expect(screen.getByDisplayValue('Hi Lena, the price is 120 USD.')).toBeTruthy();
 });
 
+test('the title, close button and Send stay in view; only the fields between them scroll', async () => {
+  open(status({}));
+  await screen.findByDisplayValue(/The price is/);
+  const dialog = document.querySelector('dialog.modal')!;
+  expect(dialog.classList.contains('modal-reply')).toBe(true);
+  const scroll = dialog.querySelector('.modal-scroll')!;
+  expect(scroll).toBeTruthy();
+  expect(scroll.contains(screen.getByDisplayValue('lena@ortiz.example'))).toBe(true);
+  expect(scroll.contains(screen.getByText(/Confirm the price\./))).toBe(true);
+  expect(scroll.contains(screen.getByRole('heading', { name: /Reply to Lena Ortiz/ }))).toBe(false);
+  expect(scroll.contains(screen.getByRole('button', { name: 'Close' }))).toBe(false);
+  expect(scroll.contains(screen.getByRole('button', { name: /Send reply/ }))).toBe(false);
+});
+
+test('the "check before sending" note is a warning in amber and the AI tag uses the brand blue', async () => {
+  open(status({}));
+  await screen.findByDisplayValue(/The price is/);
+  expect(screen.getByText(/Confirm the price\./).closest('.reply-note')).toBeTruthy();
+  expect(document.querySelector('.field-label-row .tag')!.getAttribute('data-tone')).toBe('accent');
+});
+
 test('sends only after Send reply AND the confirm button, with the edited text', async () => {
   open(status({}));
   const body = await screen.findByDisplayValue(/The price is/);

@@ -9,10 +9,12 @@ type Props = { widget: Extract<Widget, { type: "thread-list" }> };
 const COPY = {
   awaitingYou: {
     empty: "Nobody is waiting on you. Nice.",
+    rule: "Conversations show up here when someone wrote last and you haven't answered.",
     how: "The other person wrote last. Automated senders are left out.",
   },
   awaitingThem: {
-    empty: "No conversations have gone quiet.",
+    empty: "Nothing you sent has gone 3+ days without a reply.",
+    rule: "Conversations show up here when you wrote last and they haven't answered for 3 days.",
     how: "You wrote last and haven't heard back in 3+ days.",
   },
 } as const;
@@ -30,7 +32,13 @@ export const ThreadListWidget = memo(function ThreadListWidget({ widget }: Props
   // Where the AI has summarised a conversation, say that instead of repeating the subject line.
   const ai = useMemo(() => new Map(data.insights.rows.map((r) => [r.threadId, r])), [data.insights.rows]);
 
-  if (!rows.length) return <div className="widget-empty"><p>{copy.empty}</p></div>;
+  if (!rows.length)
+    return (
+      <div className="widget-empty">
+        <p>{copy.empty}</p>
+        <p className="widget-empty-rule">{copy.rule}</p>
+      </div>
+    );
 
   return (
     <div className="thread-widget">

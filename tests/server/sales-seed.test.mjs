@@ -77,3 +77,55 @@ test("all names are clearly fictional (no real domains)", () => {
   for (const r of data.reps) assert.ok(!/@/.test(r.name));
   assert.ok(data.customers.every((c) => !c.email || c.email.endsWith(".example")));
 });
+
+// ---- the business is a hardware & convenience store (2026-11-14) ----
+test("the products are a hardware store's, with what the assistant needs to recommend them", () => {
+  for (const c of ["Hand tools", "Power tools", "Fasteners", "Plumbing", "Electrical", "Paint & supplies", "Garden & outdoor", "Safety gear"]) {
+    assert.ok(CATEGORIES.includes(c), `category ${c}`);
+    assert.ok(data.products.some((p) => p.category === c), `a product in ${c}`);
+  }
+  for (const p of data.products) {
+    assert.match(p.description, /\w{3,}.{20,}/, `${p.sku} has a description`);
+    assert.ok(Array.isArray(p.uses) && p.uses.length >= 2, `${p.sku} lists what it's for`);
+    assert.ok(p.brand && p.unit, `${p.sku} has a brand and a selling unit`);
+    assert.ok(Number.isInteger(p.stock) && p.stock >= 0, `${p.sku} stock`);
+  }
+  assert.ok(data.products.some((p) => p.stock <= p.reorderLevel), "some items are low on stock");
+});
+
+test("customers are trade accounts and walk-in shoppers, served from the store's branches", () => {
+  const segments = new Set(data.customers.map((c) => c.segment));
+  assert.deepEqual([...segments].sort(), ["Commercial account", "Retail customer", "Trade account"]);
+  assert.ok(data.customers.some((c) => /Plumb|Electric|Build|Construct|Paint|Landscap/.test(c.industry)));
+  for (const c of data.customers) assert.ok(c.address && c.phone, `${c.name} has an address and phone for invoices`);
+  assert.ok(REGIONS.every((r) => / store|Online/i.test(r)), REGIONS.join(", "));
+});
+
+test("the store profile is complete enough to issue an invoice", () => {
+  const p = data.profile;
+  assert.ok(p.name && /@.+\.example$/.test(p.email) && p.address && p.phone);
+  assert.equal(p.currency, "USD");
+  assert.ok(Number.isInteger(p.taxRateBps) && p.taxRateBps > 0 && p.taxRateBps < 2000);
+  assert.ok(Number.isInteger(p.paymentTermsDays) && p.paymentTermsDays > 0);
+});
+
+test("baskets look like a hardware store: mostly small, a few large trade orders", () => {
+  const totals = new Map();
+  for (const it of data.orderItems) totals.set(it.orderId, (totals.get(it.orderId) ?? 0) + it.quantity * it.unitPrice);
+  const sorted = [...totals.values()].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  assert.ok(median > 15 && median < 400, `median basket $${median.toFixed(0)}`);
+  assert.ok(sorted.at(-1) > 1500, "some big trade orders");
+});
+
+test("staff targets are reachable: the team lands near its targets", () => {
+  const rev = new Map();
+  const cut = new Date(now); cut.setUTCMonth(cut.getUTCMonth() - 6);
+  const items = new Map();
+  for (const it of data.orderItems) items.set(it.orderId, (items.get(it.orderId) ?? 0) + it.quantity * it.unitPrice * (1 - it.discountPct / 100));
+  for (const o of data.orders) if (o.orderedAt >= cut && o.status !== "refunded") rev.set(o.repId, (rev.get(o.repId) ?? 0) + items.get(o.id));
+  for (const r of data.reps) {
+    const attainment = (rev.get(r.id) ?? 0) / 6 / r.monthlyTarget;
+    assert.ok(attainment > 0.6 && attainment < 1.5, `${r.name} at ${(attainment * 100).toFixed(0)}% of target`);
+  }
+});

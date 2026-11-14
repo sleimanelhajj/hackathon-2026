@@ -5,13 +5,14 @@ import { Callout } from "../components/ui";
 import { DashboardDataProvider } from "../dashboard/DataContext";
 import { BoardEditor } from "../dashboard/BoardEditor";
 import { waitingLabel } from "../widgets/ThreadListWidget";
+import { PageSkeleton } from "../components/Skeletons";
 
 /** The email dashboard: Gmail data on a customisable board (see BoardEditor). */
 export function DashboardPage() {
   const data = useDashboard();
   const sync = useSync();
 
-  if (data.isLoading) return <div className="page"><div className="skeleton" style={{ height: 420 }} /></div>;
+  if (data.isLoading) return <PageSkeleton kind="dashboard" />;
   if (data.error)
     return (
       <div className="page">

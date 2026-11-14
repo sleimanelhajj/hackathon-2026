@@ -14,6 +14,11 @@ import { threadView } from "./threads.js";
 import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgresConfigured, tableCounts } from "./sales/db.js";
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
+import { chat } from "./agent/chat.js";
+import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
+import { assistantError, getAssistant } from "./agent/assistant.js";
+import { companyData } from "./company-data/index.js";
+import { Category, Priority } from "../shared/spec.js";
 
 /** Postgres errors in plain words, without echoing the connection string. */
 function friendlyPgError(err) {
@@ -24,10 +29,6 @@ function friendlyPgError(err) {
   if (code === "42P01") return "The sales tables don't exist yet. Load the demo data first.";
   return `Postgres error: ${String(err?.message || err).replace(/postgres(ql)?:\/\/[^\s]+/gi, "[connection string]")}`;
 }
-import { chat } from "./agent/chat.js";
-import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
-import { companyData } from "./company-data/index.js";
-import { Category, Priority } from "../shared/spec.js";
 
 const app = express();
 app.use(express.json());
@@ -124,6 +125,27 @@ app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboar
 app.post("/api/agent/chat", wrap(async (req, res) => {
   res.json(await chat(req.body?.messages));
 }));
+
+// The workspace assistant (chat bubble): a LangGraph agent over the sales database (server/agent/sales-agent.js).
+// Read-only tools; an invoice is only created when the user confirms a draft (POST /api/assistant/confirm).
+const AssistantMessage = z.object({ threadId: z.string().uuid(), message: z.string().trim().min(1).max(4000) });
+const AssistantConfirm = z.object({ threadId: z.string().uuid(), approve: z.boolean(), message: z.string().trim().max(4000).optional() });
+app.post("/api/assistant/message", async (req, res) => {
+  try {
+    const input = AssistantMessage.parse(req.body);
+    res.json(await getAssistant().send(input));
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "Type a message for the assistant." : assistantError(err) });
+  }
+});
+app.post("/api/assistant/confirm", async (req, res) => {
+  try {
+    const input = AssistantConfirm.parse(req.body);
+    res.json(await getAssistant().resume(input));
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "That confirmation wasn't valid. Try again." : assistantError(err) });
+  }
+});
 
 // Invoice PDFs are deterministic from a stored draft. Nothing is sent by downloading one.
 app.get("/api/invoices/:id/pdf", async (req, res) => {

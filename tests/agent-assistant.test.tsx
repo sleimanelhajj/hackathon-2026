@@ -1,10 +1,12 @@
+// The chat bubble (src/agent/AgentAssistant.tsx): a LangGraph agent over the store's sales database. Invoices are
+// shown as a draft first; only the user's "Confirm and create PDF" creates one, and sending is a separate reviewed step.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AgentAssistant } from "../src/agent/AgentAssistant";
-import { api, type AgentChatResponse, type Status } from "../src/lib/api";
+import { api, type AssistantReply, type InvoiceDraft, type InvoiceProposal, type Status } from "../src/lib/api";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 function renderAssistant() {
   return render(
@@ -18,73 +20,141 @@ const connectedStatus: Status = {
   database: true,
   googleConfigured: true,
   gemini: { configured: true, model: "test-model" },
-  companyData: { configured: true, name: "Company reporting database" },
+  companyData: { configured: false, name: "Company database" },
   gmail: {
-    mode: "live", email: "billing@northwind.example", status: "connected", scopes: [], canSend: true,
+    mode: "live", email: "billing@cornerstone.example", status: "connected", scopes: [], canSend: true,
     lastSyncAt: null, lastSyncCount: null, error: null, connectedAt: null, syncProgress: null, mailbox: null, analysis: null,
   },
 };
 
-const response: AgentChatResponse = {
-  answer: "Lena is waiting for the revised rollout invoice.",
-  sources: [{ id: "customer-14", label: "Lena Ortiz · customer record", url: "https://company.example/customers/14", kind: "customer" }],
-  invoice: {
-    id: "invoice-1",
-    invoiceNumber: "INV-20261114-0001",
-    customer: { name: "Lena Ortiz", email: "lena@ortiz.example", address: null },
-    currency: "USD",
-    issueDate: "2026-11-14",
-    dueDate: "2026-11-28",
-    lineItems: [{ description: "Rollout", quantity: 1, unitPriceMinor: 50000, totalMinor: 50000 }],
-    subtotalMinor: 50000,
-    taxRateBps: 0,
-    taxMinor: 0,
-    totalMinor: 50000,
-    notes: null,
-    status: "draft",
-    readiness: { ready: true, reasons: [] },
-    pdfUrl: "/api/invoices/invoice-1/pdf",
-  },
+const proposal: InvoiceProposal = {
+  customer: { name: "Summit Plumbing", email: "accounts@summitplumbing.example", address: "12 Oak Street, Maple Falls" },
+  currency: "USD", issueDate: "2026-11-14", dueDate: "2026-12-14",
+  lineItems: [{ description: "Push-fit coupling 1/2 in (CH-0027), 5% account discount", quantity: 4, unitPriceMinor: 854, totalMinor: 3416 }],
+  subtotalMinor: 3416, taxRateBps: 825, taxMinor: 282, totalMinor: 3698, notes: "Job 42", warnings: ["Only 3 of Push-fit coupling 1/2 in in stock (invoice asks for 4)."],
 };
 
-test("starts as a bubble and opens an accessible chat panel", () => {
+const invoice: InvoiceDraft = {
+  id: "invoice-1", invoiceNumber: "INV-20261114-AB12", customer: proposal.customer, currency: "USD", issueDate: "2026-11-14", dueDate: "2026-12-14",
+  lineItems: proposal.lineItems, subtotalMinor: 3416, taxRateBps: 825, taxMinor: 282, totalMinor: 3698, notes: "Job 42",
+  status: "draft", readiness: { ready: true, reasons: [] }, pdfUrl: "/api/invoices/invoice-1/pdf",
+};
+
+const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, invoice: null, toolsUsed: [], ...extra });
+
+async function ask(text: string) {
+  fireEvent.change(screen.getByRole("textbox", { name: "Ask the assistant" }), { target: { value: text } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+}
+
+test("survives browsers where scrollIntoView returns a Promise (sending a message used to blank the app)", async () => {
+  // Newer Chrome returns a Promise from scrollIntoView; an effect that returned it gave React a non-function cleanup.
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = (() => Promise.resolve()) as unknown as typeof original;
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({ reply: "First." }));
+    renderAssistant();
+    fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+    await ask("hello");
+    await screen.findByText("First.");
+    await ask("again");
+    await waitFor(() => expect(screen.getAllByText("First.")).toHaveLength(2));
+    expect(errors.mock.calls.filter((c) => /must not return anything|destroy is not a function/.test(String(c[0]) + String(c[1])))).toHaveLength(0);
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
+test("starts as a bubble in the corner and opens an accessible chat panel", () => {
   renderAssistant();
-  const bubble = screen.getByRole("button", { name: "Open workspace assistant" });
+  const bubble = screen.getByRole("button", { name: "Open assistant" });
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(bubble);
-  expect(screen.getByRole("dialog", { name: "Workspace assistant" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close workspace assistant" }));
+  expect(screen.getByRole("dialog", { name: "Assistant" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close assistant" }));
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("sends a question and shows grounded sources plus an invoice action", async () => {
-  vi.spyOn(api, "agentChat").mockResolvedValue(response);
+test("answers a sales question, keeps one conversation thread, and says what it checked", async () => {
+  const send = vi.spyOn(api, "assistantMessage")
+    .mockResolvedValueOnce(reply({ reply: "Revenue was **$41,200** over the last 3 months.\n\n- Plumbing led with $9,800", toolsUsed: ["sales_summary", "sales_breakdown"] }))
+    .mockResolvedValueOnce(reply({ reply: "Paint was second." }));
   renderAssistant();
-  fireEvent.click(screen.getByRole("button", { name: "Open workspace assistant" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Ask about your workspace" }), { target: { value: "Build Lena's $500 invoice" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("How did we do this quarter?");
 
-  expect(await screen.findByText(/Lena is waiting/)).toBeTruthy();
-  expect(screen.getByRole("link", { name: /Lena Ortiz · customer record/ }).getAttribute("href")).toBe("https://company.example/customers/14");
-  expect(screen.getByRole("link", { name: /Download invoice PDF/ }).getAttribute("href")).toBe("/api/invoices/invoice-1/pdf");
-  await waitFor(() => expect(api.agentChat).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("$41,200")).toBeTruthy();
+  expect(screen.getByText("$41,200").tagName).toBe("STRONG");
+  expect(screen.getByRole("listitem").textContent).toBe("Plumbing led with $9,800");
+  expect(screen.getByText(/Checked: sales summary, sales breakdown/i)).toBeTruthy();
+
+  await ask("And second?");
+  await screen.findByText("Paint was second.");
+  const [first, second] = send.mock.calls;
+  expect(first[0]).toMatch(/^[0-9a-f-]{36}$/);
+  expect(second[0]).toBe(first[0]);
 });
 
-test("never sends an invoice until the user opens the review and clicks Send invoice", async () => {
-  vi.spyOn(api, "status").mockResolvedValue(connectedStatus);
-  vi.spyOn(api, "agentChat").mockResolvedValue(response);
-  const sent = { ...response.invoice!, status: "sent" as const, sentAt: "2026-11-14T12:00:00.000Z" };
-  const send = vi.spyOn(api, "sendInvoice").mockResolvedValue(sent);
+test("an invoice draft is shown for review; nothing is created until Confirm", async () => {
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({ reply: "Here's the draft.", pendingInvoice: proposal, toolsUsed: ["find_customers", "propose_invoice"] }));
+  const confirm = vi.spyOn(api, "assistantConfirm").mockResolvedValue(reply({ reply: "Invoice **INV-20261114-AB12** is ready.", invoice }));
   renderAssistant();
-  fireEvent.click(screen.getByRole("button", { name: "Open workspace assistant" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Ask about your workspace" }), { target: { value: "Build Lena's invoice" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send question" }));
-  await screen.findByRole("link", { name: /Download invoice PDF/ });
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("Invoice Summit Plumbing for 4 couplings");
 
+  const card = await screen.findByRole("region", { name: "Invoice draft for Summit Plumbing" });
+  expect(within(card).getByText("$36.98")).toBeTruthy();
+  expect(within(card).getByText(/Tax 8.25%/)).toBeTruthy();
+  expect(within(card).getByText(/Only 3 of Push-fit/)).toBeTruthy();
+  expect(confirm).not.toHaveBeenCalled();
+  expect(screen.queryByRole("link", { name: /Download invoice PDF/ })).toBeNull();
+
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm and create PDF" }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+  expect(confirm.mock.calls[0][1]).toBe(true);
+  expect((await screen.findByRole("link", { name: /Download invoice PDF/ })).getAttribute("href")).toBe("/api/invoices/invoice-1/pdf");
+  expect(within(card).queryByRole("button", { name: "Confirm and create PDF" })).toBeNull();
+});
+
+test("Change something hands the draft back to the conversation", async () => {
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({ reply: "Here's the draft.", pendingInvoice: proposal }));
+  const confirm = vi.spyOn(api, "assistantConfirm").mockResolvedValue(reply({ reply: "What would you like to change?" }));
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("Invoice Summit");
+  fireEvent.click(await screen.findByRole("button", { name: "Change something" }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.any(String), false, undefined));
+  expect(await screen.findByText("What would you like to change?")).toBeTruthy();
+});
+
+test("sending a created invoice is a separate, reviewed step", async () => {
+  vi.spyOn(api, "status").mockResolvedValue(connectedStatus);
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({ reply: "Draft.", pendingInvoice: proposal }));
+  vi.spyOn(api, "assistantConfirm").mockResolvedValue(reply({ reply: "Ready.", invoice }));
+  const send = vi.spyOn(api, "sendInvoice").mockResolvedValue({ ...invoice, status: "sent", sentAt: "2026-11-14T12:00:00.000Z" });
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("Invoice Summit");
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm and create PDF" }));
+  await screen.findByRole("link", { name: /Download invoice PDF/ });
   fireEvent.click(screen.getByRole("button", { name: "Review sending" }));
   expect(send).not.toHaveBeenCalled();
-  expect(screen.getByText(/Nothing is sent until/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Send invoice" }));
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-  expect(await screen.findByText(/Sent to lena@ortiz\.example/)).toBeTruthy();
+  expect(await screen.findByText(/Sent to accounts@summitplumbing\.example/)).toBeTruthy();
+});
+
+test("shows a readable error and New chat starts a fresh thread", async () => {
+  const send = vi.spyOn(api, "assistantMessage").mockRejectedValueOnce(new Error("I can't reach the sales database. Is Postgres running?"))
+    .mockResolvedValueOnce(reply({ reply: "Hello again." }));
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("hi");
+  expect(await screen.findByText(/can't reach the sales database/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+  expect(screen.queryByText(/can't reach the sales database/)).toBeNull();
+  await ask("hi again");
+  await screen.findByText("Hello again.");
+  expect(send.mock.calls[1][0]).not.toBe(send.mock.calls[0][0]);
 });

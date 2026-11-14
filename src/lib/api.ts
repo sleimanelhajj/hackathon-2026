@@ -75,6 +75,29 @@ export type InvoiceDraft = {
   sentAt?: string | null;
 };
 
+/** An invoice the assistant prepared from database facts, waiting for the user to confirm it (not created yet). */
+export type InvoiceProposal = {
+  customer: { name: string; email: string | null; address: string | null };
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  lineItems: { description: string; quantity: number; unitPriceMinor: number; totalMinor: number }[];
+  subtotalMinor: number;
+  taxRateBps: number;
+  taxMinor: number;
+  totalMinor: number;
+  notes: string | null;
+  warnings?: string[];
+};
+
+/** One turn of the assistant (POST /api/assistant/message or /confirm). */
+export type AssistantReply = {
+  reply: string;
+  pendingInvoice: InvoiceProposal | null;
+  invoice: InvoiceDraft | null;
+  toolsUsed: string[];
+};
+
 export type AgentChatResponse = {
   answer: string;
   sources: AgentSource[];
@@ -363,6 +386,18 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: messages.slice(-10) }),
+    }),
+  assistantMessage: (threadId: string, message: string) =>
+    request<AssistantReply>("/api/assistant/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, message }),
+    }),
+  assistantConfirm: (threadId: string, approve: boolean, message?: string) =>
+    request<AssistantReply>("/api/assistant/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, approve, message }),
     }),
   sendInvoice: (id: string, input: { subject: string; body: string }) =>
     request<InvoiceDraft>(`/api/invoices/${encodeURIComponent(id)}/send`, {

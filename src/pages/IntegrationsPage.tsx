@@ -22,6 +22,7 @@ import { api, timeAgo, type Status } from "../lib/api";
 import { useDisconnect, useLoadSample, useStatus, useSync } from "../lib/queries";
 import { Callout, GmailLogo, Panel } from "../components/ui";
 import { useUi } from "../lib/store";
+import { IntegrationsSkeleton } from "../components/Skeletons";
 
 const REDIRECT_URI = "http://localhost:8787/api/auth/google/callback";
 
@@ -368,7 +369,7 @@ export function IntegrationsPage() {
       {returned && <Callout tone={returned.tone} icon={returned.tone === "ok" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />} title={returned.title} text={returned.text} />}
 
       {error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't reach the server" text={(error as Error).message} />}
-      {isLoading && <div className="skeleton" style={{ height: 260 }} />}
+      {isLoading && <IntegrationsSkeleton label="Loading integrations" />}
 
       {status && (
         <>

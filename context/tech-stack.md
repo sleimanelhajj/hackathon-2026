@@ -27,6 +27,7 @@
 | `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
 | `pg` | **In use:** Postgres connector for the Sales page (`server/sales/db.js`); `POSTGRES_URL` in `.env` |
 | `pdf-lib` | **In use:** deterministic invoice PDFs on the server; the model never writes PDF code or HTML |
+| `@langchain/langgraph` (+ `@langchain/core`) | **In use:** the assistant's agent graph (`server/agent/sales-agent.js`): model → tools → human confirmation via `interrupt()`, per-thread checkpoints. Gemini is still called through `llm.js`, not a LangChain model wrapper |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
@@ -56,7 +57,10 @@ Regression checks: `npm test` runs pure coordinate tests plus Vitest/jsdom and R
 │   │   ├── files.js    ← attachment readers: PDF, Word, Excel, PowerPoint, .ics, ZIP (with zip-bomb limits), text/HTML
 │   │   ├── vision.js   ← images and scanned PDFs read by Gemini vision: visible text + a short description
 │   │   ├── reply.js    ← AI reply drafts (sent only after two clicks)
-│   │   ├── chat.js     ← company-data Q&A, verified sources and invoice orchestration
+│   │   ├── chat.js     ← company-data Q&A, verified sources and invoice orchestration (older endpoint)
+│   │   ├── sales-agent.js ← the assistant: LangGraph graph (model → tools → confirm)
+│   │   ├── sales-tools.js ← read-only Postgres tools + invoice drafts from database facts
+│   │   ├── assistant.js   ← wires Gemini, tools and invoice storage for the API
 │   │   └── invoice.js  ← validated invoice maths + deterministic PDF rendering
 │   ├── company-data/   ← bounded read-only gateway + provider.js handoff for the real company database
 │   └── sales/          ← Postgres sales data: connection, demo seed, metrics
@@ -111,6 +115,8 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/dashboards/:board/reset` | Restore the default layout (undoable) |
 | POST | `/api/analysis/run` | Start AI email analysis in the background (`{ "force": true }` re-sorts every thread). Also runs on its own after a sync or sample load |
 | POST | `/api/agent/chat` | Last 10 text turns → answer from bounded company-data records, verified sources and optional stored invoice draft |
+| POST | `/api/assistant/message` | `{ threadId, message }` → the LangGraph assistant's reply, tools used, and an invoice draft waiting for confirmation (if any) |
+| POST | `/api/assistant/confirm` | `{ threadId, approve }` → confirms the waiting draft (stores the invoice, returns its PDF link) or hands it back for changes |
 | GET | `/api/invoices/:id/pdf` | Download a deterministic PDF generated from one stored invoice draft |
 | POST | `/api/invoices/:id/send` | Send the reviewed PDF through Gmail; requires edited subject/body and `approved: true`, and cannot be called by the model |
 

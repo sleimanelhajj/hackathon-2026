@@ -8,6 +8,7 @@ import { Select } from "../components/Select";
 import type { Address, Category, MessageFilters, StoredMessage, StoredMessageDetail } from "../lib/api";
 import { useMessage, useMessages, usePeople, useStatus } from "../lib/queries";
 import { Callout } from "../components/ui";
+import { TableSkeleton } from "../components/Skeletons";
 
 const PAGE_SIZE = 25;
 
@@ -143,7 +144,7 @@ export default function DataPage() {
 
       <div className="surface data-table-wrap" aria-busy={isFetching}>
         {isLoading ? (
-          <div className="skeleton" style={{ height: 320 }} />
+          <TableSkeleton rows={9} label="Loading emails" />
         ) : data && data.messages.length ? (
           <table className="data-table">
             <thead>

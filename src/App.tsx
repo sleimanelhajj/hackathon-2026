@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
+import { useSlideWithSidebar } from "./lib/useSlideWithSidebar";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { ReplyModal } from "./components/ReplyModal";
 import { EmailViewer } from "./components/EmailViewer";
@@ -7,6 +8,7 @@ import { AgentAssistant } from "./agent/AgentAssistant";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { useRoute, useSidebarShortcut } from "./lib/store";
 import { useStatus } from "./lib/queries";
+import { PageSkeleton } from "./components/Skeletons";
 
 // The dashboard pulls in the grid and chart libraries; load it only when it's opened.
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -17,6 +19,8 @@ export default function App() {
   const route = useRoute();
   const { data: status } = useStatus();
   useSidebarShortcut();
+  const mainRef = useRef<HTMLElement>(null);
+  useSlideWithSidebar(mainRef);
 
   // First visit with nothing connected: start on Integrations.
   useEffect(() => {
@@ -36,12 +40,12 @@ export default function App() {
   return (
     <div className="shell">
       <Sidebar route={route} />
-      <main className="main">
+      <main className="main" ref={mainRef}>
         <PageErrorBoundary key={route}>
         {route === "integrations" ? (
           <IntegrationsPage />
         ) : (
-          <Suspense fallback={<div className="page"><div className="skeleton" style={{ height: 420 }} /></div>}>
+          <Suspense fallback={<PageSkeleton kind={route === "data" ? "data" : route === "sales" ? "sales" : "dashboard"} />}>
             {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : <DashboardPage />}
           </Suspense>
         )}

@@ -9,6 +9,7 @@ import { DashboardGrid } from "./DashboardGrid";
 import { WidgetFrame } from "./WidgetFrame";
 import { WidgetLibrary, type Catalog } from "./WidgetLibrary";
 import { cleanLayout, findSpace, nextId, normalizeLayout, settleLayout, type Size } from "./layout";
+import { BoardSkeleton } from "../components/Skeletons";
 
 // A customisable dashboard ("board"): the saved layout, edit mode with the widget panel, save, undo and reset.
 // The email dashboard and the Sales page both use it; each page supplies its own data, header and banners.
@@ -210,7 +211,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
     requestAnimationFrame(() => document.getElementById(`widget-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, [openPanel, board]);
 
-  if (specQuery.isLoading) return <div className="skeleton" style={{ height: 420 }} />;
+  if (specQuery.isLoading) return <BoardSkeleton kind={board === "sales" ? "sales" : "dashboard"} label="Loading your layout" />;
   if (specQuery.error) return <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load the dashboard layout" text={(specQuery.error as Error).message} />;
 
   const canEditHere = unknownTypes.length === 0;

@@ -19,6 +19,7 @@
   --blur: blur(20px) saturate(1.6);
   --surface: var(--glass);
   --subtle: rgba(15, 27, 45, 0.05);
+  --bone: rgba(30, 58, 138, 0.08); /* loading skeleton shapes: a faint brand blue on glass */
   --hover: rgba(30, 58, 138, 0.05);
   --sidebar: var(--glass);
   --border: rgba(15, 27, 45, 0.09);
@@ -128,13 +129,19 @@ input, textarea { caret-color: var(--accent); }
 
 /* ---------- App shell ---------- */
 .shell { display: flex; min-height: 100vh; }
-.main { flex: 1; min-width: 0; padding: 28px 36px 48px; }
+/* The sidebar floats (position: fixed), so the page reserves its room with a margin instead of sharing a flex row.
+   The room changes at once (one layout); useSlideWithSidebar then slides the page there with a transform, in step
+   with the sidebar's width animation, so nothing is laid out again during the slide. */
+.main { flex: 1; min-width: 0; padding: 28px 36px 48px; margin-left: calc(var(--sidebar-w) + 24px); }
+.shell:has(.sidebar[data-collapsed="true"]) .main { margin-left: calc(var(--sidebar-w-collapsed) + 24px); }
+/* While the page slides, its edge may pass the window edge for a moment; never show a sideways scrollbar for that. */
+.shell { overflow-x: clip; }
 .page { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
-  position: sticky; top: 12px; height: calc(100vh - 24px); margin: 12px 0 12px 12px; flex: none;
-  width: var(--sidebar-w);
+  position: fixed; top: 12px; left: 12px; z-index: 20; height: calc(100vh - 24px); flex: none;
+  width: var(--sidebar-w); contain: layout style; will-change: width;
   background: var(--glass); background-image: var(--glass-sheen);
   border: 1px solid var(--glass-edge); border-radius: var(--radius-xl);
   display: flex; flex-direction: column;
@@ -366,6 +373,48 @@ input, textarea { caret-color: var(--accent); }
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+/* ---------- Page skeletons (src/components/Skeletons.tsx) ---------- */
+/* Shapes pulse with opacity only (no repaint); a slight stagger between cards keeps it calm, not flashing. */
+.skeleton-inner { display: flex; flex-direction: column; gap: 20px; }
+.bone { display: block; flex: none; max-width: 100%; background: var(--bone); border-radius: 6px; animation: bone-pulse 1.6s ease-in-out infinite; }
+.bone[data-round] { border-radius: 999px; }
+@keyframes bone-pulse { 50% { opacity: 0.45; } }
+.skeleton-card:nth-child(2n) .bone { animation-delay: 0.15s; }
+.skeleton-card:nth-child(3n) .bone { animation-delay: 0.3s; }
+.skeleton-card {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; min-width: 0;
+  background: var(--glass); background-image: var(--glass-sheen); border: 1px solid var(--glass-edge); border-radius: var(--radius-lg);
+}
+.skeleton-board { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.skeleton-board > .skeleton-card { grid-column: span var(--span, 6); }
+.skeleton-card[data-shape="stat"] { min-height: 112px; gap: 10px; }
+.skeleton-card[data-shape="list"] { min-height: 300px; }
+.skeleton-card[data-shape="chart"] { min-height: 300px; }
+.skeleton-lines { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.skeleton-list { display: flex; flex-direction: column; gap: 16px; padding-top: 6px; }
+.skeleton-list-row { display: flex; align-items: center; gap: 12px; }
+.skeleton-list-row > .skeleton-lines { flex: 1; }
+.skeleton-chart { flex: 1; display: flex; align-items: flex-end; gap: 8px; min-height: 200px; padding: 8px 4px 0; border-bottom: 1px solid var(--border); }
+.skeleton-chart > .bone { flex: 1; border-radius: 4px 4px 0 0; }
+.page-head-skeleton { align-items: center; }
+.skeleton-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.skeleton-toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+.skeleton-table-card { padding: 0; }
+/* The table skeleton pads itself: on the All email page it sits inside the real table card, which has no padding. */
+.skeleton-table { padding: 4px 18px; }
+.skeleton-table-head { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.skeleton-row { display: flex; align-items: center; gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--border); }
+.skeleton-row:last-child { border-bottom: 0; }
+.skeleton-stack { display: flex; flex-direction: column; gap: 16px; }
+.skeleton-callout { flex-direction: row; align-items: center; gap: 14px; }
+.skeleton-connector { padding: 20px; gap: 12px; }
+.skeleton-connector-head { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+@media (max-width: 760px) {
+  .skeleton-board > .skeleton-card { grid-column: 1 / -1; }
+  .skeleton-board > .skeleton-card[data-shape="stat"] { grid-column: span 6; }
+  .page-head-skeleton .skeleton-actions { display: none; }
+}
+
 /* ---------- Dashboard grid + widgets ---------- */
 .page-wide { max-width: 1200px; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
@@ -399,6 +448,8 @@ input, textarea { caret-color: var(--accent); }
 .widget[data-kind="stat"] .widget-head { min-height: 36px; padding-bottom: 0; }
 .widget-skeleton { height: 100%; min-height: 80px; }
 .widget-empty { height: 100%; min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-3); text-align: center; }
+.widget-empty > p:first-child { color: var(--text-2); }
+.widget-empty-rule { font-size: 12.5px; max-width: 42ch; }
 
 .stat-widget { display: flex; flex-direction: column; gap: 2px; }
 .stat-widget[data-emphasis="true"] .stat-value { color: var(--signal-text); }
@@ -495,9 +546,10 @@ input, textarea { caret-color: var(--accent); }
   .grid-2 { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .sidebar { position: fixed; z-index: 20; top: 8px; height: calc(100vh - 16px); margin: 8px; }
+  .sidebar { top: 8px; left: 8px; height: calc(100vh - 16px); }
   .sidebar[data-collapsed="false"] { box-shadow: 0 12px 40px rgba(15, 27, 45, 0.18); background-color: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
-  .main { padding: 20px 16px 40px; margin-left: calc(var(--sidebar-w-collapsed) + 8px); }
+  /* Phones: the open sidebar slides over the page, so the page always keeps the narrow rail's room. */
+  .main, .shell:has(.sidebar[data-collapsed="true"]) .main { padding: 20px 16px 40px; margin-left: calc(var(--sidebar-w-collapsed) + 16px); transition: none; }
   .page-head { flex-direction: column; align-items: flex-start; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stat { border-left: 0 !important; border-top: 1px solid var(--border); }
@@ -651,7 +703,7 @@ input, textarea { caret-color: var(--accent); }
 .mobile-library-link { display: none; }
 @media (max-width: 760px) {
   .shell:has(#widget-library) { flex-wrap: wrap; }
-  .shell:has(#widget-library) .main { width: calc(100% - var(--sidebar-w-collapsed)); }
+  .shell:has(#widget-library) .main { width: calc(100% - var(--sidebar-w-collapsed) - 16px); }
   .side-panel-slot:has(#widget-library) { position: static; margin-left: var(--sidebar-w-collapsed); width: calc(100% - var(--sidebar-w-collapsed)); flex-basis: calc(100% - var(--sidebar-w-collapsed)); height: auto; box-shadow: none; border-top: 1px solid var(--border); }
   #widget-library .library-list { overflow: visible; }
   .mobile-library-link { display: inline-flex; }
@@ -753,8 +805,8 @@ input, textarea { caret-color: var(--accent); }
 .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
 .textarea { height: auto; min-height: 200px; padding: 10px; line-height: 1.5; resize: vertical; }
 .reply-quote {
-  margin: 0; padding: 10px 12px; background: var(--subtle);
-  border-radius: var(--radius); font-size: 13px; color: var(--text-2);
+  margin: 0; padding: 10px 12px; background: var(--surface-solid); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 13px; line-height: 1.5; color: var(--text-2);
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .reply-quote-from { font-weight: 500; color: var(--text); }
@@ -765,7 +817,16 @@ input, textarea { caret-color: var(--accent); }
 .reply-files { display: flex; align-items: center; gap: 6px; margin-top: -6px; }
 .reply-files svg { flex: none; }
 .reply-note, .reply-alert { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 9px 12px; border-radius: var(--radius); }
-.reply-note { background: var(--inferred-subtle); color: var(--inferred); }
+.reply-note { background: var(--signal-subtle); color: var(--signal-text); }
+/* Reply dialog: header and footer stay put, the fields between them scroll (one scrollbar, inside the panel). */
+.modal-reply { overflow: hidden; }
+.modal-reply .modal-body { max-height: calc(100vh - 50px); padding: 0; gap: 0; } /* 48px margin + the dialog's 1px borders */
+.modal-reply .modal-head { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+.modal-scroll > * { flex-shrink: 0; } /* the column scrolls instead of squashing its parts */
+.modal-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal-reply .modal-foot { padding: 12px 20px; }
+.modal-reply .textarea { min-height: 160px; }
+.modal-reply .modal-done { padding: 36px 24px; gap: 14px; }
 .reply-alert { background: var(--warning-subtle); color: var(--warning); }
 .reply-note svg, .reply-alert svg { flex: none; margin-top: 2px; }
 
@@ -1077,7 +1138,7 @@ a.viewer-file:hover { border-color: var(--accent); color: var(--accent-text); }
 .agent-bubble:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .agent-panel {
   width: min(420px, calc(100vw - 32px)); height: min(720px, calc(100vh - 48px));
-  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; overflow: hidden;
   background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); color: var(--text);
 }
@@ -1111,7 +1172,10 @@ a.viewer-file:hover { border-color: var(--accent); color: var(--accent-text); }
   padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
   background: var(--surface); color: var(--text); font-size: 13px; box-shadow: 0 1px 2px var(--border);
 }
-.agent-message-content p + p { margin-top: 8px; }
+.agent-message-content p + p, .agent-message-content p + ul, .agent-message-content ul + p { margin-top: 8px; }
+.agent-message-content ul { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+.agent-message-content strong { font-weight: 650; }
+.agent-checked { color: var(--text-3); font-size: 11.5px; padding-left: 2px; }
 .agent-message[data-role="user"] .agent-message-content {
   border-color: transparent; border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg);
   background: var(--accent); color: var(--surface-solid);
@@ -1145,6 +1209,9 @@ a.agent-source:hover { border-color: var(--border-strong); background: var(--hov
 .invoice-lines { padding: 8px 10px; }
 .invoice-line, .invoice-total { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 11.5px; }
 .invoice-line > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invoice-line-sub { display: block; color: var(--text-3); font-size: 11px; }
+.invoice-line:has(.invoice-line-sub) > span:first-child { white-space: normal; }
+.invoice-note { margin: 0 10px 8px; color: var(--text-2); font-size: 11.5px; }
 .invoice-total { margin-top: 4px; padding-top: 7px; border-top: 1px solid var(--border); color: var(--text); font-weight: 650; font-size: 13px; }
 .invoice-reasons { margin: 0 10px 8px; padding: 8px 8px 8px 24px; border-radius: var(--radius); background: var(--warning-subtle); color: var(--warning); font-size: 11.5px; }
 .invoice-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 0 10px 10px; }

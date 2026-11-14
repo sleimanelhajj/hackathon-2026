@@ -6,6 +6,7 @@ import { Callout } from "../components/ui";
 import { Select } from "../components/Select";
 import { BoardEditor } from "../dashboard/BoardEditor";
 import { SalesDataProvider, monthLabel } from "../widgets/SalesWidgets";
+import { BoardSkeleton } from "../components/Skeletons";
 
 // The Sales page: a customisable board (like the email dashboard) over Postgres sales data (server/sales).
 // For now it runs on demo data, and says so above the board.
@@ -43,7 +44,7 @@ export default function SalesPage() {
           </div>
         </header>
 
-        {(status.isLoading || (ready && dash.isLoading)) && <div className="skeleton" style={{ height: 420 }} />}
+        {(status.isLoading || (ready && dash.isLoading)) && <BoardSkeleton kind="sales" label="Loading sales" />}
 
         {status.data && !status.data.configured && (
           <Callout

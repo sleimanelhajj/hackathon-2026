@@ -235,7 +235,8 @@ test("behind the glass is soft coloured light: blue, lavender and pink glows (de
 
 test("the sidebar floats as its own rounded glass panel, with space around it", () => {
   const side = css.match(/(^|\n)\.sidebar\s*\{([^}]*)\}/)[2];
-  assert.match(side, /margin:\s*\d+px/);
+  assert.match(side, /top:\s*\d+px/);
+  assert.match(side, /left:\s*\d+px/);
   assert.match(side, /border-radius:\s*var\(--radius-xl\)/);
   assert.match(side, /border:\s*1px solid var\(--glass-edge\)/);
   assert.match(side, /height:\s*calc\(100vh - \d+px\)/);

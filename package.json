@@ -6,6 +6,8 @@
   "dependencies": {
     "@assistant-ui/react": "^0.15.36",
     "@fontsource-variable/inter": "^5.3.0",
+    "@langchain/core": "^1.4.1",
+    "@langchain/langgraph": "^1.7.4",
     "@radix-ui/react-select": "^2.4.1",
     "@tanstack/react-query": "^5.107.1",
     "@xyflow/react": "^12.12.1",

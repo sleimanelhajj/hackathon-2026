@@ -34,7 +34,7 @@ export function ReplyModal() {
   }, [threadId]);
 
   return (
-    <dialog ref={ref} className="modal" aria-labelledby="reply-title" onClose={close} onCancel={close}>
+    <dialog ref={ref} className="modal modal-reply" aria-labelledby="reply-title" onClose={close} onCancel={close}>
       {threadId && <ReplyForm key={threadId} threadId={threadId} label={label} onClose={close} />}
     </dialog>
   );
@@ -117,6 +117,8 @@ function ReplyForm({ threadId, label, onClose }: { threadId: string; label: stri
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
       </header>
 
+      {/* Only this part scrolls: the title, the close button and Send always stay in view. */}
+      <div className="modal-scroll">
       {draft && (
         <blockquote className="reply-quote">
           <span className="reply-quote-from">{draft.replyingTo.from} wrote:</span> {draft.replyingTo.snippet}
@@ -134,7 +136,7 @@ function ReplyForm({ threadId, label, onClose }: { threadId: string; label: stri
       <label className="field">
         <span className="field-label field-label-row">
           Message
-          {draft && !drafting && <span className="tag" data-tone="inferred"><Sparkles size={12} aria-hidden /> AI draft</span>}
+          {draft && !drafting && <span className="tag" data-tone="accent"><Sparkles size={12} aria-hidden /> AI draft</span>}
         </span>
         {drafting ? (
           <div className="reply-loading" role="status">
@@ -173,6 +175,7 @@ function ReplyForm({ threadId, label, onClose }: { threadId: string; label: stri
         </p>
       )}
       {send.error && <p className="reply-alert" role="alert"><AlertTriangle size={14} aria-hidden /><span>{(send.error as Error).message}</span></p>}
+      </div>
 
       <footer className="modal-foot">
         <span className="muted small">Nothing is sent until you click Send.</span>

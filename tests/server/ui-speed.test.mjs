@@ -34,6 +34,57 @@ const block = (sel) => {
   return m[2];
 };
 
+// Opening or closing the sidebar used to animate its width inside the page flow, so the whole dashboard (grid, every
+// widget, every chart) re-laid-out on each of ~15 animation frames. Now the sidebar floats outside the flow: only it
+// animates, and the page moves over once.
+test("the sidebar animates outside the page flow, so toggling it doesn't re-lay-out the page every frame", () => {
+  const side = block(".sidebar");
+  assert.match(side, /position:\s*fixed/);
+  assert.match(side, /transition:\s*width/);
+  assert.match(side, /contain:\s*layout/);
+  const main = block(".main");
+  assert.match(main, /margin-left:\s*calc\(var\(--sidebar-w\)/, "the page leaves room for the open sidebar");
+  assert.doesNotMatch(main, /transition:[^;]*(margin|width|padding)\s+\d/, "the page itself never animates its size");
+  const collapsed = block('.shell:has(.sidebar[data-collapsed="true"]) .main');
+  assert.match(collapsed, /margin-left:\s*calc\(var\(--sidebar-w-collapsed\)/);
+  // The page's room changes at once both ways; useSlideWithSidebar then slides it there with a transform.
+  assert.doesNotMatch(collapsed, /transition/);
+  assert.match(read("src/App.tsx"), /useSlideWithSidebar\(mainRef\)/);
+  assert.match(read("src/lib/useSlideWithSidebar.ts"), /SIDEBAR_MS = 260/);
+  assert.match(side, /transition:\s*width 260ms/, "the slide and the sidebar take the same time");
+});
+
+// The chat panel is a grid: header, messages, composer, footnote. The messages row must be the one that stretches;
+// with a stale extra row the composer took the space and grew to a tall empty box.
+test("the chat panel's grid rows match its parts, and only the message list stretches", () => {
+  const rows = block(".agent-panel").match(/grid-template-rows:\s*([^;]+);/)[1].trim();
+  const tracks = rows.match(/minmax\([^)]*\)|\S+/g);
+  const parts = (read("src/agent/AgentAssistant.tsx").match(/<aside className="agent-panel"[\s\S]*?<\/aside>/)[0]
+    .match(/^ {10}<(header|div|form|p)\b/gm) ?? []).length;
+  assert.equal(tracks.length, parts, `${tracks.length} rows (${rows}) for ${parts} parts`);
+  assert.equal(tracks.filter((t) => /1fr/.test(t)).length, 1);
+  assert.match(tracks[1], /1fr/, "the message list (second part) stretches");
+});
+
+test("the reply dialog keeps its header and footer fixed and scrolls only the middle", () => {
+  assert.match(block(".modal-reply"), /overflow:\s*hidden/);
+  const form = block(".modal-reply .modal-body");
+  assert.match(form, /max-height:\s*calc\(100vh - \d+px\)/);
+  assert.match(form, /padding:\s*0/);
+  const scroll = block(".modal-scroll");
+  assert.match(scroll, /overflow-y:\s*auto/);
+  assert.match(scroll, /min-height:\s*0/);
+  assert.match(block(".reply-note"), /var\(--signal-subtle\)/, "a caution is amber, the only colour besides blue");
+  // In a scrolling flex column, items shrink to fit unless told not to; the quoted email was squashed in half.
+  assert.match(block(".modal-scroll > *"), /flex-shrink:\s*0/);
+});
+
+test("the email table skeleton keeps its shapes off the card's edges wherever it's placed", () => {
+  // It sits inside the real table card (no padding of its own) on the All email page, so it pads itself.
+  assert.match(block(".skeleton-table"), /padding:\s*\d+px \d+px/);
+  assert.match(block(".skeleton-table-card"), /padding:\s*0/);
+});
+
 test("each card's layout is contained, so moving or resizing one doesn't re-lay-out the others", () => {
   assert.match(block(".dashboard-canvas .grid-stack > .grid-stack-item"), /contain:\s*layout style/);
 });
