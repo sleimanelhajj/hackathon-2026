@@ -222,7 +222,7 @@ function GmailCard({ status }: { status: Status }) {
             <li data-allowed={status.gemini.configured ? "true" : undefined}>
               <Sparkles size={16} color={status.gemini.configured ? "var(--success)" : undefined} />{" "}
               {status.gemini.configured
-                ? "Sort your email and draft replies with AI: sender names, subjects, email text and the text of PDF, Word and text attachments are sent to Google's Gemini API. Email addresses are removed first"
+                ? "Sort your email and draft replies with AI: sender names, subjects, email text and the text of attachments (PDF, Word, Excel, PowerPoint, invites, files in ZIP folders) are sent to Google's Gemini API, and images and scanned PDFs are sent as files so it can read them. Email addresses are removed from text first"
                 : "Sort your email with AI: off until a Gemini API key is added to .env"}
             </li>
             <li data-allowed={status.gmail?.canSend ? "true" : undefined}>

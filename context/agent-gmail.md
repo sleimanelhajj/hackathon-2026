@@ -52,7 +52,7 @@ get_dashboard(): DashboardSpec
 
 // ---- live Gmail (costs quota; server rate-limits, max N per chat turn) ----
 gmail_search_live(q: string, limit?: ≤20)       // messages.list + messages.get(format=metadata); for > 30 days back
-get_attachment_text(gmailId, attachmentId)      // attachments.get → text (PDF/DOCX/TXT/CSV), ≤ 5 MB, ≤ 8,000 chars back
+get_attachment_text(gmailId, attachmentId)      // attachments.get → text of PDF (scans via vision), Word, Excel, PowerPoint, images (vision), .ics, ZIP, text/CSV/HTML; ≤ 10 MB, ≤ 8,000 chars back (decision #43; readers in server/agent/files.js)
 
 // ---- change things (validated; dashboard only, no mail mutations) ----
 propose_dashboard_change(spec: DashboardSpec)   // zod-validated, saved as a new version, undoable
