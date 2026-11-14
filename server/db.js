@@ -15,6 +15,9 @@ export async function connectDb() {
     db.collection("messages").createIndex({ gmailId: 1 }, { unique: true }),
     db.collection("messages").createIndex({ threadId: 1, date: -1 }),
     db.collection("messages").createIndex({ date: -1 }),
+    db.collection("invoices").createIndex({ createdAt: -1 }),
+    db.collection("invoices").createIndex({ status: 1, updatedAt: -1 }),
+    db.collection("audit_events").createIndex({ at: -1 }),
   ]);
   return db;
 }

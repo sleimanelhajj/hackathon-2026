@@ -8,12 +8,14 @@ import {
   Copy,
   Database,
   Eye,
+  FileText,
   Loader2,
   Lock,
   Mail,
   PenLine,
   RefreshCw,
   Settings2,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import { api, timeAgo, type Status } from "../lib/api";
@@ -239,6 +241,43 @@ function GmailCard({ status }: { status: Status }) {
   );
 }
 
+function CompanyDataCard({ status }: { status: Status }) {
+  const connected = status.companyData.configured;
+  return (
+    <section className="surface integration" aria-labelledby="company-data-title">
+      <div className="integration-head">
+        <div className="logo-tile"><Database size={24} /></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 className="integration-name" id="company-data-title">
+            Company data <span className="tag" data-tone={connected ? "ok" : undefined}>{connected ? "Connected" : "Adapter ready"}</span>
+          </h2>
+          <p className="integration-desc">Grounds assistant answers and invoice drafts in approved customer, service, pricing and billing records.</p>
+        </div>
+      </div>
+      <div className="facts" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <div>
+          <p className="fact-label">Source</p>
+          <p className="fact-value">{status.companyData.name}</p>
+        </div>
+        <div>
+          <p className="fact-label">Status</p>
+          <p className="fact-value">{connected ? "Available to the assistant" : "Waiting for the read-only database connection"}</p>
+        </div>
+      </div>
+      <div className="facts" style={{ gridTemplateColumns: "1fr" }}>
+        <div>
+          <p className="fact-label" style={{ marginBottom: 10 }}>Safety boundary</p>
+          <ul className="perm-list">
+            <li data-allowed="true"><Eye size={16} color="var(--success)" /> Read only normalized records approved by the company-data adapter</li>
+            <li data-allowed="true"><FileText size={16} color="var(--success)" /> Build invoice drafts only from verified records and details you provide</li>
+            <li><ShieldCheck size={16} /> No raw database access, arbitrary SQL, record changes or automatic sending</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SetupSteps() {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -337,6 +376,7 @@ export function IntegrationsPage() {
             <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Database is unreachable" text="Check MONGODB_URI in .env and that your IP is allowed in MongoDB Atlas." />
           )}
           <NextStep status={status} />
+          <CompanyDataCard status={status} />
           <GmailCard status={status} />
           {!status.googleConfigured && <SetupSteps />}
           <PostgresCard />

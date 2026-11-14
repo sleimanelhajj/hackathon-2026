@@ -4,7 +4,7 @@ import test from "node:test";
 
 process.env.TOKEN_SECRET ||= "a".repeat(64);
 const { replyTarget } = await import("../../server/agent/reply.js");
-const { buildReplyMime } = await import("../../server/gmail.js");
+const { buildReplyMime, buildAttachmentMime } = await import("../../server/gmail.js");
 
 const me = "you@northwind.example";
 const msg = (direction, extra = {}) => ({
@@ -63,4 +63,20 @@ test("buildReplyMime encodes non-ASCII subjects and leaves out empty threading h
   const mime = decode(buildReplyMime({ ...base, subject: "Re: Café menu", inReplyTo: null, references: [] }));
   assert.match(mime, /\r\nSubject: =\?UTF-8\?B\?[A-Za-z0-9+/=]+\?=\r\n/);
   assert.doesNotMatch(mime, /In-Reply-To|References/);
+});
+
+test("buildAttachmentMime makes an email with a PDF attachment and blocks filename header injection", () => {
+  const raw = buildAttachmentMime({
+    from: me,
+    to: [{ name: "Lena Ortiz", email: "lena@ortiz.example" }],
+    subject: "Invoice INV-1",
+    body: "Please review the attached invoice.",
+    attachment: { filename: "invoice.pdf\r\nBcc: attacker@evil.example", contentType: "application/pdf", data: Buffer.from("%PDF-test") },
+  });
+  const mime = decode(raw);
+  assert.match(mime, /Content-Type: multipart\/mixed; boundary=/);
+  assert.match(mime, /Content-Type: application\/pdf/);
+  assert.match(mime, /Content-Disposition: attachment; filename="invoice\.pdf_Bcc_ attacker@evil\.example"/);
+  assert.doesNotMatch(mime, /\r\nBcc:/i);
+  assert.match(mime, /JVBERi10ZXN0/); // base64 for %PDF-test
 });

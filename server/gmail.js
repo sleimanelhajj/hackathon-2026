@@ -3,7 +3,7 @@ import { getDb } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
 import { normalizeMessage } from "./gmail-parse.js";
 
-// gmail.send is used only by sendReply(), after the user approves an edited reply in the app (decision #30).
+// gmail.send is used only after the user approves an edited reply or reviewed invoice in the app.
 export const SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", SEND_SCOPE];
 const LOOKBACK_DAYS = Number(process.env.GMAIL_LOOKBACK_DAYS || 30);
@@ -365,6 +365,44 @@ export function buildReplyMime({ from, to, cc = [], subject, body, inReplyTo, re
   return b64url(Buffer.from(`${headers.join("\r\n")}\r\n\r\n${encodedBody}`, "utf8"));
 }
 
+const wrapBase64 = (value) => Buffer.from(value).toString("base64").replace(/.{76}/g, "$&\r\n");
+
+/** A new plain-text email with one attachment. Used only by the approved invoice-send endpoint. */
+export function buildAttachmentMime({ from, to, cc = [], subject, body, attachment }) {
+  const boundary = `aiwos_${crypto.randomBytes(12).toString("hex")}`;
+  const filename = String(attachment.filename || "attachment")
+    .replace(/[\r\n"\\/:]+/g, "_")
+    .replace(/[^\x20-\x7e]/g, "_")
+    .slice(0, 160);
+  const contentType = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(attachment.contentType || "") ? attachment.contentType : "application/octet-stream";
+  const headers = [
+    `From: ${oneLine(from)}`,
+    `To: ${to.map(mailbox).join(", ")}`,
+    ...(cc.length ? [`Cc: ${cc.map(mailbox).join(", ")}`] : []),
+    `Subject: ${encodeWord(oneLine(subject))}`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+  ];
+  const text = wrapBase64(Buffer.from(String(body).replace(/\r?\n/g, "\r\n"), "utf8"));
+  const file = wrapBase64(Buffer.from(attachment.data));
+  const parts = [
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    text,
+    `--${boundary}`,
+    `Content-Type: ${contentType}; name="${filename}"`,
+    "Content-Transfer-Encoding: base64",
+    `Content-Disposition: attachment; filename="${filename}"`,
+    "",
+    file,
+    `--${boundary}--`,
+    "",
+  ];
+  return b64url(Buffer.from(`${headers.join("\r\n")}\r\n\r\n${parts.join("\r\n")}`, "utf8"));
+}
+
 export function canSend(conn) {
   return conn?.mode === "live" && (conn.scopes || []).includes(SEND_SCOPE);
 }
@@ -388,6 +426,26 @@ export async function sendReply({ threadId, to, cc = [], subject, body, inReplyT
   if (res.status === 401 || res.status === 403) throw new Error("Google refused to send. Disconnect and connect Gmail again to allow sending.");
   if (!res.ok) throw new Error(`Gmail couldn't send the reply (${res.status}${json?.error?.message ? `: ${json.error.message}` : ""}).`);
   return { id: json.id, threadId: json.threadId };
+}
+
+/** Sends one reviewed new message with one attachment. The caller owns the explicit approval check. */
+export async function sendEmailWithAttachment({ to, cc = [], subject, body, attachment }) {
+  const conn = await getDb().collection("connections").findOne({ provider: "gmail" });
+  if (!conn) throw new Error("Gmail isn't connected.");
+  if (conn.mode !== "live") throw new Error("This is sample data, so nothing can be sent. Connect Gmail to send invoices.");
+  if (!canSend(conn)) throw new Error("Gmail hasn't allowed sending yet. Disconnect and connect Gmail again to grant it.");
+  const raw = buildAttachmentMime({ from: conn.email, to, cc, subject, body, attachment });
+  const token = await accessToken(conn);
+  await takeQuota(100);
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401 || res.status === 403) throw new Error("Google refused to send. Disconnect and connect Gmail again to allow sending.");
+  if (!res.ok) throw new Error(`Gmail couldn't send the invoice (${res.status}${json?.error?.message ? `: ${json.error.message}` : ""}).`);
+  return { id: json.id, threadId: json.threadId ?? null };
 }
 
 /** Downloads one attachment of a stored message (read-only scope). Returns { data: Buffer }. */

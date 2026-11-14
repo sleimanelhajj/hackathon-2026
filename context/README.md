@@ -64,7 +64,7 @@ Founders, small-business operators and sales teams who run their business throug
 
 **Stretch:** Google Calendar connector + upcoming-meetings widget.
 
-**Out of scope:** many connectors, auto-sending email, CRM/invoicing, enterprise roles, arbitrary code generation.
+**Out of scope:** many connectors, auto-sending email, full accounting/payment processing, enterprise roles, arbitrary code generation. Reviewed invoice PDF drafts are now in scope through the company-data adapter (decision #37).
 
 ## Demo story (short)
 
@@ -76,4 +76,6 @@ Blank workspace → connect Gmail → *"I'm a sales manager, build me a dashboar
 - ✅ Figma UI design: [AI Workspace OS — UI](https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h). Screens: onboarding, member dashboard + agent, edit layout (drag & drop), draft approval modal, admin RBAC & tailoring, action center, integrations. Product record: [../PRODUCT.md](../PRODUCT.md).
 - ✅ Express/MongoDB backend, Gmail connect/sync, labelled sample data, dashboard and Email data pages.
 - ✅ Free-position dashboard editing with corner resizing, saved coordinates, library drag/drop, keyboard controls, and responsive layouts.
-- Next: agent chat and prompt-generated dashboards (see `roadmap.md`).
+- ✅ Agent chat bubble/panel, bounded company-data contract, source chips, deterministic invoice PDFs and approval-gated invoice delivery.
+- 🟡 The real company database provider is a teammate handoff in `server/company-data/provider.js`; until connected, the UI reports that honestly.
+- Next: connect the real company database provider, then prompt-generated dashboards (see `roadmap.md`).

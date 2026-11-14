@@ -3,6 +3,7 @@ import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { ReplyModal } from "./components/ReplyModal";
 import { EmailViewer } from "./components/EmailViewer";
 import { Sidebar } from "./components/Sidebar";
+import { AgentAssistant } from "./agent/AgentAssistant";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { useRoute, useSidebarShortcut } from "./lib/store";
 import { useStatus } from "./lib/queries";
@@ -48,6 +49,7 @@ export default function App() {
       </main>
       {/* Right-hand panel slot: pages portal into it (e.g. the widget library while editing). Hidden when empty. */}
       <aside id="side-panel" className="side-panel-slot" />
+      <AgentAssistant />
       <ReplyModal />
       <EmailViewer />
     </div>

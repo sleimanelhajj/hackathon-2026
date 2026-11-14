@@ -38,6 +38,8 @@ Daily operational use at a desk: triaging leads, follow-ups, meetings and tasks 
 - Dashboards are validated JSON specs rendered by fixed components; no model-authored code.
 - Every fact is labeled observed / derived / inferred / unknown, with a source link.
 - External actions (Gmail draft) require explicit approval; MVP is draft-only, never auto-send.
+- Assistant business answers come from a bounded, read-only company-data adapter with source links; the app's MongoDB is not treated as the company database.
+- Invoice PDFs use verified customer/pricing records plus user-provided details. Totals are computed by code, and sending is available only after an editable human review and explicit approval.
 - Sync status must be honest ("last synced"), never claimed real-time without a real event path.
 - Backend: Node + Express with MongoDB Atlas. LLM: Google Gemini (server-side only).
 - Undecided: final brand.
