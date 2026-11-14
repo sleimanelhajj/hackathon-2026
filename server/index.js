@@ -6,6 +6,8 @@ import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
 import { decrypt } from "./crypto.js";
 import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
+import { geminiConfigured, geminiModel } from "./agent/llm.js";
+import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
 
 const app = express();
 app.use(express.json());
@@ -26,12 +28,30 @@ function publicConnection(conn) {
     connectedAt: conn.createdAt || null,
     syncProgress: conn.syncProgress || null,
     mailbox: conn.mailbox || null,
+    analysis: conn.analysis
+      ? {
+          status: conn.analysis.status,
+          error: conn.analysis.error ?? null,
+          progress: conn.analysis.progress ?? null,
+          lastRunAt: conn.analysis.lastRunAt ?? null,
+          counts: conn.analysis.counts ?? null,
+        }
+      : null,
   };
 }
 
+// Kick off AI analysis after new data lands. Never fails the request that triggered it.
+const analyseInBackground = () =>
+  startAnalysis().catch((err) => console.error("Could not start email analysis:", err.message));
+
 app.get("/api/status", wrap(async (_req, res) => {
   const conn = await getDb().collection("connections").findOne({ provider: "gmail" });
-  res.json({ database: await pingDb(), googleConfigured: googleConfigured(), gmail: publicConnection(conn) });
+  res.json({
+    database: await pingDb(),
+    googleConfigured: googleConfigured(),
+    gemini: { configured: geminiConfigured(), model: geminiModel() },
+    gmail: publicConnection(conn),
+  });
 }));
 
 app.get("/api/auth/google/start", (_req, res) => {
@@ -45,7 +65,8 @@ app.get("/api/auth/google/callback", async (req, res) => {
   if (!code || !consumeState(String(state))) return res.redirect(`${APP_URL}/?gmail=invalid#/integrations`);
   try {
     await handleCallback(String(code));
-    syncGmail().catch(() => {}); // first sync runs in the background; status is visible in the UI
+    // First sync (then AI analysis) runs in the background; status is visible in the UI.
+    syncGmail().then(analyseInBackground).catch(() => {});
     res.redirect(`${APP_URL}/?gmail=connected#/integrations`);
   } catch (err) {
     console.error("OAuth callback failed:", err.message);
@@ -53,8 +74,23 @@ app.get("/api/auth/google/callback", async (req, res) => {
   }
 });
 
-app.post("/api/integrations/gmail/sync", wrap(async (_req, res) => res.json(await syncGmail())));
-app.post("/api/integrations/gmail/sample", wrap(async (_req, res) => res.json(await seedSample())));
+app.post("/api/integrations/gmail/sync", wrap(async (_req, res) => {
+  const result = await syncGmail();
+  await analyseInBackground(); // only new or changed threads are sent to Gemini
+  res.json(result);
+}));
+app.post("/api/integrations/gmail/sample", wrap(async (_req, res) => {
+  const result = await seedSample();
+  await analyseInBackground();
+  res.json(result);
+}));
+
+// AI email analysis (Gemini). Runs in the background; poll /api/status or /api/dashboard for progress.
+// { "force": true } re-analyses every thread instead of only new ones.
+app.post("/api/analysis/run", wrap(async (req, res) => {
+  if (!geminiConfigured()) return res.status(400).json({ error: "Gemini isn't set up. Add GEMINI_API_KEY to .env and restart the server." });
+  res.json(await startAnalysis({ force: req.body?.force === true }));
+}));
 app.delete("/api/integrations/gmail", wrap(async (_req, res) => {
   await disconnectGmail();
   res.json({ ok: true });
@@ -106,6 +142,7 @@ app.post("/api/dashboards/default/reset", wrap(async (_req, res) => res.json(awa
 // API_PORT (not PORT): dev tools often set PORT for the web server.
 const port = Number(process.env.API_PORT || 8787);
 connectDb()
+  .then(resetStaleAnalysis)
   .then(() => app.listen(port, () => console.log(`API ready on http://localhost:${port} (MongoDB connected)`)))
   .catch((err) => {
     console.error("Could not connect to MongoDB:", err.message);

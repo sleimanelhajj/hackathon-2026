@@ -54,13 +54,28 @@ export function DashboardPage() {
 
   const spec = specQuery.data;
   const editing = draft !== null;
-  const view = useMemo(() => draft ?? (spec ? fromSpec(spec.widgets, spec.layout) : null), [draft, spec]);
+
+  // The saved layout can contain widget types this version of the app doesn't have (e.g. a teammate saved one
+  // from a newer branch into the shared database). Hide them instead of crashing, and block editing so a save
+  // from here can't silently delete them.
+  const { savedWidgets, savedLayout, unknownTypes } = useMemo(() => {
+    const all = spec?.widgets ?? [];
+    const known = all.filter((w) => (w.type as string) in CATALOG);
+    const ids = new Set(known.map((w) => w.id));
+    return {
+      savedWidgets: known,
+      savedLayout: (spec?.layout ?? []).filter((l) => ids.has(l.i)),
+      unknownTypes: [...new Set(all.filter((w) => !((w.type as string) in CATALOG)).map((w) => w.type as string))],
+    };
+  }, [spec]);
+
+  const view = useMemo(() => draft ?? (spec ? fromSpec(savedWidgets, savedLayout) : null), [draft, spec, savedWidgets, savedLayout]);
   const positionsById = useMemo(() => Object.fromEntries((view?.layout ?? []).map((item) => [item.i, item])), [view?.layout]);
   const dirty = useMemo(() => {
     if (!draft || !spec) return false;
-    const before = baselineRef.current?.draft ?? fromSpec(spec.widgets, spec.layout);
+    const before = baselineRef.current?.draft ?? fromSpec(savedWidgets, savedLayout);
     return JSON.stringify([draft.widgets, cleanLayout(draft.layout)]) !== JSON.stringify([before.widgets, cleanLayout(before.layout)]);
-  }, [draft, spec]);
+  }, [draft, spec, savedWidgets, savedLayout]);
 
   // Warn before leaving the page with unsaved layout changes.
   useEffect(() => {
@@ -90,11 +105,11 @@ export function DashboardPage() {
     if (!spec) return;
     setNotice(null);
     save.reset();
-    baselineRef.current = { draft: fromSpec(spec.widgets, spec.layout), version: spec.version, title: spec.title };
+    baselineRef.current = { draft: fromSpec(savedWidgets, savedLayout), version: spec.version, title: spec.title };
     setEditSession(++sessionRef.current);
     sidebarBefore.current = useUi.getState().sidebarCollapsed;
     useUi.getState().setSidebarCollapsed(true);
-    setDraft(fromSpec(spec.widgets, spec.layout));
+    setDraft(fromSpec(savedWidgets, savedLayout));
   };
   const stopEditing = () => {
     ++sessionRef.current; // Ignore callbacks from a discarded grid gesture.
@@ -218,6 +233,7 @@ export function DashboardPage() {
 
   const t = d.totals;
   const syncing = sync.isPending || d.status === "syncing";
+  const canEditHere = unknownTypes.length === 0;
   const mutationError = save.error || undo.error || sync.error;
 
   return (
@@ -262,8 +278,12 @@ export function DashboardPage() {
               <button
                 className="btn btn-secondary"
                 onClick={startEditing}
-                disabled={!spec}
-                title="Rearrange, resize, add or remove widgets"
+                disabled={!canEditHere || !spec}
+                title={
+                  canEditHere
+                    ? "Rearrange, resize, add or remove widgets"
+                    : "This layout has widgets from a newer version of the app. Pull the latest code to edit it."
+                }
               >
                 <LayoutGrid size={15} /> Edit layout
               </button>
@@ -271,6 +291,15 @@ export function DashboardPage() {
           )}
         </div>
       </header>
+
+      {!editing && unknownTypes.length > 0 && (
+        <Callout
+          tone="warn"
+          icon={<AlertTriangle size={18} />}
+          title={`${unknownTypes.length === 1 ? "A widget" : "Some widgets"} in this layout can't be shown`}
+          text={`The saved layout uses ${unknownTypes.join(", ")}, which this version of the app doesn't have. They're hidden here and editing is off so they aren't lost. Pull the latest code to see them.`}
+        />
+      )}
 
       {mutationError && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="That didn't work" text={(mutationError as Error).message} />}
 

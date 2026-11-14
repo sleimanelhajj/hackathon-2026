@@ -23,6 +23,7 @@ beforeEach(() => {
   vi.spyOn(api, 'spec').mockImplementation(async () => structuredClone(saved));
   vi.spyOn(api, 'dashboard').mockResolvedValue({ connected: true, mode: 'sample', account: 'sample@example.test',
     status: 'connected', lastSyncAt: null, windowDays: 30, totals: { awaitingYou: 0 }, awaitingYou: [],
+    insights: { configured: false, status: 'never', error: null, progress: null, lastRunAt: null, model: null, analysedThreads: 0, totalThreads: 0, categories: [], rows: [] },
   } as unknown as Dashboard);
   saves = vi.spyOn(api, 'saveSpec').mockImplementation(async (spec) => {
     saved = { ...structuredClone(spec), id: 'default', version: saved.version + 1, canUndo: true, updatedAt: '' };

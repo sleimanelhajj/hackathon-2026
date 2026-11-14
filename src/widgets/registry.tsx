@@ -1,7 +1,8 @@
 import { lazy, Suspense, type ComponentType } from "react";
-import { BarChart3, Filter, Hash, ListTodo, PieChart, Users, type LucideIcon } from "lucide-react";
-import { BREAKDOWN_RULES, LIST_RULES, STAT_LABELS } from "../../shared/spec.js";
-import type { Widget, WidgetType } from "../lib/api";
+import { BarChart3, Filter, Hash, ListTodo, PieChart, Sparkles, Tags, Users, type LucideIcon } from "lucide-react";
+import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, STAT_LABELS } from "../../shared/spec.js";
+import type { InsightFocus, Widget, WidgetType } from "../lib/api";
+import { CategoryBreakdownWidget, InsightListWidget } from "./InsightWidgets";
 import { StatWidget } from "./StatWidget";
 import { ThreadListWidget } from "./ThreadListWidget";
 import { TopPeopleWidget } from "./TopPeopleWidget";
@@ -95,6 +96,23 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
       get: (w) => (w.type === "top-people" ? w.limit : 5),
       set: (w, v) => (w.type === "top-people" ? { ...w, limit: Number(v) } : w),
     },
+  },
+  "insight-list": {
+    icon: Sparkles,
+    component: InsightListWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: Object.entries(INSIGHT_FOCUS_LABELS).map(([value, label]) => ({ value, label })),
+      get: (w) => (w.type === "insight-list" ? w.focus : ""),
+      set: (w, v) =>
+        w.type === "insight-list" ? { ...w, focus: v as InsightFocus, title: INSIGHT_FOCUS_LABELS[v as InsightFocus] } : w,
+    },
+  },
+  "category-breakdown": {
+    icon: Tags,
+    component: CategoryBreakdownWidget as AnyWidgetComponent,
+    collapsible: true,
   },
 };
 

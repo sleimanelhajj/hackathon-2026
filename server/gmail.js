@@ -328,5 +328,6 @@ export async function disconnectGmail() {
   }
   await db.collection("messages").deleteMany({});
   await db.collection("labels").deleteMany({});
+  await db.collection("extractions").deleteMany({}); // AI labels derived from those messages go too
   await db.collection("connections").deleteOne({ provider: "gmail" });
 }

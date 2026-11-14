@@ -17,6 +17,31 @@ export const ListRule = z.enum([
 ]);
 export const BreakdownRule = z.enum(["topDomains", "newsletters", "busiestHours", "labels"]);
 
+// AI email analysis (server/agent/classify.js). Every value here is *inferred* by a model and labelled so in the UI,
+// except "automated", which code can also detect on its own (then it's *derived*).
+export const Category = z.enum(["lead", "proposal", "request", "scheduling", "billing", "support", "internal", "automated", "other"]);
+export const Priority = z.enum(["high", "medium", "low"]);
+/** What an "AI-sorted emails" list shows: one category, or everything marked high priority. */
+export const InsightFocus = z.enum(["high-priority", "lead", "proposal", "request", "scheduling", "billing", "support", "internal", "automated", "other"]);
+
+export const CATEGORY_LABELS = {
+  lead: { title: "Potential leads", hint: "Someone new who may want to buy or work with you" },
+  proposal: { title: "Proposals and deals", hint: "Quotes, pricing, contracts, negotiations" },
+  request: { title: "Customer requests", hint: "An existing customer or partner asking for something" },
+  scheduling: { title: "Scheduling", hint: "Meetings, calls, demos, rescheduling" },
+  billing: { title: "Billing and invoices", hint: "Invoices, payments, receipts" },
+  support: { title: "Problems and complaints", hint: "Something is broken or someone is unhappy" },
+  internal: { title: "Internal", hint: "Your own team" },
+  automated: { title: "Automated", hint: "Newsletters, notifications, no-reply senders" },
+  other: { title: "Other", hint: "Personal or doesn't fit elsewhere" },
+};
+
+/** @type {Record<z.infer<typeof InsightFocus>, string>} */
+export const INSIGHT_FOCUS_LABELS = {
+  "high-priority": "Needs your attention",
+  ...Object.fromEntries(Object.entries(CATEGORY_LABELS).map(([k, v]) => [k, v.title])),
+};
+
 const id = z.string().regex(/^[a-z0-9-]{1,40}$/);
 const title = z.string().trim().min(1).max(60);
 
@@ -27,6 +52,8 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("breakdown"), title, rule: BreakdownRule }),
   z.object({ id, type: z.literal("activity-chart"), title, days: z.number().int().min(7).max(30) }),
   z.object({ id, type: z.literal("top-people"), title, limit: z.number().int().min(3).max(10) }),
+  z.object({ id, type: z.literal("insight-list"), title, focus: InsightFocus }),
+  z.object({ id, type: z.literal("category-breakdown"), title }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -116,6 +143,18 @@ export const CATALOG = {
     size: { w: 4, h: 8, minW: 3, minH: 5 },
     create: () => ({ type: "top-people", title: "Who emails you most", limit: 5 }),
   },
+  "insight-list": {
+    label: "AI-sorted emails",
+    description: "Leads, requests, invoices… sorted by AI, with the reason",
+    size: { w: 8, h: 10, minW: 4, minH: 6 },
+    create: () => ({ type: "insight-list", title: "Needs your attention", focus: "high-priority" }),
+  },
+  "category-breakdown": {
+    label: "What your email is about",
+    description: "How many threads fall into each AI category",
+    size: { w: 4, h: 10, minW: 3, minH: 6 },
+    create: () => ({ type: "category-breakdown", title: "What your email is about" }),
+  },
 };
 
 /** format: "count" (default) or "hours" (shown as a duration). */
@@ -143,6 +182,8 @@ export const DEFAULT_SPEC = {
     { id: "stat-unread-important", type: "stat", title: "Unread important", metric: "unreadImportant" },
     { id: "stat-starred", type: "stat", title: "Starred", metric: "starred" },
     { id: "stat-reply-time", type: "stat", title: "Your reply time", metric: "yourReplyHours" },
+    { id: "ai-attention", type: "insight-list", title: "Needs your attention", focus: "high-priority" },
+    { id: "ai-categories", type: "category-breakdown", title: "What your email is about" },
     { id: "list-awaiting-you", type: "thread-list", title: "Waiting on your reply", list: "awaitingYou" },
     { id: "rule-unread-important", type: "rule-list", title: "Unread and important", rule: "unreadImportant" },
     { id: "list-awaiting-them", type: "thread-list", title: "Waiting on their reply", list: "awaitingThem" },
@@ -157,13 +198,15 @@ export const DEFAULT_SPEC = {
     { i: "stat-unread-important", x: 3, y: 0, w: 3, h: 3 },
     { i: "stat-starred", x: 6, y: 0, w: 3, h: 3 },
     { i: "stat-reply-time", x: 9, y: 0, w: 3, h: 3 },
-    { i: "list-awaiting-you", x: 0, y: 3, w: 7, h: 9 },
-    { i: "rule-unread-important", x: 7, y: 3, w: 5, h: 9 },
-    { i: "list-awaiting-them", x: 0, y: 12, w: 7, h: 9 },
-    { i: "rule-meeting-invites", x: 7, y: 12, w: 5, h: 9 },
-    { i: "activity", x: 0, y: 21, w: 8, h: 8 },
-    { i: "breakdown-domains", x: 8, y: 21, w: 4, h: 8 },
-    { i: "rule-attachments", x: 0, y: 29, w: 7, h: 8 },
-    { i: "breakdown-newsletters", x: 7, y: 29, w: 5, h: 8 },
+    { i: "ai-attention", x: 0, y: 3, w: 8, h: 10 },
+    { i: "ai-categories", x: 8, y: 3, w: 4, h: 10 },
+    { i: "list-awaiting-you", x: 0, y: 13, w: 7, h: 9 },
+    { i: "rule-unread-important", x: 7, y: 13, w: 5, h: 9 },
+    { i: "list-awaiting-them", x: 0, y: 22, w: 7, h: 9 },
+    { i: "rule-meeting-invites", x: 7, y: 22, w: 5, h: 9 },
+    { i: "activity", x: 0, y: 31, w: 8, h: 8 },
+    { i: "breakdown-domains", x: 8, y: 31, w: 4, h: 8 },
+    { i: "rule-attachments", x: 0, y: 39, w: 7, h: 8 },
+    { i: "breakdown-newsletters", x: 7, y: 39, w: 5, h: 8 },
   ],
 };

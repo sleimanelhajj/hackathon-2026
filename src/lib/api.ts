@@ -1,12 +1,29 @@
 import type { z } from "zod";
 import type {
   BreakdownRule as BreakdownRuleSchema,
+  Category as CategorySchema,
   DashboardSpec,
+  InsightFocus as InsightFocusSchema,
   LayoutItem as LayoutItemSchema,
   ListRule as ListRuleSchema,
+  Priority as PrioritySchema,
   StatMetric as StatMetricSchema,
   Widget as WidgetSchema,
 } from "../../shared/spec.js";
+
+export type Category = z.infer<typeof CategorySchema>;
+export type Priority = z.infer<typeof PrioritySchema>;
+export type InsightFocus = z.infer<typeof InsightFocusSchema>;
+
+export type AnalysisStatus = "never" | "not_configured" | "running" | "done" | "error";
+
+export type AnalysisState = {
+  status: AnalysisStatus;
+  error: string | null;
+  progress: { done: number; total: number } | null;
+  lastRunAt: string | null;
+  counts: { analysed: number; derived: number; unchanged: number; failed: number } | null;
+};
 
 export type GmailConnection = {
   mode: "live" | "sample";
@@ -19,12 +36,45 @@ export type GmailConnection = {
   connectedAt: string | null;
   syncProgress: { done: number; total: number; phase: string } | null;
   mailbox: { messagesTotal: number; threadsTotal: number } | null;
+  analysis: AnalysisState | null;
 };
 
 export type Status = {
   database: boolean;
   googleConfigured: boolean;
+  gemini: { configured: boolean; model: string };
   gmail: GmailConnection | null;
+};
+
+/** One thread as sorted by the AI analysis. Labels are inferred by a model (or derived by code for automated mail). */
+export type InsightRow = {
+  threadId: string;
+  subject: string;
+  contact: string;
+  lastAt: string;
+  waitingDays: number;
+  link: string | null;
+  category: Category;
+  priority: Priority;
+  needsReply: boolean;
+  summary: string;
+  reason: string;
+  suggestedAction: string | null;
+  certainty: "inferred" | "derived" | "confirmed";
+  stale: boolean;
+};
+
+export type Insights = {
+  configured: boolean;
+  status: AnalysisStatus;
+  error: string | null;
+  progress: { done: number; total: number } | null;
+  lastRunAt: string | null;
+  model: string | null;
+  analysedThreads: number;
+  totalThreads: number;
+  categories: { category: Category; count: number }[];
+  rows: InsightRow[];
 };
 
 export type ThreadRow = {
@@ -59,6 +109,7 @@ export type Dashboard =
       activity: { date: string; received: number; sent: number }[];
       rules: Record<ListRule, { count: number; items: RuleItem[] }>;
       breakdowns: Record<BreakdownRule, { key: string; label: string; value: number }[]>;
+      insights: Insights;
     };
 
 export type RuleItem = {
@@ -125,6 +176,12 @@ export const api = {
   sync: () => request<{ count: number }>("/api/integrations/gmail/sync", { method: "POST" }),
   loadSample: () => request<{ count: number }>("/api/integrations/gmail/sample", { method: "POST" }),
   disconnect: () => request<{ ok: true }>("/api/integrations/gmail", { method: "DELETE" }),
+  runAnalysis: (force = false) =>
+    request<{ started: boolean; queued?: boolean; reason?: string }>("/api/analysis/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    }),
   connectUrl: "/api/auth/google/start",
   spec: () => request<SavedDashboard>("/api/dashboards/default"),
   saveSpec: (spec: DashboardSpecInput & { version: number }) =>

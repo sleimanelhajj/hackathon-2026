@@ -11,6 +11,7 @@ Read this first before contributing (humans and AI assistants alike).
 | [gmail-data.md](gmail-data.md) | **Everything Gmail returns** (formats, message structure, headers, labels, threads, history), quotas, and which default business rules each field supports |
 | [business-rules.md](business-rules.md) | **The 14 default business rules** (no inference, Gmail fields only): exactly what each counts, with sample values |
 | [agent-gmail.md](agent-gmail.md) | **What the agent should fetch from Gmail**: tools, limits, prompt budget, custom-rule DSL (read before building the agent) |
+| [agent-plan.md](agent-plan.md) | Build plan for the agent (roadmap #2, Gemini): tools, safety, streaming, chat panel, eval prompts |
 | [decisions.md](decisions.md) | Log of decisions made so far and open questions |
 | [tech-stack.md](tech-stack.md) | Libraries, tools, and project setup |
 

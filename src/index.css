@@ -25,6 +25,10 @@
   --danger-subtle: #fdecec;
   --gmail: #d93025;
 
+  /* Certainty: AI-inferred labels */
+  --inferred: #6d28d9;
+  --inferred-subtle: #f3effe;
+
   --chart-in: #4f46e5;
   --chart-out: #a5b4fc;
 
@@ -183,6 +187,8 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 .tag[data-tone="error"] { background: var(--danger-subtle); color: var(--danger); }
 .tag[data-tone="accent"] { background: var(--accent-subtle); color: var(--accent-text); }
 .tag[data-tone="derived"] { background: #eaf1fe; color: #1d4ed8; }
+.tag[data-tone="inferred"] { background: var(--inferred-subtle); color: var(--inferred); }
+.tag[data-tone="confirmed"] { background: var(--success-subtle); color: var(--success); }
 
 /* ---------- Collapsible panel ---------- */
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
@@ -338,6 +344,26 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 .thread-sample { font-size: 12px; color: var(--text-3); padding: 0 10px; }
 .people { list-style: none; margin: 0; padding: 0; }
 .person-count { color: var(--text-2); }
+
+/* AI-sorted email (InsightWidgets) */
+.insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.insight { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 12px 4px; border-top: 1px solid var(--border); }
+.insight:first-child { border-top: 0; padding-top: 4px; }
+.insight-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.insight-top .thread-contact { min-width: 0; max-width: 220px; }
+.insight-age { margin-left: auto; font-size: 12.5px; color: var(--text-3); white-space: nowrap; }
+.insight-subject { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.insight-summary { font-size: 13px; color: var(--text-2); }
+.insight-action, .insight-reason { display: flex; align-items: flex-start; gap: 6px; }
+.insight-action { font-size: 13px; color: var(--accent-text); }
+.insight-reason { font-size: 12px; color: var(--text-3); }
+.insight-action svg, .insight-reason svg { flex: none; margin-top: 3px; }
+.insight-error { color: var(--danger); font-size: 12.5px; }
+.thread-widget .howto, .insight-rerun ~ .howto { align-items: flex-start; }
+.howto svg { flex: none; }
+.thread-widget .howto svg { margin-top: 2px; }
+.insight-rerun { margin-top: 10px; }
+.category-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
 
 .chart-widget { height: 100%; display: flex; flex-direction: column; }
 .chart-area { flex: 1; min-height: 120px; }
