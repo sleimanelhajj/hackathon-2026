@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { connectDb, getDb, pingDb } from "./db.js";
 import { z } from "zod";
-import { authUrl, canSend, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, sendReply, syncGmail } from "./gmail.js";
+import { authUrl, canSend, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, sendEmailWithAttachment, sendReply, syncGmail } from "./gmail.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
 import { decrypt } from "./crypto.js";
@@ -10,6 +10,9 @@ import { ConflictError, getDashboard, resetDashboard, saveDashboard, undoDashboa
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
 import { draftReply, loadThread } from "./agent/reply.js";
+import { chat } from "./agent/chat.js";
+import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
+import { companyData } from "./company-data/index.js";
 import { Category, Priority } from "../shared/spec.js";
 
 const app = express();
@@ -54,6 +57,7 @@ app.get("/api/status", wrap(async (_req, res) => {
     database: await pingDb(),
     googleConfigured: googleConfigured(),
     gemini: { configured: geminiConfigured(), model: geminiModel() },
+    companyData: { configured: companyData.configured(), ...companyData.describe() },
     gmail: publicConnection(conn),
   });
 }));
@@ -100,6 +104,83 @@ app.delete("/api/integrations/gmail", wrap(async (_req, res) => {
   res.json({ ok: true });
 }));
 app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboard())));
+
+// Company-data assistant. The model sees only normalized, bounded records from server/company-data/provider.js.
+// It has no database client, SQL or send tool. The client sends at most the last 10 text turns.
+app.post("/api/agent/chat", wrap(async (req, res) => {
+  res.json(await chat(req.body?.messages));
+}));
+
+// Invoice PDFs are deterministic from a stored draft. Nothing is sent by downloading one.
+app.get("/api/invoices/:id/pdf", async (req, res) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const invoice = await getDb().collection("invoices").findOne({ _id: id });
+    if (!invoice) return res.status(404).json({ error: "Invoice draft not found." });
+    const pdf = await renderInvoicePdf(invoice);
+    const filename = `${invoice.invoiceNumber || "invoice"}.pdf`.replace(/[^a-z0-9._-]/gi, "_");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(pdf);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+const InvoiceSendBody = z.object({
+  subject: z.string().trim().min(1).max(300),
+  body: z.string().trim().min(1).max(10000),
+  approved: z.literal(true),
+});
+app.post("/api/invoices/:id/send", async (req, res) => {
+  let claimed = false;
+  let id;
+  try {
+    id = z.string().uuid().parse(req.params.id);
+    const input = InvoiceSendBody.parse(req.body);
+    const db = getDb();
+    const invoice = await db.collection("invoices").findOne({ _id: id });
+    if (!invoice) return res.status(404).json({ error: "Invoice draft not found." });
+    if (invoice.status === "sent") return res.status(409).json({ error: "This invoice was already sent." });
+    if (invoice.status === "sending") return res.status(409).json({ error: "This invoice is already being sent." });
+    if (!invoice.readiness?.ready || !invoice.customer?.email) {
+      return res.status(400).json({ error: invoice.readiness?.reasons?.[0] || "Review the invoice before sending it." });
+    }
+    const lock = await db.collection("invoices").updateOne(
+      { _id: id, status: "draft" },
+      { $set: { status: "sending", updatedAt: new Date(), sendError: null } }
+    );
+    if (!lock.matchedCount) return res.status(409).json({ error: "The invoice changed. Reload it before sending." });
+    claimed = true;
+    const pdf = await renderInvoicePdf(invoice);
+    const sent = await sendEmailWithAttachment({
+      to: [{ name: invoice.customer.name, email: invoice.customer.email }],
+      subject: input.subject,
+      body: input.body,
+      attachment: { filename: `${invoice.invoiceNumber}.pdf`, contentType: "application/pdf", data: pdf },
+    });
+    // From here the external action happened. Never revert to draft on a local write failure, or a retry could duplicate it.
+    claimed = false;
+    const sentAt = new Date();
+    await db.collection("invoices").updateOne(
+      { _id: id, status: "sending" },
+      { $set: { status: "sent", sentAt, sentGmailId: sent.id, updatedAt: sentAt, sendError: null } }
+    ).catch((err) => console.error("Invoice was sent but its local status could not be saved:", err.message));
+    await db.collection("audit_events").insertOne({
+      at: sentAt, actor: "user", action: "invoice_sent", invoiceId: id, approved: true, ok: true,
+    }).catch((err) => console.error("Invoice send audit could not be saved:", err.message));
+    res.json(publicInvoice({ ...invoice, status: "sent", sentAt, updatedAt: sentAt }));
+  } catch (err) {
+    if (claimed && id) {
+      await getDb().collection("invoices").updateOne(
+        { _id: id, status: "sending" },
+        { $set: { status: "draft", updatedAt: new Date(), sendError: String(err.message || err).slice(0, 300) } }
+      ).catch(() => {});
+    }
+    res.status(400).json({ error: err.message });
+  }
+});
 
 // Stored emails for the Email data page (local dev server only; there is no auth yet).
 // Gmail fields are as fetched; `ai` (priority, category, needs reply) comes from the AI analysis and the page

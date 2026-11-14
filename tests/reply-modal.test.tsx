@@ -20,6 +20,7 @@ const status = (gmail: Partial<NonNullable<Status['gmail']>>): Status => ({
   database: true,
   googleConfigured: true,
   gemini: { configured: true, model: 'test-model' },
+  companyData: { configured: false, name: 'Company database' },
   gmail: { mode: 'live', email: 'you@northwind.example', status: 'connected', scopes: [], lastSyncAt: null, lastSyncCount: null, error: null, connectedAt: null, syncProgress: null, mailbox: null, analysis: null, canSend: true, ...gmail },
 });
 

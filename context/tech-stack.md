@@ -25,6 +25,7 @@
 | `unpdf` | **In use:** text out of PDF attachments for the AI (`server/agent/content.js`); pure JS, no native build |
 | `mammoth` | **In use:** text out of Word (.docx) attachments for the AI |
 | `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
+| `pdf-lib` | **In use:** deterministic invoice PDFs on the server; the model never writes PDF code or HTML |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
 
@@ -47,13 +48,17 @@ Regression checks: `npm test` runs pure coordinate tests plus Vitest/jsdom and R
 │   ├── dashboards.js   ← saved dashboard spec: get / save (versioned) / undo / reset
 │   ├── sample.js       ← labelled sample data for demos
 │   ├── crypto.js       ← AES-256-GCM encryption for stored OAuth tokens
-│   └── agent/
-│       ├── llm.js      ← the only file that calls Gemini (JSON output, retries, friendly errors)
-│       └── classify.js ← AI email analysis job: category, priority, summary, reason, next step per thread
+│   ├── agent/
+│   │   ├── llm.js      ← the only file that calls Gemini (JSON output, retries, friendly errors)
+│   │   ├── classify.js ← AI email analysis job: category, priority, summary, reason, next step per thread
+│   │   ├── chat.js     ← company-data Q&A, verified sources and invoice orchestration
+│   │   └── invoice.js  ← validated invoice maths + deterministic PDF rendering
+│   └── company-data/   ← bounded read-only gateway + provider.js handoff for the real company database
 ├── shared/
 │   └── spec.js         ← zod schema + widget catalogue + default dashboard (server AND client)
 ├── src/
 │   ├── App.tsx         ← shell + hash routing (#/dashboard, #/integrations), lazy dashboard
+│   ├── agent/          ← floating assistant bubble/panel, source chips and reviewed invoice delivery
 │   ├── components/     ← Sidebar (collapsible), Panel (collapsible), Callout, Gmail logo
 │   ├── dashboard/      ← DashboardGrid (GridStack), WidgetFrame, WidgetLibrary, layout model, data context
 │   ├── widgets/        ← Stat, ThreadList, ActivityChart (lazy), TopPeople, rule lists, breakdowns, InsightWidgets (AI list + category breakdown) + registry
@@ -95,6 +100,9 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/dashboards/default/undo` | Swap back to the previous version |
 | POST | `/api/dashboards/default/reset` | Restore the default layout (undoable) |
 | POST | `/api/analysis/run` | Start AI email analysis in the background (`{ "force": true }` re-sorts every thread). Also runs on its own after a sync or sample load |
+| POST | `/api/agent/chat` | Last 10 text turns → answer from bounded company-data records, verified sources and optional stored invoice draft |
+| GET | `/api/invoices/:id/pdf` | Download a deterministic PDF generated from one stored invoice draft |
+| POST | `/api/invoices/:id/send` | Send the reviewed PDF through Gmail; requires edited subject/body and `approved: true`, and cannot be called by the model |
 
 ## MongoDB collections
 
@@ -106,6 +114,12 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | `attachment_text` | Text extracted from attachments for the AI, one doc per `gmailId:partId`: status (`ok`/`empty`/`failed`), `textEnc` (encrypted), kind, chars. Deleted on disconnect |
 | `extractions` | AI labels, one doc per thread (`_id` = threadId): category, priority, needsReply, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId |
 | `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
+| `invoices` | App-owned invoice drafts, computed totals, delivery status and source ids. This is not the company database |
+| `audit_events` | Content-free agent/tool and approved-action audit metadata |
+
+## Company database handoff
+
+`server/company-data/provider.js` is intentionally unconnected. The teammate responsible for the real company database implements its `configured`, `describe` and `getContext` functions using a read-only account and parameterized, allow-listed queries. `server/company-data/index.js` caps the result at 25 records and validates every profile, fact, record kind and HTTP(S) source link before Gemini can see it. Provider-specific environment variables and setup must be documented here when that provider is chosen.
 
 ## Gemini setup
 

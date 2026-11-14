@@ -10,7 +10,7 @@ Status key: ✅ done · 🟡 next · ⬜ planned · 💤 stretch
 |---|---|---|---|---|
 | 0 | Gmail connect + sync + derived dashboard, collapsible UI | ✅ | yes | 1, 2, 7 |
 | 1 | Dashboard as saved widget spec + **drag-and-drop layout** | ✅ | yes | 3 |
-| 2 | Agent chat panel (ask questions, edit the dashboard) | 🟡 | yes | 2 |
+| 2 | Agent chat panel (ask company-data questions; dashboard edits later) | 🟡 UI + read tools built | yes | 2 |
 | 3 | Generate a dashboard from a prompt (onboarding) | ⬜ | yes | 1 |
 | 4 | AI extraction: leads, follow-ups, tasks (with certainty labels) | 🟡 first cut built | yes | 2, 6 |
 | 5 | Action center + approval-gated Gmail drafts | ⬜ | yes | 4, 6 |
@@ -135,6 +135,8 @@ const { width, containerRef, mounted } = useContainerWidth();
 ---
 
 ## 2. Agent chat panel 🟡
+
+> **Built first slice (2026-11-14):** a global floating bubble opens a desktop panel / phone sheet. `POST /api/agent/chat` sees only normalized records returned by the read-only `server/company-data/` gateway, filters source ids, and stores content-free audit events. The real provider is intentionally a handoff stub. The same panel can create source-grounded invoice drafts, download deterministic PDFs and open an editable, approval-gated Gmail delivery review. Dashboard edit tools and streaming remain to do.
 
 > **Spec:** [agent-gmail.md](agent-gmail.md) defines exactly what the agent fetches from Gmail, the tool contracts, per-turn limits and the custom-rule DSL. Build against the sample data first.
 > **Detailed build plan (Gemini): [agent-plan.md](agent-plan.md).** The notes below are the original outline. Decision numbers there predate the merge: Gemini is #24.

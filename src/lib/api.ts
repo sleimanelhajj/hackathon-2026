@@ -45,7 +45,40 @@ export type Status = {
   database: boolean;
   googleConfigured: boolean;
   gemini: { configured: boolean; model: string };
+  companyData: { configured: boolean; name: string };
   gmail: GmailConnection | null;
+};
+
+export type AgentSource = {
+  id: string;
+  label: string;
+  url: string | null;
+  kind: "company" | "customer" | "product" | "service" | "pricing" | "billing" | "order" | "project" | "other";
+};
+
+export type InvoiceDraft = {
+  id: string;
+  invoiceNumber: string;
+  customer: { name: string; email: string | null; address: string | null };
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  lineItems: { description: string; quantity: number; unitPriceMinor: number; totalMinor: number }[];
+  subtotalMinor: number;
+  taxRateBps: number;
+  taxMinor: number;
+  totalMinor: number;
+  notes: string | null;
+  status: "draft" | "sending" | "sent";
+  readiness: { ready: boolean; reasons: string[] };
+  pdfUrl: string;
+  sentAt?: string | null;
+};
+
+export type AgentChatResponse = {
+  answer: string;
+  sources: AgentSource[];
+  invoice: InvoiceDraft | null;
 };
 
 /** One thread as sorted by the AI analysis. Labels are inferred by a model (or derived by code for automated mail). */
@@ -266,6 +299,18 @@ export const api = {
     }),
   undoSpec: () => request<SavedDashboard>("/api/dashboards/default/undo", { method: "POST" }),
   resetSpec: () => request<SavedDashboard>("/api/dashboards/default/reset", { method: "POST" }),
+  agentChat: (messages: { role: "user" | "assistant"; text: string }[]) =>
+    request<AgentChatResponse>("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: messages.slice(-10) }),
+    }),
+  sendInvoice: (id: string, input: { subject: string; body: string }) =>
+    request<InvoiceDraft>(`/api/invoices/${encodeURIComponent(id)}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, approved: true }),
+    }),
 };
 
 export function timeAgo(iso: string | null): string {

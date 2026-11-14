@@ -842,3 +842,105 @@ input, textarea { caret-color: var(--accent); }
   .insight-who { max-width: 120px; }
   .file-side { display: none; }
 }
+
+/* ---------- Workspace assistant ---------- */
+.agent-root { position: fixed; right: 24px; bottom: 24px; z-index: 90; }
+.agent-bubble {
+  min-width: 58px; height: 52px; padding: 0 17px; border: 1px solid var(--glass-edge); border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--accent); color: var(--surface-solid); box-shadow: var(--shadow-lift); cursor: pointer;
+  font: inherit; font-weight: 600; transition: background 120ms, transform 120ms, box-shadow 120ms;
+}
+.agent-bubble:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.agent-panel {
+  width: min(420px, calc(100vw - 32px)); height: min(720px, calc(100vh - 48px));
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; overflow: hidden;
+  background: var(--glass-strong); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-edge); border-radius: var(--radius-lg); box-shadow: var(--shadow-lift); color: var(--text);
+}
+.agent-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 12px; border-bottom: 1px solid var(--border); }
+.agent-avatar, .agent-empty-icon, .invoice-icon {
+  display: grid; place-items: center; flex: none; color: var(--accent-text); background: var(--accent-subtle); border-radius: var(--radius);
+}
+.agent-avatar { width: 36px; height: 36px; }
+.agent-head > div { min-width: 0; flex: 1; }
+.agent-head h2 { font-size: 15px; font-weight: 650; }
+.agent-head p { font-size: 12px; color: var(--text-3); }
+.agent-connection {
+  min-height: 32px; padding: 7px 14px; display: flex; align-items: center; gap: 7px;
+  border-bottom: 1px solid var(--border); background: var(--warning-subtle); color: var(--warning); font-size: 12px;
+}
+.agent-connection[data-connected="true"] { background: var(--success-subtle); color: var(--success); }
+.agent-thread { min-height: 0; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+.agent-empty { margin: auto 0; padding: 18px 4px; text-align: center; }
+.agent-empty-icon { width: 42px; height: 42px; margin: 0 auto 12px; }
+.agent-empty h3 { font-size: 16px; margin-bottom: 5px; }
+.agent-empty > p { max-width: 340px; margin: 0 auto; color: var(--text-2); font-size: 13px; }
+.agent-prompts { display: flex; flex-direction: column; gap: 7px; margin-top: 16px; }
+.agent-prompts button {
+  width: 100%; min-height: 38px; padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text-2); text-align: left; cursor: pointer; font: inherit; font-size: 12.5px;
+}
+.agent-prompts button:hover { border-color: var(--border-strong); background: var(--hover); color: var(--text); }
+.agent-message { max-width: 91%; display: flex; flex-direction: column; gap: 9px; align-self: flex-start; }
+.agent-message[data-role="user"] { align-self: flex-end; }
+.agent-message-content {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
+  background: var(--surface); color: var(--text); font-size: 13px; box-shadow: 0 1px 2px var(--border);
+}
+.agent-message-content p + p { margin-top: 8px; }
+.agent-message[data-role="user"] .agent-message-content {
+  border-color: transparent; border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg);
+  background: var(--accent); color: var(--surface-solid);
+}
+.agent-message[data-error="true"] .agent-message-content { background: var(--danger-subtle); color: var(--danger); border-color: transparent; }
+.agent-thinking { display: flex; align-items: center; gap: 7px; color: var(--text-3); font-size: 12.5px; }
+.agent-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.agent-sources-label { width: 100%; color: var(--text-3); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.agent-source {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 4px 7px; border: 1px solid var(--border);
+  border-radius: 999px; background: var(--surface); color: var(--accent-text); font-size: 11.5px; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+a.agent-source:hover { border-color: var(--border-strong); background: var(--hover); }
+.agent-composer { margin: 0 12px; display: flex; align-items: flex-end; gap: 8px; padding: 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface); }
+.agent-composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
+.agent-composer textarea { flex: 1; min-height: 38px; max-height: 112px; padding: 3px 4px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; line-height: 1.4; }
+.agent-send { width: 34px; height: 34px; flex: none; border: 0; border-radius: var(--radius); display: grid; place-items: center; background: var(--accent); color: var(--surface-solid); cursor: pointer; }
+.agent-send:hover:not(:disabled) { background: var(--accent-hover); }
+.agent-send:disabled { opacity: 0.45; cursor: not-allowed; }
+.agent-footnote { padding: 7px 14px 10px; color: var(--text-3); text-align: center; font-size: 10.5px; }
+
+/* Invoice inside an assistant answer */
+.invoice-card { width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--glass-strong); box-shadow: var(--shadow); }
+.invoice-card-head { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); }
+.invoice-icon { width: 31px; height: 31px; }
+.invoice-card-head > div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.invoice-card-head strong { font-size: 12.5px; }
+.invoice-card-head div span { color: var(--text-3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.invoice-card-head > .tag { flex: none; font-size: 10.5px; height: 21px; padding-inline: 7px; }
+.invoice-lines { padding: 8px 10px; }
+.invoice-line, .invoice-total { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 11.5px; }
+.invoice-line > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invoice-total { margin-top: 4px; padding-top: 7px; border-top: 1px solid var(--border); color: var(--text); font-weight: 650; font-size: 13px; }
+.invoice-reasons { margin: 0 10px 8px; padding: 8px 8px 8px 24px; border-radius: var(--radius); background: var(--warning-subtle); color: var(--warning); font-size: 11.5px; }
+.invoice-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 0 10px 10px; }
+.invoice-actions .btn { flex: 1 1 auto; }
+.invoice-delivery-note, .invoice-sent, .agent-error { margin: 0 10px 10px; display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; }
+.invoice-delivery-note { color: var(--text-3); }
+.invoice-sent { padding: 7px 8px; border-radius: var(--radius); background: var(--success-subtle); color: var(--success); }
+.agent-error { padding: 7px 8px; border-radius: var(--radius); background: var(--danger-subtle); color: var(--danger); }
+.invoice-review { margin: 0 8px 8px; padding: 10px; display: flex; flex-direction: column; gap: 9px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--subtle); }
+.invoice-review > p { font-size: 12px; }
+.invoice-review .input { background: var(--surface-solid); font-size: 12px; }
+.invoice-message { min-height: 104px; }
+.invoice-review-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+@media (max-width: 760px) {
+  .agent-root { inset: 0; right: auto; bottom: auto; pointer-events: none; }
+  .agent-root > * { pointer-events: auto; }
+  .agent-root:not([data-open="true"]) { inset: auto 14px 14px auto; }
+  .agent-panel { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  .agent-thread { padding-inline: 12px; }
+  .agent-message { max-width: 94%; }
+}
