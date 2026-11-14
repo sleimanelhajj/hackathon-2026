@@ -250,7 +250,7 @@ export async function syncGmail() {
   const conn = await db.collection("connections").findOne({ provider: "gmail" });
   if (!conn || conn.mode !== "live") throw new Error("Gmail is not connected");
 
-  await db.collection("connections").updateOne({ _id: conn._id }, { $set: { status: "syncing", error: null } });
+  await db.collection("connections").updateOne({ _id: conn._id }, { $set: { status: "syncing", syncStartedAt: new Date(), error: null } });
   try {
     const token = await accessToken(conn);
     await setProgress(conn._id, 0, 0, "Reading your mailbox");
@@ -409,14 +409,29 @@ export function buildAttachmentMime({ from, to, cc = [], subject, body, attachme
   return b64url(Buffer.from(`${headers.join("\r\n")}\r\n\r\n${parts.join("\r\n")}`, "utf8"));
 }
 
+/** A sync still "running" after this long died with the server (a crash or restart): it no longer blocks auto-sync. */
+export const STALE_SYNC_MS = 15 * 60_000;
+
+/**
+ * On startup no sync can be running, so a "syncing" status was left by a restart mid-sync. Without this the page shows
+ * "Syncing…" forever and auto-sync waits for it. The history id wasn't saved, so the next check syncs again.
+ */
+export async function resetStaleSync() {
+  await getDb().collection("connections").updateMany(
+    { provider: "gmail", status: "syncing" },
+    { $set: { status: "connected", syncProgress: null }, $unset: { syncStartedAt: "" } }
+  );
+}
+
 /**
  * Auto-sync's decision (decision #52): sync when the mailbox's history id moved since the last sync. Skipped while a
  * sync runs, for sample data, and when the user turned auto-sync off (it's on unless they did).
  */
-export function shouldSync(conn, currentHistoryId) {
+export function shouldSync(conn, currentHistoryId, now = Date.now()) {
   if (!conn || conn.mode !== "live") return { changed: false, reason: "not connected" };
   if (conn.autoSync === false) return { changed: false, reason: "turned off" };
-  if (conn.status === "syncing") return { changed: false, reason: "already syncing" };
+  const stale = conn.syncStartedAt && now - new Date(conn.syncStartedAt).getTime() > STALE_SYNC_MS;
+  if (conn.status === "syncing" && !stale) return { changed: false, reason: "already syncing" };
   if (!conn.historyId) return { changed: true, reason: "never synced" };
   return String(currentHistoryId) === String(conn.historyId) ? { changed: false, reason: "no new mail" } : { changed: true, reason: "mailbox changed" };
 }

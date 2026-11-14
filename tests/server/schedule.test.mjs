@@ -156,3 +156,54 @@ test("the same meeting or deadline mentioned in two emails shows once", () => {
   const { items } = build([msg("q1"), msg("q2")], [label("q1", { needsReply: false, when }), label("q2", { needsReply: false, when })]);
   assert.equal(items.filter((i) => i.kind === "meeting").length, 1);
 });
+
+// ---- availability and meeting requests (decision #55) ----
+const { requestKey } = await import("../../server/meetings.js");
+const wk = (ranges) => ({ weekly: { Mon: ranges, Tue: ranges, Wed: ranges, Thu: ranges, Fri: ranges, Sat: [], Sun: [] }, dates: {} });
+
+test("tasks go into your available hours, not fixed office hours", () => {
+  const { items } = buildSchedule({ messages: [msg("av", { date: at(2026, 11, 11, 9, 40) })], labels: [label("av", { priority: "high" })], now, tz: TZ, availability: wk([["14:00", "16:00"]]) });
+  assert.equal(local(items.find((i) => i.threadId === "av").start), "Wed 11 14:00", "11:40 is outside 14:00–16:00");
+});
+
+test("meeting requests: declined ones stay off the calendar, one waiting for you shows as a request and doesn't block tasks", () => {
+  const meeting = (threadId, h) => label(threadId, { needsReply: false, category: "scheduling", when: { kind: "meeting", at: `2026-11-12T${h}:00`, allDay: false, what: `Meeting ${threadId}`, request: true } });
+  const requests = new Map([
+    [requestKey("no", at(2026, 11, 12, 10)), { _id: "r-no", status: "auto-declined", reason: "clash" }],
+    [requestKey("wait", at(2026, 11, 12, 11)), { _id: "r-wait", status: "pending", reason: "outside" }],
+    [requestKey("yes", at(2026, 11, 12, 15)), { _id: "r-yes", status: "confirmed", reason: "outside" }],
+  ]);
+  const { items } = buildSchedule({ messages: [msg("no"), msg("wait"), msg("yes")], labels: [meeting("no", 10), meeting("wait", 11), meeting("yes", 15)], now, tz: TZ, requests });
+  assert.equal(items.some((i) => i.threadId === "no"), false);
+  const wait = items.find((i) => i.threadId === "wait");
+  assert.deepEqual(wait.request, { id: "r-wait", status: "pending", reason: "outside" });
+  assert.match(wait.why, /waiting for you/i);
+  assert.deepEqual(items.find((i) => i.threadId === "yes").request, { id: "r-yes", status: "confirmed", reason: "outside" });
+});
+
+test("which meetings are requests: a time someone else asks for, or their calendar invite; not yours, not automated, not all-day", async () => {
+  const { collectRequests } = await import("../../server/schedule.js");
+  const ask = (threadId, extra = {}) => label(threadId, { when: { kind: "meeting", at: "2026-11-12T15:00", allDay: false, what: `Meeting ${threadId}`, request: true, ...extra } });
+  const out = collectRequests({
+    messages: [
+      msg("asked", { date: at(2026, 11, 11, 8) }),
+      msg("mine", { direction: "out", from: { name: "Me", email: "me@shop.example" } }),
+      msg("bot", { isAutomated: true }),
+      msg("day"),
+      msg("agreed"),
+      msg("inv", { gmailId: "g-inv-1", hasCalendarInvite: true, date: at(2026, 11, 11, 7) }),
+    ],
+    labels: [ask("asked"), ask("mine"), ask("bot"), ask("day", { at: "2026-11-12", allDay: true }), ask("agreed", { request: false }), label("inv", { needsReply: false })],
+    invites: [{ gmailId: "g-inv-1", threadId: "inv", summary: "Quarterly review", start: at(2026, 11, 12, 10), end: at(2026, 11, 12, 11) }],
+    tz: TZ,
+  });
+  assert.deepEqual(out.map((c) => c.threadId).sort(), ["asked", "inv"]);
+  const asked = out.find((c) => c.threadId === "asked");
+  assert.equal(local(asked.start), "Thu 12 15:00");
+  assert.equal(asked.end - asked.start, 36e5, "an hour unless the invite says otherwise");
+  assert.equal(local(asked.receivedAt), "Wed 11 08:00");
+  assert.equal(asked.contact, "Kevin Elmurr");
+  assert.equal(asked.key, requestKey("asked", asked.start));
+  const inv = out.find((c) => c.threadId === "inv");
+  assert.deepEqual([inv.source, inv.title, inv.gmailId, local(inv.end)], ["invite", "Quarterly review", "g-inv-1", "Thu 12 11:00"]);
+});

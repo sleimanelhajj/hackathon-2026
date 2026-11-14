@@ -136,3 +136,52 @@ test("the main assistant delegates 'show me…' to the builder and reports the w
   assert.match(out.reply, /Added \*\*Cordless drill sales\*\*/);
   assert.ok(out.toolsUsed.includes("add_dashboard_widget"));
 });
+
+test("the assistant resizes a widget you name: it lists the boards with sizes, resizes it and reports old and new size", async () => {
+  const model = fakeModel([
+    call("list_dashboard_widgets"),
+    (contents) => {
+      const pipeline = contents.at(-1).parts[0].functionResponse.response.boards[0].widgets.find((w) => /pipeline/i.test(w.title));
+      assert.equal(pipeline.w, 6);
+      return call("resize_dashboard_widget", { board: "sales", widgetId: pipeline.id, width: 12 });
+    },
+    (contents) => {
+      const r = contents.at(-1).parts[0].functionResponse.response;
+      assert.equal(r.resized, true);
+      assert.deepEqual(r.to, { w: 12, h: 9 });
+      return say(`Made **${r.title}** full width. You can undo it from the chat.`);
+    },
+  ]);
+  const calls = [];
+  const agent = createSalesAgent({
+    generate: model, tools: { run: async () => ({}), draftInvoice: async () => ({}) }, saveInvoice: async () => ({}),
+    listWidgets: async () => [{ board: "sales", name: "Sales", widgets: [{ id: "pipeline", title: "Pipeline", type: "sales-pipeline", w: 6, h: 9 }] }],
+    resizeWidget: async (board, id, size) => { calls.push([board, id, size]); return { board, id, title: "Pipeline", version: 7, from: { w: 6, h: 9 }, to: { w: 12, h: 9 }, limited: false }; },
+  });
+  const out = await agent.send({ threadId: "z1", message: "make the pipeline full width" });
+  assert.deepEqual(calls, [["sales", "pipeline", { w: 12 }]]);
+  assert.deepEqual(out.resized, [{ board: "sales", id: "pipeline", title: "Pipeline", version: 7, from: { w: 6, h: 9 }, to: { w: 12, h: 9 }, limited: false }]);
+  assert.ok(out.toolsUsed.includes("resize_dashboard_widget"));
+  const decl = model.seen[0].tools.find((t) => t.name === "resize_dashboard_widget");
+  assert.ok(decl, "the model is offered the resize tool");
+  assert.deepEqual(decl.parameters.required, ["board", "widgetId"]);
+});
+
+test("a resize that changes nothing gets no Undo card, and errors go back to the model", async () => {
+  const model = fakeModel([
+    call("resize_dashboard_widget", { board: "sales", widgetId: "kpi-revenue", height: 20 }),
+    call("resize_dashboard_widget", { board: "sales", widgetId: "gone", width: 6 }),
+    (contents) => say(`Couldn't: ${contents.at(-1).parts[0].functionResponse.response.error}`),
+  ]);
+  const agent = createSalesAgent({
+    generate: model, tools: { run: async () => ({}), draftInvoice: async () => ({}) }, saveInvoice: async () => ({}),
+    listWidgets: async () => [],
+    resizeWidget: async (board, id) => {
+      if (id === "gone") throw new Error("That widget is no longer on the dashboard.");
+      return { board, id, title: "Revenue", version: 3, from: { w: 2, h: 4 }, to: { w: 2, h: 4 }, limited: true, unchanged: true };
+    },
+  });
+  const out = await agent.send({ threadId: "z2", message: "make revenue taller" });
+  assert.match(out.reply, /no longer on the dashboard/);
+  assert.deepEqual(out.resized, []);
+});

@@ -80,3 +80,14 @@ test("the cheap check: sync when the mailbox history moved; skip when off, synci
   assert.equal(shouldSync(null, "105").changed, false);
   assert.equal(shouldSync({ ...live, autoSync: undefined }, "105").changed, true, "on unless turned off");
 });
+
+test("a sync left 'syncing' by a crash or restart doesn't block auto-sync forever", async () => {
+  const { STALE_SYNC_MS } = await import("../../server/gmail.js");
+  const now = Date.parse("2026-11-15T01:00:00Z");
+  const live = { mode: "live", historyId: "100", status: "syncing" };
+  const startedAgo = (ms) => ({ ...live, syncStartedAt: new Date(now - ms) });
+  assert.deepEqual(shouldSync(startedAgo(60_000), "105", now), { changed: false, reason: "already syncing" }, "a sync a minute old is still running");
+  assert.deepEqual(shouldSync(startedAgo(STALE_SYNC_MS + 1), "105", now), { changed: true, reason: "mailbox changed" }, "an old one is treated as dead");
+  assert.deepEqual(shouldSync(startedAgo(STALE_SYNC_MS + 1), "100", now), { changed: false, reason: "no new mail" });
+  assert.ok(STALE_SYNC_MS >= 10 * 60_000, "long enough for a big first sync");
+});

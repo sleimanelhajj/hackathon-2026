@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  AlertTriangle, ArrowRight, BarChart3, Bot, CheckCircle2, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, Table2, Trash2, Undo2, X,
+  AlertTriangle, ArrowRight, Scaling, BarChart3, Bot, CheckCircle2, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, Table2, Trash2, Undo2, X,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, type AddedWidget, type AssistantReply, type InvoiceDraft, type InvoiceProposal, type Status } from "../lib/api";
+import { api, type AddedWidget, type AssistantReply, type Board, type InvoiceDraft, type InvoiceProposal, type ResizedWidget, type Status } from "../lib/api";
 import { useHighlight } from "../lib/store";
 import { useStatus } from "../lib/queries";
 
@@ -18,6 +18,7 @@ type ChatMessage = {
   invoice?: InvoiceDraft | null;
   widgets?: AddedWidget[];
   removed?: AssistantReply["removed"];
+  resized?: AssistantReply["resized"];
   error?: boolean;
 };
 
@@ -34,7 +35,7 @@ const TOOL_LABELS: Record<string, string> = {
   sales_summary: "sales summary", sales_breakdown: "sales breakdown", find_products: "product catalogue",
   find_customers: "customer list", customer_history: "customer history", low_stock: "stock levels", lapsed_customers: "customer activity", sales_figures: "sales data",
   store_profile: "store profile", staff_performance: "staff targets", quote_pipeline: "trade quotes", propose_invoice: "invoice draft",
-  add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets",
+  add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets", resize_dashboard_widget: "dashboard widgets",
 };
 
 const newThread = () => crypto.randomUUID();
@@ -164,22 +165,21 @@ function WidgetCard({ widget }: { widget: AddedWidget }) {
 }
 
 /**
- * A widget the assistant removed, with Undo. Undo restores the board's previous version, so it only runs when the board
- * hasn't changed since the removal; otherwise it would roll back something else, and it says so instead.
+ * Undo for a change the assistant made to a board. It restores the board's previous version, so it only runs when the
+ * board hasn't changed since; otherwise it would roll back something else, and it says so instead.
  */
-function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
+function useBoardUndo(item: { board: Board; id: string; version: number }, redo: string) {
   const qc = useQueryClient();
-  const [state, setState] = useState<"removed" | "working" | "restored">("removed");
+  const [state, setState] = useState<"done" | "working" | "restored">("done");
   const [error, setError] = useState<string | null>(null);
-  const board = BOARD_NAME[item.board];
   const undo = async () => {
     setState("working");
     setError(null);
     try {
       const current = await api.spec(item.board);
       if (current.version !== item.version) {
-        setState("removed");
-        setError(`The ${board} dashboard changed after this, so Undo here would undo that instead. Ask me to add it again.`);
+        setState("done");
+        setError(`The ${BOARD_NAME[item.board]} dashboard changed after this, so Undo here would undo that instead. ${redo}`);
         return;
       }
       await api.undoSpec(item.board);
@@ -187,10 +187,17 @@ function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
       useHighlight.getState().set(item.id);
       void qc.invalidateQueries({ queryKey: ["dashboard-spec", item.board] });
     } catch (err) {
-      setState("removed");
+      setState("done");
       setError((err as Error).message);
     }
   };
+  return { state, error, undo };
+}
+
+/** A widget the assistant removed, with Undo. */
+function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
+  const { state, error, undo } = useBoardUndo(item, "Ask me to add it again.");
+  const board = BOARD_NAME[item.board];
   return (
     <section className="widget-card" role="region" aria-label={`Removed ${item.title}`} data-state={state === "restored" ? "added" : "removed-card"}>
       <span className="widget-card-icon" data-tone={state === "restored" ? undefined : "muted"}>{state === "restored" ? <CheckCircle2 size={18} aria-hidden /> : <Trash2 size={18} aria-hidden />}</span>
@@ -201,6 +208,40 @@ function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
         </span>
       </div>
       {state !== "restored" && (
+        <div className="widget-card-actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={undo} disabled={state === "working"}>
+            {state === "working" ? <Loader2 size={13} className="spin" aria-hidden /> : <Undo2 size={13} aria-hidden />} Undo
+          </button>
+        </div>
+      )}
+      {error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {error}</p>}
+    </section>
+  );
+}
+
+/** Plain words for a size change: "full width", "wider and taller"… (the grid is 12 columns wide). */
+function describeResize({ from, to }: ResizedWidget) {
+  const parts: string[] = [];
+  if (to.w !== from.w) parts.push(to.w === 12 ? "full width" : to.w === 6 ? "half width" : to.w > from.w ? "wider" : "narrower");
+  if (to.h !== from.h) parts.push(to.h > from.h ? "taller" : "shorter");
+  return parts.join(" and ") || "resized";
+}
+
+/** A widget the assistant resized, with Undo (puts the old size back). */
+function ResizedCard({ item }: { item: ResizedWidget }) {
+  const { state, error, undo } = useBoardUndo(item, "Ask me to resize it again.");
+  const restored = state === "restored";
+  return (
+    <section className="widget-card" role="region" aria-label={`Resized ${item.title}`} data-state="added">
+      <span className="widget-card-icon">{restored ? <CheckCircle2 size={18} aria-hidden /> : <Scaling size={18} aria-hidden />}</span>
+      <div className="widget-card-text">
+        <strong>{item.title}</strong>
+        <span className="widget-card-status">
+          {restored ? "Back to its old size" : `Now ${describeResize(item)} on ${BOARD_NAME[item.board]} dashboard`}
+        </span>
+        {!restored && item.limited && <span className="widget-card-status" data-tone="muted">That's as far as this widget goes.</span>}
+      </div>
+      {!restored && (
         <div className="widget-card-actions">
           <button type="button" className="btn btn-secondary btn-sm" onClick={undo} disabled={state === "working"}>
             {state === "working" ? <Loader2 size={13} className="spin" aria-hidden /> : <Undo2 size={13} aria-hidden />} Undo
@@ -314,11 +355,11 @@ export function AgentAssistant() {
 
   const addReply = (result: AssistantReply) => {
     // A widget was added: refresh that board and highlight the newest one when it opens.
-    for (const board of new Set([...(result.widgets ?? []), ...(result.removed ?? [])].map((w) => w.board))) void qc.invalidateQueries({ queryKey: ["dashboard-spec", board] });
+    for (const board of new Set([...(result.widgets ?? []), ...(result.removed ?? []), ...(result.resized ?? [])].map((w) => w.board))) void qc.invalidateQueries({ queryKey: ["dashboard-spec", board] });
     if (result.widgets?.length) useHighlight.getState().set(result.widgets.at(-1)!.id);
     setMessages((current) => [...current, {
       id: crypto.randomUUID(), role: "assistant", text: result.reply, toolsUsed: result.toolsUsed,
-      proposal: result.pendingInvoice, proposalState: result.pendingInvoice ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed,
+      proposal: result.pendingInvoice, proposalState: result.pendingInvoice ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed, resized: result.resized,
     }]);
   };
   const addError = (err: unknown) =>
@@ -404,6 +445,7 @@ export function AgentAssistant() {
                 )}
                 {message.widgets?.map((w) => <WidgetCard key={w.id} widget={w} />)}
                 {message.removed?.map((w) => <RemovedCard key={w.id} item={w} />)}
+                {message.resized?.map((w, i) => <ResizedCard key={`${w.id}-${i}`} item={w} />)}
                 {message.invoice && <InvoiceCard initial={message.invoice} status={status} />}
               </article>
             ))}

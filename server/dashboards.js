@@ -128,7 +128,15 @@ export function withoutWidget(spec, id) {
   const gone = spec.layout.find((l) => l.i === id);
   const layout = spec.layout.filter((l) => l.i !== id).map((l) => ({ ...l }));
   const widgets = spec.widgets.filter((w) => w.id !== id);
-  if (!gone) return { ...spec, widgets, layout };
+  if (gone) closeGap(layout, gone);
+  return { ...spec, widgets, layout };
+}
+
+/**
+ * Closes the free area `gone` leaves (mutates `layout`): widgets below it, in the columns it covered (and any chained
+ * below those), move up by at most its height, without overlapping anything.
+ */
+function closeGap(layout, gone) {
   const spans = [[gone.x, gone.x + gone.w]];
   const shares = (l) => spans.some(([a, b]) => l.x < b && a < l.x + l.w);
   for (const item of layout.filter((l) => l.y >= gone.y).sort((a, b) => a.y - b.y || a.x - b.x)) {
@@ -141,7 +149,6 @@ export function withoutWidget(spec, id) {
     }
     if (item.y !== start) spans.push([item.x, item.x + item.w]);
   }
-  return { ...spec, widgets, layout };
 }
 
 /** Removes one widget (the chat's "Remove" button) and closes the gap. */
@@ -150,6 +157,58 @@ export async function removeWidgetFromBoard(board, id) {
   if (!current.widgets.some((w) => w.id === id)) throw new Error("That widget is no longer on the dashboard.");
   const next = withoutWidget(current, id);
   return saveDashboard({ title: current.title, widgets: next.widgets, layout: next.layout, version: current.version }, board);
+}
+
+// ---- resizing a widget the user names (decision #54) ----
+const MAX_H = 30; // LayoutItem allows h up to 30 rows
+/** The sizes a widget type can take on a board, from its catalogue entry (12 columns wide; rows are ~40px). */
+export function widgetLimits(board, type) {
+  const size = BOARDS[board]?.catalog?.[type]?.size ?? {};
+  return { minW: size.minW ?? 1, maxW: COLS, minH: Math.max(size.minH ?? 2, 2), maxH: Math.min(size.maxH ?? MAX_H, MAX_H) };
+}
+
+/**
+ * Gives widget `id` a new width and/or height (in grid columns and rows), kept within what its type can show.
+ * It keeps its top-left corner, moving left only if it would run off the grid's right edge. Widgets it now covers
+ * are pushed down (and whatever they then cover, in turn); when it gets shorter, the widgets under it move up into
+ * the space. Nothing else moves. Pure; returns a new spec.
+ */
+export function resizeWidget(spec, id, { w, h } = {}, board = "default") {
+  const widget = spec.widgets.find((x) => x.id === id);
+  const old = spec.layout.find((l) => l.i === id);
+  if (!widget || !old) throw new Error("That widget is no longer on the dashboard.");
+  const lim = widgetLimits(board, widget.type);
+  const clamp = (v, lo, hi, fallback) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : fallback);
+  const nw = clamp(w, lim.minW, lim.maxW, old.w);
+  const nh = clamp(h, lim.minH, lim.maxH, old.h);
+  const item = { ...old, w: nw, h: nh, x: Math.min(old.x, COLS - nw) };
+  const layout = spec.layout.map((l) => (l.i === id ? item : { ...l }));
+  // Push down: go top to bottom, and drop each widget just below anything already settled that it overlaps.
+  const settled = [item];
+  for (const l of layout.filter((x) => x !== item).sort((a, b) => a.y - b.y || a.x - b.x)) {
+    let hit;
+    while ((hit = settled.filter((p) => overlaps(p, l))).length) l.y = Math.max(...hit.map((p) => p.y + p.h));
+    settled.push(l);
+  }
+  if (nh < old.h) closeGap(layout, { x: item.x, y: item.y + nh, w: Math.max(old.x + old.w, item.x + item.w) - Math.min(old.x, item.x), h: old.h - nh });
+  return { ...spec, layout };
+}
+
+/** Resizes one widget on a board and saves it as a new version (so Undo puts it back). */
+export async function resizeWidgetOnBoard(board, id, size) {
+  const current = await getDashboard(board);
+  const before = current.layout.find((l) => l.i === id);
+  const widget = current.widgets.find((x) => x.id === id);
+  if (!widget || !before) throw new Error("That widget is no longer on the dashboard.");
+  const next = resizeWidget(current, id, size, board);
+  const after = next.layout.find((l) => l.i === id);
+  const from = { w: before.w, h: before.h };
+  const to = { w: after.w, h: after.h };
+  const limited = (size.w != null && size.w !== to.w) || (size.h != null && size.h !== to.h);
+  const limits = widgetLimits(board, widget.type);
+  if (from.w === to.w && from.h === to.h) return { title: widget.title, version: current.version, from, to, limited, limits, unchanged: true };
+  const saved = await saveDashboard({ title: current.title, widgets: next.widgets, layout: next.layout, version: current.version }, board);
+  return { title: widget.title, version: saved.version, from, to, limited, limits, unchanged: false };
 }
 
 export async function resetDashboard(board = "default") {

@@ -113,3 +113,51 @@ test("the server refuses widgets from another board, and unknown boards", () => 
   assert.throws(() => checkBoard("sales", DEFAULT_SPEC), /can't go on/);
   assert.throws(() => checkBoard("marketing", DEFAULT_SPEC), /Unknown dashboard/);
 });
+
+// ---- the assistant resizes a widget you name (decision #54) ----
+const { resizeWidget, widgetLimits } = await import("../../server/dashboards.js");
+const at = (spec, id) => spec.layout.find((l) => l.i === id);
+const noOverlaps = (spec) => { for (const a of spec.layout) for (const b of spec.layout) if (a !== b) assert.equal(overlaps(a, b), false, `${a.i} overlaps ${b.i}`); };
+
+test("making a widget wider pushes the widgets it now covers down, and leaves the rest alone", () => {
+  const spec = structuredClone(DEFAULT_SALES_SPEC);
+  const next = resizeWidget(spec, "pipeline", { w: 12 }, "sales"); // x0 y13 w6 h10; reps sits beside it
+  assert.deepEqual(at(next, "pipeline"), { i: "pipeline", x: 0, y: 13, w: 12, h: 10 });
+  assert.ok(at(next, "reps").y >= 23, "reps moved below the wider pipeline");
+  for (const id of ["kpi-revenue", "revenue-trend", "by-category"]) assert.deepEqual(at(next, id), at(spec, id), `${id} didn't move`);
+  for (const l of next.layout) assert.ok(l.y >= at(spec, l.i).y, `${l.i} never moves up when something grows`);
+  noOverlaps(next);
+  assert.equal(DashboardSpec.safeParse(next).success, true);
+  assert.deepEqual(spec, DEFAULT_SALES_SPEC, "pure: the input is not changed");
+});
+
+test("a widget at the right edge grows to the left so it stays on the grid", () => {
+  const next = resizeWidget(structuredClone(DEFAULT_SALES_SPEC), "by-category", { w: 6 }, "sales"); // x8 w4
+  const item = at(next, "by-category");
+  assert.equal(item.w, 6);
+  assert.equal(item.x + item.w, 12);
+  noOverlaps(next);
+});
+
+test("making a widget shorter closes the gap under it", () => {
+  const spec = structuredClone(DEFAULT_SALES_SPEC);
+  const next = resizeWidget(spec, "revenue-trend", { h: 7 }, "sales"); // x0 y3 w8 h10; pipeline sits under it at y13
+  assert.equal(at(next, "revenue-trend").h, 7);
+  assert.equal(at(next, "pipeline").y, 10, "pipeline moved up into the space");
+  assert.deepEqual(at(next, "by-category"), at(spec, "by-category"));
+  noOverlaps(next);
+});
+
+test("sizes are kept within what the widget can show", () => {
+  const spec = structuredClone(DEFAULT_SALES_SPEC);
+  assert.deepEqual(widgetLimits("sales", "sales-kpi"), { minW: 2, maxW: 12, minH: 3, maxH: 4 });
+  assert.equal(at(resizeWidget(spec, "kpi-revenue", { h: 20 }, "sales"), "kpi-revenue").h, 4);
+  assert.equal(at(resizeWidget(spec, "kpi-revenue", { w: 1 }, "sales"), "kpi-revenue").w, 2);
+  assert.equal(at(resizeWidget(spec, "pipeline", { w: 40, h: 99 }, "sales"), "pipeline").w, 12);
+  assert.equal(at(resizeWidget(spec, "pipeline", { w: 40, h: 99 }, "sales"), "pipeline").h, 30);
+  assert.equal(at(resizeWidget(spec, "pipeline", { h: 1 }, "sales"), "pipeline").h, 6, "pipeline's minimum height");
+});
+
+test("resizing a widget that isn't there says so", () => {
+  assert.throws(() => resizeWidget(structuredClone(DEFAULT_SALES_SPEC), "nope", { w: 6 }, "sales"), /no longer on the dashboard/);
+});

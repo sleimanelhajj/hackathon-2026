@@ -1365,11 +1365,84 @@ a.agent-source:hover { border-color: var(--border-strong); background: var(--hov
 .cal-confirm p { font-size: 13.5px; line-height: 1.5; }
 .cal-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* Availability (decision #55): hours outside it are shaded; a request waiting for you is outlined, not filled */
+.schedule-page .rbc-time-slot.cal-off, .schedule-page .rbc-day-bg.cal-day-off, .cal-swatch.cal-off {
+  background-color: var(--subtle);
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--border) 6px 7px);
+}
+.schedule-page .rbc-day-bg.cal-day-off.rbc-today { background-color: var(--accent-subtle); }
+.schedule-page .rbc-event.cal-request, .cal-swatch.cal-request {
+  background: var(--surface-solid); color: var(--accent-text); border: 1.5px dashed var(--accent);
+}
+.schedule-page .rbc-time-view .rbc-time-content { scroll-behavior: smooth; }
+
+/* Meeting requests panel */
+.req-panel { display: flex; flex-direction: column; gap: 14px; }
+.req-list { display: flex; flex-direction: column; gap: 10px; }
+.req-card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px;
+  border-radius: var(--radius); background: var(--surface-solid); border: 1px solid var(--border);
+  animation: panel-in 220ms var(--ease);
+}
+.req-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--signal-subtle); color: var(--signal-text); }
+.req-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.req-text strong { font-size: 14px; }
+.req-time { color: var(--text); font-weight: 500; }
+.req-reason { align-self: flex-start; margin-top: 3px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--signal-subtle); color: var(--signal-text); }
+.req-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.req-confirm { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: var(--radius); background: var(--accent-subtle); }
+.req-confirm p { font-size: 13.5px; line-height: 1.5; margin: 0; }
+.req-confirm .agent-error { margin: 0; }
+.cal-details .req-confirm, .cal-details .req-actions { justify-content: flex-start; }
+.req-empty { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13.5px; color: var(--text-2); }
+.req-log { display: flex; flex-direction: column; gap: 6px; }
+.req-log-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
+.req-log ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.req-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 2px; border-top: 1px solid var(--border); }
+.req-row:first-child { border-top: 0; }
+.req-row-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--subtle); color: var(--text-2); }
+.req-row-icon[data-tone="ok"] { background: var(--success-subtle); color: var(--success); }
+.req-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13.5px; }
+.req-row-text .agent-error { margin: 4px 0 0; }
+.req-status[data-tone="ok"] { color: var(--success); font-weight: 500; }
+.req-status[data-tone="danger"] { color: var(--danger); font-weight: 500; }
+.req-status[data-tone="muted"] { color: var(--text-3); }
+.req-status[data-tone="warn"] { color: var(--signal-text); font-weight: 500; }
+.req-email summary { cursor: pointer; font-size: 12.5px; color: var(--accent-text); width: max-content; }
+.req-email pre {
+  margin: 6px 0 0; padding: 10px 12px; border-radius: var(--radius); background: var(--subtle); white-space: pre-wrap;
+  font: inherit; font-size: 13px; line-height: 1.5; color: var(--text-2);
+}
+
+/* Availability editor */
+.avail-modal .modal-body { max-height: calc(100vh - 50px); overflow-y: auto; overscroll-behavior: contain; }
+.avail-rules { list-style: none; margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--subtle); display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); }
+.avail-rules strong { color: var(--text); font-weight: 600; }
+.avail-section { display: flex; flex-direction: column; gap: 8px; }
+.avail-heading { font-size: 14px; font-weight: 600; margin: 0; }
+.avail-week, .avail-dates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.avail-day, .avail-date { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 0; border-top: 1px solid var(--border); }
+.avail-day:first-child, .avail-date:first-child { border-top: 0; }
+.avail-day > .muted { padding-top: 6px; }
+.avail-date { grid-template-columns: 170px minmax(0, 1fr) auto; }
+.avail-day-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.avail-slots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.avail-slot { display: inline-flex; align-items: center; gap: 4px; padding: 2px 2px 2px 4px; border-radius: var(--radius); background: var(--subtle); }
+.input-time { width: 132px; height: 32px; padding: 0 8px; }
+.input-date { height: 32px; padding: 0 8px; }
+.avail-off-tag { font-size: 12.5px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--subtle); color: var(--text-2); }
+.avail-add-date { align-self: flex-start; }
+.avail-problems { margin: 0; font-size: 13px; }
+.avail-problems p { margin: 0; }
+
 @media (max-width: 760px) {
   .cal-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cal-layout[data-has-details] { grid-template-columns: minmax(0, 1fr); }
   .cal-wrap { height: auto; min-height: 480px; padding: 10px; }
   .cal-details { position: static; }
+  .req-card { grid-template-columns: auto minmax(0, 1fr); }
+  .req-card > .req-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .avail-day, .avail-date { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
 
 /* ---------- On/off switch (auto-sync) ---------- */

@@ -53,10 +53,17 @@ test("threadInput gives each message its local send date and weekday, so 'Thursd
 test("a date the email mentions is kept when it is well-formed, and dropped when it isn't", () => {
   const base = { id: "t1", category: "scheduling", priority: "medium", needsReply: true, summary: "Site visit", reason: "asks to meet" };
   assert.deepEqual(parseResult({ ...base, when: { kind: "meeting", at: "2026-11-12T15:00", allDay: false, what: "Site visit in Jounieh" } }).when,
-    { kind: "meeting", at: "2026-11-12T15:00", allDay: false, what: "Site visit in Jounieh" });
+    { kind: "meeting", at: "2026-11-12T15:00", allDay: false, what: "Site visit in Jounieh", request: false });
   assert.equal(parseResult({ ...base, when: { kind: "deadline", at: "2026-11-13", allDay: true, what: "Send the quote" } }).when.at, "2026-11-13");
   assert.equal(parseResult({ ...base, when: { kind: "meeting", at: "next Thursday", allDay: false, what: "x" } }).when, null, "not a date: dropped, the rest kept");
   assert.equal(parseResult({ ...base, when: null }).when, null);
   assert.equal(parseResult(base).when, null);
   assert.ok(PROMPT_VERSION >= 4, "threads are re-sorted once to pick up dates");
+});
+
+test("a meeting time someone asks you for is marked as a request, so the schedule can answer it (decision #55)", () => {
+  const base = { id: "t1", category: "scheduling", priority: "medium", needsReply: true, summary: "Demo", reason: "asks to meet" };
+  assert.equal(parseResult({ ...base, when: { kind: "meeting", at: "2026-11-19T15:00", allDay: false, what: "Demo", request: true } }).when.request, true);
+  assert.equal(parseResult({ ...base, when: { kind: "meeting", at: "2026-11-19T15:00", allDay: false, what: "Demo" } }).when.request, false, "unknown means no");
+  assert.ok(PROMPT_VERSION >= 5, "threads are re-sorted once to pick up requests");
 });

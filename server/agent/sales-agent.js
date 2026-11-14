@@ -19,7 +19,7 @@ import { widgetSummary } from "./widget-builder.js";
 /** Lists the widgets on every dashboard, so the model can match "the plumbing chart" to an id. */
 export const LIST_WIDGETS_DECLARATION = {
   name: "list_dashboard_widgets",
-  description: "List the widgets on each dashboard (Sales and the email dashboard): board, id, title and kind. Call it before removing a widget, to find the one the user means.",
+  description: "List the widgets on each dashboard (Sales and the email dashboard): board, id, title, kind and current size (w = columns out of 12, h = rows). Call it before removing or resizing a widget, to find the one the user means.",
   parameters: { type: "OBJECT", properties: {} },
 };
 /** Removes one widget; the gap closes and the user can undo it from the chat. */
@@ -27,6 +27,22 @@ export const REMOVE_WIDGET_DECLARATION = {
   name: "remove_dashboard_widget",
   description: "Remove one widget from a dashboard. Use the board and id from list_dashboard_widgets. The widgets below it move up, and the user can undo it from the chat.",
   parameters: { type: "OBJECT", properties: { board: { type: "STRING", enum: ["sales", "default"] }, widgetId: { type: "STRING" } }, required: ["board", "widgetId"] },
+};
+
+/** Resizes one widget; widgets it now covers move down, and the user can undo it from the chat (decision #54). */
+export const RESIZE_WIDGET_DECLARATION = {
+  name: "resize_dashboard_widget",
+  description: "Change the size of one widget on a dashboard. Use the board, id and current size from list_dashboard_widgets. The grid is 12 columns wide: a quarter is 3, a third 4, half 6, two-thirds 8, full width 12. Height is in rows of about 40px: a number card is 3 to 4 rows, a chart usually 9 to 10. Give width, height or both; leave out what should stay the same. Each widget has a smallest (and for number cards a largest) size, and the result says if the request was limited. Widgets it now covers move down, and the user can undo it from the chat.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      board: { type: "STRING", enum: ["sales", "default"] },
+      widgetId: { type: "STRING" },
+      width: { type: "INTEGER", description: "New width in columns, 1 to 12." },
+      height: { type: "INTEGER", description: "New height in rows, 2 to 30." },
+    },
+    required: ["board", "widgetId"],
+  },
 };
 
 export const ADD_WIDGET_DECLARATION = {
@@ -65,7 +81,9 @@ DASHBOARD WIDGETS
 - When the user wants to see, chart, track or add something to the dashboard ("show me sales of the cordless drill", "add a chart of orders by branch", "put plumbing revenue on my dashboard"), call add_dashboard_widget with their request in plain words, including every detail they gave. Don't ask about chart types or axes: the builder chooses them.
 - Then tell them in one or two sentences what was added (its title and the headline figure from the result) and that it is on their Sales dashboard. Don't repeat the data as a list.
 - When the user wants a widget removed ("remove the plumbing chart", "delete the pipeline widget"), call list_dashboard_widgets, find the one they mean by its title, then call remove_dashboard_widget. If more than one could match, ask which one (name them); if none matches, say so and name what's there. Remove only what they asked for.
-- After removing, say what was removed in one sentence and that they can undo it from the chat.`;
+- After removing, say what was removed in one sentence and that they can undo it from the chat.
+- When the user wants a widget bigger, smaller, wider, taller, shorter, half or full width ("make the pipeline full width", "make revenue by month taller", "shrink the top products table"), call list_dashboard_widgets, find it by its title, work out the new width and/or height from its current size, then call resize_dashboard_widget. "Bigger" or "smaller" without a size means a clear step (about half again, or two-thirds); keep the other dimension unless they asked for both. Ask which one if more than one could match.
+- After resizing, say in one sentence what changed in plain words ("now full width", "a little taller"), not in columns or rows, and that they can undo it from the chat. If you resized several widgets in one go, say only the last change can be undone from the chat. If the result says it was limited, say it is as big (or small) as that widget goes. If nothing changed, say it is already that size.`;
 
 const MAX_RESULT_CHARS = 12_000;
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -80,6 +98,7 @@ const State = Annotation.Root({
   toolsUsed: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
   widgets: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
   removed: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
+  resized: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
   steps: Annotation({ reducer: (_, b) => b, default: () => 0 }),
   stopped: Annotation({ reducer: (_, b) => b, default: () => false }),
 });
@@ -105,12 +124,13 @@ const draftSummary = (d) => ({
  * @param deps.tools       { run(name, args), draftInvoice(args) }                (sales-tools.js)
  * @param deps.saveInvoice (draft) => public invoice with pdfUrl                  (stores the confirmed invoice)
  */
-export function createSalesAgent({ generate, tools, saveInvoice, addWidget = null, listWidgets = null, removeWidget = null, now = () => new Date(), maxSteps = 10, checkpointer = new MemorySaver() }) {
+export function createSalesAgent({ generate, tools, saveInvoice, addWidget = null, listWidgets = null, removeWidget = null, resizeWidget = null, now = () => new Date(), maxSteps = 10, checkpointer = new MemorySaver() }) {
   const declarations = [
     ...TOOL_DECLARATIONS,
     ...(addWidget ? [ADD_WIDGET_DECLARATION] : []),
     ...(listWidgets ? [LIST_WIDGETS_DECLARATION] : []),
     ...(removeWidget ? [REMOVE_WIDGET_DECLARATION] : []),
+    ...(resizeWidget ? [RESIZE_WIDGET_DECLARATION] : []),
   ];
   async function model(state) {
     if (state.steps >= maxSteps) {
@@ -129,6 +149,7 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
     const used = [];
     const widgets = [];
     const removed = [];
+    const resized = [];
     for (const { name, args, id } of calls) {
       let response;
       try {
@@ -138,6 +159,15 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
           const out = await removeWidget(String(args?.board ?? ""), String(args?.widgetId ?? ""));
           removed.push(out);
           response = { removed: true, board: out.board, title: out.title };
+        } else if (name === "resize_dashboard_widget" && resizeWidget) {
+          const size = {};
+          if (args?.width != null) size.w = Number(args.width);
+          if (args?.height != null) size.h = Number(args.height);
+          if (!("w" in size) && !("h" in size)) throw new Error("Give a width, a height, or both.");
+          const out = await resizeWidget(String(args?.board ?? ""), String(args?.widgetId ?? ""), size);
+          if (!out.unchanged) resized.push({ board: out.board, id: out.id, title: out.title, version: out.version, from: out.from, to: out.to, limited: Boolean(out.limited) });
+          response = { resized: !out.unchanged, board: out.board, title: out.title, from: out.from, to: out.to, limited: Boolean(out.limited),
+            ...(out.limits ? { limits: out.limits } : {}), ...(out.unchanged ? { note: "It is already that size; nothing changed." } : {}) };
         } else if (name === "add_dashboard_widget" && addWidget) {
           const out = await addWidget(String(args?.request ?? ""));
           const summary = widgetSummary(out.widget, out.preview);
@@ -156,7 +186,7 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
       }
       parts.push({ functionResponse: { ...(id ? { id } : {}), name, response } });
     }
-    return { contents: [{ role: "user", parts }], toolsUsed: used, widgets, removed, ...(pending ? { pending } : {}) };
+    return { contents: [{ role: "user", parts }], toolsUsed: used, widgets, removed, resized, ...(pending ? { pending } : {}) };
   }
 
   async function confirm(state) {
@@ -190,7 +220,7 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
     const lastModel = [...snap.values.contents].reverse().find((c) => c.role === "model");
     let reply = textOf(lastModel);
     if (draft) reply = reply && !callsIn(lastModel).length ? reply : "Here's the invoice draft. Please review the customer, items and total, then confirm to create the PDF, or tell me what to change.";
-    return { reply: reply || "Done.", pendingInvoice: draft, invoice: draft ? null : snap.values.invoice, toolsUsed: [...new Set(snap.values.toolsUsed)], widgets: snap.values.widgets ?? [], removed: snap.values.removed ?? [] };
+    return { reply: reply || "Done.", pendingInvoice: draft, invoice: draft ? null : snap.values.invoice, toolsUsed: [...new Set(snap.values.toolsUsed)], widgets: snap.values.widgets ?? [], removed: snap.values.removed ?? [], resized: snap.values.resized ?? [] };
   }
 
   async function waitingFor(config) {
@@ -199,7 +229,7 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
   }
 
   /** Each turn starts fresh bookkeeping (steps, tools used, last invoice); the conversation itself is kept. */
-  const turnStart = { steps: 0, stopped: false, invoice: null, toolsUsed: null, widgets: null, removed: null };
+  const turnStart = { steps: 0, stopped: false, invoice: null, toolsUsed: null, widgets: null, removed: null, resized: null };
 
   return {
     graph,

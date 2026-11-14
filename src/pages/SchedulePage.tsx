@@ -5,10 +5,13 @@ import dayjs from "dayjs";
 import "dayjs/locale/en-gb"; // weeks start on Monday
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import {
-  AlertTriangle, ArrowRight, CalendarCheck2, CalendarDays, CheckCircle2, Clock, ExternalLink, Info, Loader2, Mail, MapPin, RefreshCw, Reply, ShieldCheck, Users, X,
+  AlertTriangle, ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, CheckCircle2, CircleHelp, Clock, ExternalLink, Info, Loader2, Mail, MapPin, RefreshCw, Reply, ShieldCheck, SlidersHorizontal, Users, X,
 } from "lucide-react";
-import { api, type ScheduleItem, type ScheduleSyncResult } from "../lib/api";
-import { Callout } from "../components/ui";
+import { api, type MeetingRequest, type ScheduleItem, type ScheduleSyncResult } from "../lib/api";
+import { Callout, Panel } from "../components/ui";
+import { AvailabilityEditor } from "../schedule/AvailabilityEditor";
+import { MeetingRequests, RequestDecision } from "../schedule/MeetingRequests";
+import { isOff, rangesOn } from "../schedule/availability";
 import { PageSkeleton } from "../components/Skeletons";
 import { useViewer } from "../components/EmailViewer";
 import { useReply } from "../components/ReplyModal";
@@ -35,9 +38,19 @@ const when = (item: ScheduleItem) => {
   return `${day}, ${t(s)}–${t(e)}`;
 };
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+/**
+ * Where an event ends on the calendar. A timed event ending exactly at midnight (e.g. 23:00–00:00) would count as
+ * spanning two days and jump to the all-day row, so it ends a moment before midnight instead.
+ */
+const endOf = (item: ScheduleItem) => {
+  const end = new Date(item.end);
+  const atMidnight = end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0;
+  return !item.allDay && atMidnight && end > new Date(item.start) && !sameDay(new Date(item.start), end) && sameDay(new Date(item.start), new Date(end.getTime() - 1))
+    ? new Date(end.getTime() - 1) : end;
+};
 
 function EventChip({ event }: EventProps<CalEvent>) {
-  const Icon = KIND[event.item.kind].icon;
+  const Icon = event.item.request?.status === "pending" ? CircleHelp : KIND[event.item.kind].icon;
   return (
     <span className="cal-chip">
       <Icon size={12} aria-hidden />
@@ -47,7 +60,7 @@ function EventChip({ event }: EventProps<CalEvent>) {
 }
 
 /** The selected item: what it is, why it's on the schedule, and what to do. */
-function Details({ item, onClose }: { item: ScheduleItem; onClose: () => void }) {
+function Details({ item, request, onClose }: { item: ScheduleItem; request?: MeetingRequest; onClose: () => void }) {
   const Icon = KIND[item.kind].icon;
   return (
     <section className="cal-details surface" role="region" aria-label={item.title}>
@@ -55,7 +68,7 @@ function Details({ item, onClose }: { item: ScheduleItem; onClose: () => void })
         <span className="cal-details-icon" data-kind={item.kind} data-priority={item.priority}><Icon size={18} aria-hidden /></span>
         <div>
           <span className="cal-details-kind">
-            {KIND[item.kind].label}{item.priority && item.kind === "reply" ? ` · ${PRIORITY[item.priority]}` : ""}{item.overdue ? " · Overdue" : ""}
+            {item.request?.status === "pending" ? "Meeting request · Waiting for you" : KIND[item.kind].label}{item.priority && item.kind === "reply" ? ` · ${PRIORITY[item.priority]}` : ""}{item.overdue ? " · Overdue" : ""}
           </span>
           <h2>{item.title}</h2>
           <p className="muted small">{when(item)}</p>
@@ -66,6 +79,7 @@ function Details({ item, onClose }: { item: ScheduleItem; onClose: () => void })
       {item.summary && <p className="cal-summary"><span className="muted small">About</span>{item.summary}</p>}
       {item.suggestedAction && <p className="cal-summary"><span className="muted small">Next step</span>{item.suggestedAction}</p>}
       {item.location && <p className="cal-meta"><MapPin size={14} aria-hidden /> {item.location}</p>}
+      {request?.status === "pending" && <RequestDecision request={request} />}
       <div className="cal-actions">
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => useViewer.getState().open(item.threadId)}><Mail size={14} aria-hidden /> Read the email</button>
         {item.kind !== "meeting" && (
@@ -111,26 +125,34 @@ export default function SchedulePage() {
   const [selected, setSelected] = useState<ScheduleItem | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<ScheduleSyncResult | null>(null);
+  const [editing, setEditing] = useState(false);
   const sync = useMutation({
     mutationFn: () => api.syncSchedule(TZ),
     onSuccess: (r) => { setResult(r); setConfirming(false); void qc.invalidateQueries({ queryKey: ["schedule"] }); },
   });
 
-  const events = useMemo<CalEvent[]>(() => (data?.items ?? []).map((item) => ({ id: item.id, title: item.title, start: new Date(item.start), end: new Date(item.end), allDay: item.allDay, item })), [data]);
+  const events = useMemo<CalEvent[]>(() => (data?.items ?? []).map((item) => ({ id: item.id, title: item.title, start: new Date(item.start), end: endOf(item), allDay: item.allDay, item })), [data]);
+  const meetings = data?.meetings;
+  const requests = useMemo(() => meetings?.requests ?? [], [meetings]);
+  const pending = requests.filter((r) => r.status === "pending").length;
   const stats = useMemo(() => {
     const now = new Date();
     const items = data?.items ?? [];
-    const weekEnd = dayjs(now).endOf("week").toDate();
     return {
       today: items.filter((i) => sameDay(new Date(i.start), now)).length,
       overdue: items.filter((i) => i.overdue).length,
-      week: items.filter((i) => new Date(i.start) >= now && new Date(i.start) <= weekEnd).length,
-      meetings: items.filter((i) => i.kind === "meeting" && new Date(i.start) >= now).length,
+      meetings: items.filter((i) => i.kind === "meeting" && i.request?.status !== "pending" && new Date(i.start) >= now).length,
     };
   }, [data]);
   const eventProps = useCallback((e: CalEvent) => ({
-    className: `cal-event cal-${e.item.kind}${e.item.priority ? ` cal-p-${e.item.priority}` : ""}${e.item.overdue ? " cal-overdue" : ""}`,
+    className: `cal-event cal-${e.item.kind}${e.item.priority ? ` cal-p-${e.item.priority}` : ""}${e.item.overdue ? " cal-overdue" : ""}${e.item.request?.status === "pending" ? " cal-request" : ""}`,
   }), []);
+  // Hours outside the user's availability are shaded (the default office hours until they set their own).
+  const avail = meetings?.availability ?? meetings?.defaultAvailability ?? null;
+  const slotProps = useCallback((d: Date) => (avail && isOff(avail, d) ? { className: "cal-off" } : {}), [avail]);
+  const dayProps = useCallback((d: Date) => (avail && !rangesOn(avail, d).length ? { className: "cal-day-off" } : {}), [avail]);
+  // The whole day is there; it opens an hour before now (between midnight and 16:00) so the current time is in view.
+  const scrollTo = useMemo(() => new Date(1970, 0, 1, Math.max(0, Math.min(new Date().getHours() - 1, 16))), []);
   const onSelect = useCallback((e: CalEvent) => setSelected(e.item), []);
 
   if (isLoading) return <PageSkeleton kind="data" />;
@@ -157,6 +179,9 @@ export default function SchedulePage() {
           <p className="page-sub">Your week, planned from your email. Urgent replies 2 hours after they arrive, normal ones the next working morning.</p>
         </div>
         <div className="head-actions cal-head-actions">
+          {meetings && (
+            <button type="button" className="btn btn-secondary" onClick={() => setEditing(true)}><SlidersHorizontal size={15} aria-hidden /> Availability</button>
+          )}
           {cal?.canSync ? (
             <button type="button" className="btn btn-primary" onClick={() => { setResult(null); setConfirming(true); }} disabled={data.sample || !data.items.length || sync.isPending}
               title={data.sample ? "Sample data can't be synced" : undefined}>
@@ -168,6 +193,14 @@ export default function SchedulePage() {
         </div>
       </header>
 
+      {editing && meetings && (
+        <AvailabilityEditor initial={meetings.availability ?? meetings.defaultAvailability} firstTime={!meetings.availability} onClose={() => setEditing(false)} />
+      )}
+      {meetings && !meetings.availability && (
+        <Callout icon={<CalendarClock size={18} />} title="Set your availability"
+          text="Then meeting requests are answered for you: a time that has passed or clashes gets an automatic reply with your free times, and a time outside your hours waits here for you to accept or decline."
+          action={<button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(true)}><CalendarClock size={14} aria-hidden /> Set availability</button>} />
+      )}
       {confirming && cal && <SyncConfirm count={data.items.length} calendarName={cal.name} busy={sync.isPending} onConfirm={() => sync.mutate()} onCancel={() => setConfirming(false)} />}
       {sync.error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Couldn't sync" text={(sync.error as Error).message} />}
       {result && (
@@ -183,9 +216,16 @@ export default function SchedulePage() {
       <ul className="cal-stats" aria-label="Schedule summary">
         <li><strong className="num">{stats.today}</strong><span>Today</span></li>
         <li data-tone={stats.overdue ? "warn" : undefined}><strong className="num">{stats.overdue}</strong><span>Overdue</span></li>
-        <li><strong className="num">{stats.week}</strong><span>Rest of this week</span></li>
+        <li data-tone={pending ? "warn" : undefined}><strong className="num">{pending}</strong><span>Requests waiting</span></li>
         <li><strong className="num">{stats.meetings}</strong><span>Meetings ahead</span></li>
       </ul>
+
+      {meetings?.availability && (
+        <Panel id="meeting-requests" title="Meeting requests" count={pending}
+          subtitle={pending ? "Waiting for your answer" : "Answered by your availability rules"}>
+          <MeetingRequests requests={requests} dryRun={meetings.dryRun} />
+        </Panel>
+      )}
 
       <div className="cal-layout" data-has-details={Boolean(selected) || undefined}>
         <div className="cal-wrap surface">
@@ -197,9 +237,12 @@ export default function SchedulePage() {
             date={date}
             onNavigate={setDate}
             views={[Views.MONTH, Views.WEEK, Views.DAY, Views.AGENDA]}
-            min={new Date(1970, 0, 1, 8)}
-            max={new Date(1970, 0, 1, 20)}
-            scrollToTime={new Date(1970, 0, 1, 8)}
+            min={new Date(1970, 0, 1, 0, 0)}
+            max={new Date(1970, 0, 1, 23, 59, 59)}
+            scrollToTime={scrollTo}
+            dayLayoutAlgorithm="no-overlap" /* items at the same time share the width side by side, never stack */
+            slotPropGetter={slotProps}
+            dayPropGetter={dayProps}
             step={30}
             timeslots={2}
             popup
@@ -210,7 +253,7 @@ export default function SchedulePage() {
             messages={{ today: "Today", previous: "Back", next: "Next", agenda: "List", noEventsInRange: "Nothing scheduled in this period." }}
           />
         </div>
-        {selected && <Details item={selected} onClose={() => setSelected(null)} />}
+        {selected && <Details item={selected} request={requests.find((r) => r.id === selected.request?.id)} onClose={() => setSelected(null)} />}
       </div>
 
       <ul className="cal-legend" aria-label="Colour key">
@@ -219,8 +262,13 @@ export default function SchedulePage() {
         <li><span className="cal-swatch cal-follow-up" aria-hidden /> Follow-up</li>
         <li><span className="cal-swatch cal-meeting" aria-hidden /> Meeting</li>
         <li><span className="cal-swatch cal-deadline" aria-hidden /> Deadline</li>
+        <li><span className="cal-swatch cal-request" aria-hidden /> Meeting request, waiting for you</li>
+        <li><span className="cal-swatch cal-off" aria-hidden /> Outside your hours</li>
       </ul>
-      <p className="cal-note"><Info size={14} aria-hidden /> Built from {data.analysis?.analysed ?? 0} conversations sorted by AI. Times are suggestions in working hours (Mon–Fri, 9:00–18:00); meetings and deadlines read from email text can be wrong, so check them.</p>
+      <p className="cal-note">
+        <Info size={14} aria-hidden /> Built from {data.analysis?.analysed ?? 0} conversations sorted by AI. Reply times are suggestions inside{" "}
+        {meetings?.availability ? "your available hours" : "office hours (Mon–Fri, 9:00–18:00) until you set your availability"}; meetings and deadlines read from email text can be wrong, so check them.
+      </p>
     </div>
   );
 }

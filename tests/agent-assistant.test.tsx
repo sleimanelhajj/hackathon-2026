@@ -40,7 +40,7 @@ const invoice: InvoiceDraft = {
   status: "draft", readiness: { ready: true, reasons: [] }, pdfUrl: "/api/invoices/invoice-1/pdf",
 };
 
-const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, invoice: null, toolsUsed: [], widgets: [], removed: [], ...extra });
+const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, invoice: null, toolsUsed: [], widgets: [], removed: [], resized: [], ...extra });
 
 async function ask(text: string) {
   fireEvent.change(screen.getByRole("textbox", { name: "Ask the assistant" }), { target: { value: text } });
@@ -159,6 +159,23 @@ test("a widget the assistant removed shows a card with Undo, which only restores
   await waitFor(() => expect(undo).toHaveBeenCalledWith("sales"));
   expect(await within(card).findByText("Put back on Sales dashboard")).toBeTruthy();
   expect(spec).toHaveBeenCalledWith("sales");
+});
+
+test("a widget the assistant resized shows what changed, refreshes that board, and Undo puts the old size back", async () => {
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({
+    reply: "The **Pipeline** is now full width.",
+    resized: [{ board: "sales", id: "pipeline", title: "Pipeline", version: 7, from: { w: 6, h: 10 }, to: { w: 12, h: 10 }, limited: false }],
+  }));
+  vi.spyOn(api, "spec").mockResolvedValue({ version: 7 } as never);
+  const undo = vi.spyOn(api, "undoSpec").mockResolvedValue({} as never);
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("make the pipeline full width");
+  const card = await screen.findByRole("region", { name: "Resized Pipeline" });
+  expect(within(card).getByText("Now full width on Sales dashboard")).toBeTruthy();
+  fireEvent.click(within(card).getByRole("button", { name: /Undo/ }));
+  await waitFor(() => expect(undo).toHaveBeenCalledWith("sales"));
+  expect(await within(card).findByText("Back to its old size")).toBeTruthy();
 });
 
 test("Change something hands the draft back to the conversation", async () => {

@@ -7,9 +7,10 @@
 //              working morning, low within 3 working days; never after a deadline the email mentions
 //   follow-up  a thread where the user wrote last: 3 working days later, if they haven't heard back
 //
-// Tasks are 30-minute blocks in working hours (Mon–Fri, 9:00–18:00 in the user's time zone). They never overlap a
+// Tasks are 30-minute blocks in the user's available hours (default Mon–Fri 9:00–18:00, their time zone). They never overlap a
 // meeting or each other: each takes the first free slot at or after its target time. A target that has already passed
 // moves to the next free slot from now and is marked overdue. Automated mail and newsletters are left out.
+// A meeting someone asks for follows the request rules in meetings.js (decision #55): declined ones stay off.
 // Everything here is pure; loadSchedule() at the bottom reads the data from MongoDB.
 
 const MIN = 60e3;
@@ -17,35 +18,13 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const SLOT = 30 * MIN;
 const START_HOUR = 9;
-const END_HOUR = 18;
 const WINDOW_BACK = 14 * DAY;
 const WINDOW_AHEAD = 60 * DAY;
 
-// ---------- time zones (no library: Intl knows every zone) ----------
-const fmtCache = new Map();
-function formatter(tz) {
-  if (!fmtCache.has(tz)) {
-    fmtCache.set(tz, new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", weekday: "short" }));
-  }
-  return fmtCache.get(tz);
-}
-/** Wall-clock parts of `date` in `tz`: { y, m (1-12), d, h, min, dow ("Mon".."Sun") }. */
-export function zonedParts(date, tz) {
-  const p = Object.fromEntries(formatter(tz).formatToParts(date).map((x) => [x.type, x.value]));
-  return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour % 24, min: +p.minute, dow: p.weekday };
-}
-/** The instant when the wall clock in `tz` shows { y, m, d, h, min }. */
-export function fromZoned({ y, m, d, h = 0, min = 0 }, tz) {
-  const want = Date.UTC(y, m - 1, d, h, min);
-  let guess = want;
-  for (let i = 0; i < 3; i++) {
-    const p = zonedParts(new Date(guess), tz);
-    const diff = Date.UTC(p.y, p.m - 1, p.d, p.h, p.min) - want;
-    if (!diff) break;
-    guess -= diff;
-  }
-  return new Date(guess);
-}
+// ---------- time zones (server/time.js) ----------
+import { fromZoned, zonedParts } from "./time.js";
+import { DEFAULT_AVAILABILITY, nextAvailableTime, requestKey, slotsOn } from "./meetings.js";
+export { fromZoned, zonedParts };
 /** "2026-11-12T15:00" (wall clock in tz) → Date; null if it isn't a valid local date-time. */
 function parseLocal(value, tz) {
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(String(value ?? ""));
@@ -54,32 +33,15 @@ function parseLocal(value, tz) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-const WEEKEND = new Set(["Sat", "Sun"]);
-const isWorking = (date, tz) => {
-  const p = zonedParts(date, tz);
-  return !WEEKEND.has(p.dow) && p.h >= START_HOUR && (p.h < END_HOUR) && !(p.h === END_HOUR - 1 && p.min > 30);
-};
-/** The same moment if it's in working hours (with room for a 30-minute task), else the next working day at 9:00. */
-function nextWorkingTime(date, tz) {
-  if (isWorking(date, tz)) return date;
-  let p = zonedParts(date, tz);
-  let day = fromZoned({ y: p.y, m: p.m, d: p.d, h: START_HOUR }, tz);
-  if (p.h >= START_HOUR) day = new Date(day.getTime() + DAY); // after hours: tomorrow
-  for (let i = 0; i < 7; i++) {
-    p = zonedParts(day, tz);
-    if (!WEEKEND.has(p.dow)) return fromZoned({ y: p.y, m: p.m, d: p.d, h: START_HOUR }, tz);
-    day = new Date(day.getTime() + DAY);
-  }
-  return day;
-}
-/** `n` working days after `date`, at `hour` local time. */
-function addWorkingDays(date, n, hour, tz) {
-  let p = zonedParts(date, tz);
+/** `n` available days after `date` (days with any available hours), at `hour` local time. */
+function addWorkingDays(date, n, hour, tz, avail) {
+  let p = zonedParts(date, tz, avail);
   let day = fromZoned({ y: p.y, m: p.m, d: p.d, h: 12 }, tz);
   let left = n;
-  while (left > 0) {
-    day = new Date(day.getTime() + DAY);
-    if (!WEEKEND.has(zonedParts(day, tz).dow)) left--;
+  for (let guard = 0; left > 0 && guard < 60; guard++) {
+    p = zonedParts(day, tz);
+    day = fromZoned({ y: p.y, m: p.m, d: p.d + 1, h: 12 }, tz);
+    if (slotsOn(avail, day, tz).length) left--;
   }
   p = zonedParts(day, tz);
   return fromZoned({ y: p.y, m: p.m, d: p.d, h: hour }, tz);
@@ -99,8 +61,26 @@ const safeId = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replac
  * @param invites  parsed calendar invites: { gmailId, threadId, summary, start, end, location }
  * @returns {{ items: object[], timeZone: string, generatedAt: Date }}
  */
-export function buildSchedule({ messages, labels = [], invites = [], now = new Date(), tz = "Asia/Beirut", account = "" }) {
+export function buildSchedule({ messages, labels = [], invites = [], now = new Date(), tz = "Asia/Beirut", account = "", availability = DEFAULT_AVAILABILITY, requests = new Map() }) {
   const nowMs = now.getTime();
+  const avail = availability ?? DEFAULT_AVAILABILITY;
+  const nextWorkingTime = (date) => nextAvailableTime(avail, date, SLOT, tz);
+  // A meeting someone asked for has a decision (server/meeting-data.js): declined ones stay off the calendar, one
+  // waiting for the user shows as a request and doesn't block tasks. `null` = show it as an ordinary meeting.
+  const REASON = { outside: "it's outside your availability", past: "its time has passed", clash: "it clashes with another meeting" };
+  const decide = (threadId, start, item) => {
+    const rec = requests.get(requestKey(threadId, start)) ?? requests.get(`thread|${threadId}`);
+    if (!rec) return item;
+    const request = { id: rec._id, status: rec.status, reason: rec.reason ?? null };
+    if (rec.status === "accepted" || rec.status === "confirmed") {
+      const how = rec.status === "confirmed" ? " You accepted it and told them you're available." : "";
+      return { ...item, request, why: `${item.why}${how}` };
+    }
+    if (rec.status === "pending") {
+      return { ...item, request, blocking: false, why: `A meeting request from ${item.contact ?? "someone"}, waiting for you to accept or decline: ${REASON[rec.reason] ?? "it needs your answer"}.` };
+    }
+    return null; // auto-declined, declined or replaced by a newer time
+  };
   const byThread = new Map();
   for (const m of [...messages].sort((a, b) => a.date - b.date)) {
     if (!byThread.has(m.threadId)) byThread.set(m.threadId, []);
@@ -117,11 +97,12 @@ export function buildSchedule({ messages, labels = [], invites = [], now = new D
     const end = inv.end ? new Date(inv.end) : new Date(start.getTime() + HOUR);
     const thread = byThread.get(inv.threadId) ?? [];
     const m = thread.find((x) => x.gmailId === inv.gmailId) ?? thread.at(-1);
-    fixed.push({
+    const invite = decide(inv.threadId, start, {
       id: safeId(`invite-${inv.gmailId}-${start.getTime()}`), kind: "meeting", source: "invite", title: inv.summary || m?.subject || "Meeting",
       start, end, blocking: true, location: inv.location ?? null, threadId: inv.threadId, link: m ? gmailLink(m) : null,
       contact: m ? nameOf(m.from) : null, why: `From the calendar invite attached to the email${m ? ` from ${nameOf(m.from)}` : ""}.`,
     });
+    if (invite) fixed.push(invite);
   }
 
   for (const [threadId, list] of byThread) {
@@ -141,9 +122,11 @@ export function buildSchedule({ messages, labels = [], invites = [], now = new D
     if (whenAt && !list.some((m) => m.hasCalendarInvite && invites.some((i) => i.threadId === threadId))) {
       const span = allDay ? DAY : when.kind === "meeting" ? HOUR : SLOT;
       if (when.kind === "meeting") {
-        fixed.push({ ...base, id: safeId(`meeting-${threadId}`), kind: "meeting", source: "email-text", title: when.what || `Meeting with ${contact}`,
+        const meeting = { ...base, id: safeId(`meeting-${threadId}`), kind: "meeting", source: "email-text", title: when.what || `Meeting with ${contact}`,
           start: whenAt, end: new Date(whenAt.getTime() + span), allDay, blocking: !allDay,
-          why: `A meeting mentioned in the email from ${contact}: "${when.what}". The time was read by AI from the text, so check it.` });
+          why: `A meeting mentioned in the email from ${contact}: "${when.what}". The time was read by AI from the text, so check it.` };
+        const decided = when.request && !allDay ? decide(threadId, whenAt, meeting) : meeting;
+        if (decided) fixed.push(decided);
       } else {
         deadline = allDay ? new Date(whenAt.getTime() + 17 * HOUR) : whenAt;
         fixed.push({ ...base, id: safeId(`deadline-${threadId}`), kind: "deadline", source: "email-text", title: `Due: ${when.what || base.subject}`,
@@ -157,8 +140,8 @@ export function buildSchedule({ messages, labels = [], invites = [], now = new D
       const priority = l.priority ?? "medium";
       let target, rule;
       if (priority === "high") { target = new Date(received.getTime() + 2 * HOUR); rule = `Urgent: 2 hours after ${contact}'s email arrived (${clock(received, tz)})`; }
-      else if (priority === "medium") { target = addWorkingDays(received, 1, 10, tz); rule = `Normal priority: the working morning after ${contact}'s email arrived`; }
-      else { target = addWorkingDays(received, 3, 10, tz); rule = `Low priority: within 3 working days of ${contact}'s email`; }
+      else if (priority === "medium") { target = addWorkingDays(received, 1, 10, tz, avail); rule = `Normal priority: the working morning after ${contact}'s email arrived`; }
+      else { target = addWorkingDays(received, 3, 10, tz, avail); rule = `Low priority: within 3 working days of ${contact}'s email`; }
       if (deadline && target.getTime() + SLOT > deadline.getTime()) {
         target = new Date(Math.max(received.getTime(), deadline.getTime() - 2 * HOUR));
         rule = `${rule.split(":")[0]}: 2 hours before the deadline the email mentions`;
@@ -166,7 +149,7 @@ export function buildSchedule({ messages, labels = [], invites = [], now = new D
       tasks.push({ ...base, id: safeId(`reply-${threadId}`), kind: "reply", priority, title: `Reply to ${contact}`, target, rule, deadline });
     } else if (last.direction === "out" && human(last) && (!lastIn || human(lastIn))) {
       tasks.push({ ...base, id: safeId(`follow-up-${threadId}`), kind: "follow-up", priority: "low", title: `Follow up with ${contact}`,
-        target: addWorkingDays(last.date, 3, START_HOUR, tz), rule: `You wrote last (${clock(last.date, tz)}); follow up after 3 working days without a reply`, duration: SLOT });
+        target: addWorkingDays(last.date, 3, START_HOUR, tz, avail), rule: `You wrote last (${clock(last.date, tz)}); follow up after 3 working days without a reply`, duration: SLOT });
     }
   }
 
@@ -186,9 +169,9 @@ export function buildSchedule({ messages, labels = [], invites = [], now = new D
   const placed = [];
   for (const t of tasks) {
     const overdue = t.target.getTime() < nowMs;
-    let start = nextWorkingTime(overdue ? now : t.target, tz);
+    let start = nextWorkingTime(overdue ? now : t.target);
     const moved = start.getTime() !== t.target.getTime() && !overdue;
-    for (let i = 0; i < 400 && overlaps(start.getTime(), start.getTime() + SLOT); i++) start = nextWorkingTime(new Date(start.getTime() + SLOT), tz);
+    for (let i = 0; i < 400 && overlaps(start.getTime(), start.getTime() + SLOT); i++) start = nextWorkingTime(new Date(start.getTime() + SLOT));
     const end = new Date(start.getTime() + SLOT);
     busy.push([start.getTime(), end.getTime()]);
     const why = overdue
@@ -202,4 +185,37 @@ export function buildSchedule({ messages, labels = [], invites = [], now = new D
     .filter((i) => i.start.getTime() >= nowMs - WINDOW_BACK && i.start.getTime() <= nowMs + WINDOW_AHEAD)
     .sort((a, b) => a.start - b.start);
   return { items, timeZone: tz, generatedAt: now, account };
+}
+
+/**
+ * The meetings someone else asked the user for (decision #55): a timed meeting the AI marked as a request in the
+ * latest email from another person, or a calendar invite in an email from another person. Automated mail never counts.
+ * Each has a `key` (requestKey) so its decision can be found again.
+ */
+export function collectRequests({ messages, labels = [], invites = [], tz = "Asia/Beirut" }) {
+  const human = (m) => !m.isAutomated && !m.isBulk;
+  const byThread = new Map();
+  for (const m of [...messages].sort((a, b) => a.date - b.date)) {
+    if (!byThread.has(m.threadId)) byThread.set(m.threadId, []);
+    byThread.get(m.threadId).push(m);
+  }
+  const out = [];
+  for (const l of labels) {
+    const when = l.when;
+    if (!when || when.kind !== "meeting" || !when.request || when.allDay || !/T\d{2}:\d{2}$/.test(String(when.at)) || l.category === "automated") continue;
+    const lastIn = [...(byThread.get(l.threadId) ?? [])].reverse().find((m) => m.direction === "in");
+    if (!lastIn || !human(lastIn)) continue;
+    const start = parseLocal(when.at, tz);
+    if (!start) continue;
+    out.push({ key: requestKey(l.threadId, start), threadId: l.threadId, gmailId: lastIn.gmailId, source: "email-text", title: when.what || `Meeting with ${nameOf(lastIn.from)}`,
+      contact: nameOf(lastIn.from), start, end: new Date(start.getTime() + HOUR), receivedAt: lastIn.date });
+  }
+  for (const inv of invites) {
+    const m = (byThread.get(inv.threadId) ?? []).find((x) => x.gmailId === inv.gmailId);
+    if (!m || m.direction !== "in" || !human(m) || !inv.start) continue;
+    const start = new Date(inv.start);
+    out.push({ key: requestKey(inv.threadId, start), threadId: inv.threadId, gmailId: inv.gmailId, source: "invite", title: inv.summary || m.subject || "Meeting",
+      contact: nameOf(m.from), start, end: inv.end ? new Date(inv.end) : new Date(start.getTime() + HOUR), receivedAt: m.date });
+  }
+  return out;
 }

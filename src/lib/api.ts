@@ -106,7 +106,11 @@ export type AssistantReply = {
   widgets: AddedWidget[];
   /** Widgets the assistant removed; `version` is the board's version right after, so Undo can check nothing changed. */
   removed: { board: Board; id: string; title: string; version: number }[];
+  /** Widgets the assistant resized (sizes in grid columns and rows); `limited` means the widget can't go further. */
+  resized: ResizedWidget[];
 };
+
+export type ResizedWidget = { board: Board; id: string; title: string; version: number; from: { w: number; h: number }; to: { w: number; h: number }; limited: boolean };
 
 /** One item of the email schedule (GET /api/schedule). Dates are ISO strings. */
 export type ScheduleItem = {
@@ -128,7 +132,32 @@ export type ScheduleItem = {
   dueAt?: string | null;
   allDay?: boolean;
   location?: string | null;
+  /** Set for a meeting someone asked for (decision #55). */
+  request?: { id: string; status: MeetingRequest["status"]; reason: MeetingRequest["reason"] };
 };
+
+/** Wall-clock time slots ["09:00", "12:00"] per weekday, plus changes for dates ("2026-11-20": [] is a day off). */
+export type Weekday = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
+export type Availability = { weekly: Record<Weekday, [string, string][]>; dates: Record<string, [string, string][]> };
+
+/** A meeting someone asked for, and what happened to it. */
+export type MeetingRequest = {
+  id: string;
+  threadId: string;
+  title: string;
+  contact: string | null;
+  source: "email-text" | "invite";
+  start: string;
+  end: string;
+  receivedAt: string;
+  status: "pending" | "accepted" | "confirmed" | "auto-declined" | "declined" | "superseded";
+  reason: "past" | "clash" | "outside" | "before-setup" | null;
+  clashWith: string | null;
+  decidedAt: string;
+  decidedBy: "rules" | "user";
+  email: { kind: "past" | "clash" | "declined" | "accepted"; body: string; sentAt: string | null; error: string | null; dryRun: boolean } | null;
+};
+
 export type Schedule = {
   connected: boolean;
   sample?: boolean;
@@ -138,6 +167,16 @@ export type Schedule = {
   items: ScheduleItem[];
   analysis?: { status: string | null; analysed: number };
   calendar?: { canSync: boolean; name: string; lastSyncAt: string | null; syncedCount: number };
+  meetings?: {
+    /** null until the user saves it; after that, meeting requests are answered. */
+    availability: Availability | null;
+    defaultAvailability: Availability;
+    timeZone: string;
+    activatedAt: string | null;
+    /** Replies are recorded but not sent (sample data, or MEETING_EMAILS=dry-run). */
+    dryRun: boolean;
+    requests: MeetingRequest[];
+  };
 };
 export type ScheduleSyncResult = { created: number; updated: number; unchanged: number; removed: number; failed: number; total: number; calendarName: string; calendarId: string };
 
@@ -455,6 +494,25 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approved: true, tz }),
+    }),
+  saveAvailability: (availability: Availability, tz: string) =>
+    request<{ ok: true }>("/api/meetings/availability", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ availability, tz }),
+    }),
+  /** Sends an email to the person who asked, so only from the request card's confirm step. */
+  answerMeetingRequest: (id: string, accept: boolean) =>
+    request<MeetingRequest>(`/api/meetings/requests/${encodeURIComponent(id)}/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accept, approved: true }),
+    }),
+  retryMeetingEmail: (id: string) =>
+    request<MeetingRequest>(`/api/meetings/requests/${encodeURIComponent(id)}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved: true }),
     }),
   salesCustom: (query: Extract<Widget, { type: "sales-custom" }>["query"]) =>
     request<CustomResult>("/api/sales/custom", {

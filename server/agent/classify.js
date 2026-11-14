@@ -19,7 +19,7 @@ import { generateJson, geminiConfigured, geminiModel } from "./llm.js";
 import { READER_VERSION, attachmentsText, messageBody } from "./content.js";
 
 // 3 = reads bodies and attachment text. (2 was used by another branch writing to the shared database.)
-export const PROMPT_VERSION = 4; // 4: dates the email mentions (`when`), for the schedule
+export const PROMPT_VERSION = 5; // 4: dates the email mentions (`when`), for the schedule; 5: meeting requests (`when.request`)
 const DAY = 24 * 60 * 60 * 1000;
 const LOOKBACK_DAYS = 30;
 const BATCH_SIZE = 8; // smaller now that bodies and attachment text are included
@@ -63,7 +63,9 @@ For every thread return:
   the local date-time as "YYYY-MM-DDTHH:mm", or "YYYY-MM-DD" with allDay true when no time is given. Resolve words like
   "tomorrow", "Thursday" or "next week Monday" from the "sent" date of the message that says them. what is a short
   label (max 60 characters), e.g. "Site visit in Jounieh" or "Send the revised quote". Use null when no specific day
-  is stated; never guess a date.
+  is stated; never guess a date. request is true only for a meeting that someone other than the user asks or proposes
+  at that time and is waiting for a yes or no ("can we meet Thursday at 3?", an invitation); false when the time is
+  already agreed, is a reminder, is in the past tense, or the user proposed it.
 
 Use only what is in the thread. Never invent amounts, dates, names or outcomes. A thread that mentions a proposal
 or invoice does not mean a deal is won or an invoice is unpaid; say only what the text supports.
@@ -92,6 +94,7 @@ const RESPONSE_SCHEMA = {
               at: { type: "STRING", description: "YYYY-MM-DDTHH:mm local time, or YYYY-MM-DD when all day" },
               allDay: { type: "BOOLEAN" },
               what: { type: "STRING", description: "Short label, max 60 characters" },
+              request: { type: "BOOLEAN", description: "true if someone else asks the user to meet at this time and awaits a yes or no" },
             },
             required: ["kind", "at", "allDay", "what"],
           },
@@ -123,6 +126,7 @@ const Result = z.object({
       at: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/),
       allDay: z.boolean().default(false),
       what: z.string().trim().min(1).transform(clip(60)),
+      request: z.boolean().catch(false).default(false),
     })
     .nullish()
     .catch(null)

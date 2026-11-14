@@ -9,7 +9,7 @@ import { createSalesTools } from "./sales-tools.js";
 import { createSalesAgent } from "./sales-agent.js";
 import { createWidgetBuilder } from "./widget-builder.js";
 import { filterValues, runCustomQuery } from "../sales/custom.js";
-import { addWidgetToBoard, getDashboard, removeWidgetFromBoard } from "../dashboards.js";
+import { addWidgetToBoard, getDashboard, removeWidgetFromBoard, resizeWidgetOnBoard } from "../dashboards.js";
 
 const invoiceNumber = (date = new Date()) =>
   `INV-${date.toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
@@ -49,7 +49,8 @@ export function getAssistant() {
     const BOARD_NAMES = { sales: "Sales", default: "Email dashboard" };
     const listWidgets = async () => Promise.all(Object.entries(BOARD_NAMES).map(async ([board, name]) => {
       const spec = await getDashboard(board);
-      return { board, name, widgets: spec.widgets.map((w) => ({ id: w.id, title: w.title, type: w.type })) };
+      const size = new Map(spec.layout.map((l) => [l.i, l]));
+      return { board, name, widgets: spec.widgets.map((w) => ({ id: w.id, title: w.title, type: w.type, w: size.get(w.id)?.w, h: size.get(w.id)?.h })) };
     }));
     const removeWidget = async (board, id) => {
       if (!(board in BOARD_NAMES)) throw new Error(`Unknown dashboard "${board}".`);
@@ -60,7 +61,14 @@ export function getAssistant() {
       await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_removed", board, widgetId: id, ok: true }).catch(() => {});
       return { board, id, title, version: saved.version };
     };
-    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), addWidget, listWidgets, removeWidget });
+    // Resizing a widget the user names (decision #54): saved as a new version, so the chat's Undo puts it back.
+    const resizeWidget = async (board, id, size) => {
+      if (!(board in BOARD_NAMES)) throw new Error(`Unknown dashboard "${board}".`);
+      const out = await resizeWidgetOnBoard(board, id, size);
+      if (!out.unchanged) await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_resized", board, widgetId: id, from: out.from, to: out.to, ok: true }).catch(() => {});
+      return { board, id, ...out };
+    };
+    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), addWidget, listWidgets, removeWidget, resizeWidget });
   }
   return agent;
 }

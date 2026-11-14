@@ -124,6 +124,9 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | PUT | `/api/integrations/gmail/auto-sync` | `{ enabled }` → turns the every-minute new-mail check on or off |
 | GET | `/api/schedule?tz=` | The email schedule: reply tasks, follow-ups, meetings and deadlines built from Gmail data, each with `why` and a Gmail link, plus calendar sync status |
 | POST | `/api/schedule/sync` | `{ approved: true, tz }` → writes the schedule to the app's own Google calendar ("AI Workspace OS"); needs the `calendar.app.created` scope |
+| PUT | `/api/meetings/availability` | `{ availability: { weekly, dates }, tz }` → saves the user's availability; the first save switches meeting requests on (#55) |
+| POST | `/api/meetings/requests/:id/answer` | `{ accept, approved: true }` → accepts ("works for me") or declines (with free times) a request waiting for the user; sends the email |
+| POST | `/api/meetings/requests/:id/retry` | `{ approved: true }` → sends a failed automatic reply again |
 | POST | `/api/assistant/confirm` | `{ threadId, approve }` → confirms the waiting draft (stores the invoice, returns its PDF link) or hands it back for changes |
 | GET | `/api/invoices/:id/pdf` | Download a deterministic PDF generated from one stored invoice draft |
 | POST | `/api/invoices/:id/send` | Send the reviewed PDF through Gmail; requires edited subject/body and `approved: true`, and cannot be called by the model |
@@ -140,6 +143,8 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
 | `invoices` | App-owned invoice drafts, computed totals, delivery status and source ids. This is not the company database |
 | `audit_events` | Content-free agent/tool and approved-action audit metadata |
+| `meeting_settings` | `_id: "gmail"`: the user's availability (weekly hours + date changes), time zone, `activatedAt` (first save; only later requests are answered) |
+| `meeting_requests` | One decision per meeting request (`_id` from conversation + time): status (`accepted`, `pending`, `auto-declined`, `confirmed`, `declined`, `superseded`), reason, and the email sent about it (text, sent time, error, dry run) |
 
 ## Company database handoff
 

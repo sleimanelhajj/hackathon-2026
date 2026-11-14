@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { connectDb, getDb, pingDb } from "./db.js";
 import { z } from "zod";
-import { authUrl, canSend, checkForNewMail, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, sendEmailWithAttachment, sendReply, syncGmail } from "./gmail.js";
+import { authUrl, canSend, checkForNewMail, consumeState, disconnectGmail, fetchAttachment, googleConfigured, handleCallback, resetStaleSync, sendEmailWithAttachment, sendReply, syncGmail } from "./gmail.js";
 import { createAutoSync } from "./autosync.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
@@ -16,7 +16,7 @@ import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgr
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
 import { runCustomQuery } from "./sales/custom.js";
-import { DEFAULT_TIME_ZONE, loadSchedule, safeTimeZone, syncSchedule } from "./schedule-data.js";
+import { DEFAULT_TIME_ZONE, answerMeetingRequest, loadSchedule, processMeetingRequests, retryMeetingEmail, safeTimeZone, saveAvailability, syncSchedule } from "./schedule-data.js";
 import { chat } from "./agent/chat.js";
 import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
 import { assistantError, getAssistant } from "./agent/assistant.js";
@@ -429,6 +429,35 @@ app.post("/api/schedule/sync", async (req, res) => {
   }
 });
 
+// Meeting requests (decision #55). Availability: weekly hours plus date changes; the first save switches requests on.
+app.put("/api/meetings/availability", async (req, res) => {
+  try {
+    await saveAvailability(req.body?.availability, safeTimeZone(String(req.body?.tz || DEFAULT_TIME_ZONE)));
+    processMeetingRequests().catch((err) => console.error("Meeting requests:", err.message));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: String(err?.message ?? err).slice(0, 300) });
+  }
+});
+// Accept or decline a request waiting for the user. Sends an email, so only from the page's buttons (approved: true).
+const RequestId = z.string().regex(/^mr-[A-Za-z0-9]{1,40}-\d{1,15}$/);
+app.post("/api/meetings/requests/:id/answer", async (req, res) => {
+  try {
+    if (req.body?.approved !== true || typeof req.body?.accept !== "boolean") return res.status(400).json({ error: "Choose accept or decline first." });
+    res.json(await answerMeetingRequest(RequestId.parse(req.params.id), req.body.accept));
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "That isn't a meeting request." : String(err?.message ?? err).slice(0, 300) });
+  }
+});
+app.post("/api/meetings/requests/:id/retry", async (req, res) => {
+  try {
+    if (req.body?.approved !== true) return res.status(400).json({ error: "Confirm the retry first." });
+    res.json(await retryMeetingEmail(RequestId.parse(req.params.id)));
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "That isn't a meeting request." : String(err?.message ?? err).slice(0, 300) });
+  }
+});
+
 // The chat's "Remove" button for a widget the assistant added.
 app.delete("/api/dashboards/:board/widgets/:id", async (req, res) => {
   try {
@@ -460,10 +489,13 @@ app.put("/api/integrations/gmail/auto-sync", wrap(async (req, res) => {
 const port = Number(process.env.API_PORT || 8787);
 connectDb()
   .then(resetStaleAnalysis)
+  .then(resetStaleSync)
   .then(() => app.listen(port, () => {
     console.log(`API ready on http://localhost:${port} (MongoDB connected)`);
     // New mail: a cheap check every POLL_SECONDS, a full sync and AI sorting only when the mailbox changed.
     createAutoSync({ check: checkForNewMail, sync: syncGmail, after: analyseInBackground, intervalMs: POLL_SECONDS * 1000 }).start();
+    // Meeting requests (decision #55): answer new ones every minute, once the user has saved their availability.
+    setInterval(() => processMeetingRequests().catch((err) => console.error("Meeting requests:", err.message)), 60_000).unref();
   }))
   .catch((err) => {
     console.error("Could not connect to MongoDB:", err.message);
