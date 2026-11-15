@@ -7,7 +7,7 @@ export const TEAM = [
   {
     id: "layla", name: "Layla", role: "Lead assistant", parent: null, relation: null, icon: "sparkles", hue: "sky", reads: [],
     runs: "When you ask her something in the chat",
-    does: "Answers your questions about sales, stock and customers from the database, recommends products, prepares invoices for you to confirm, and changes your dashboards. Hands chart requests to Sami.",
+    does: "Answers your questions about sales, stock and customers from the database, recommends products, prepares invoices, updates your records (sales, purchases, expenses, customers, products, quotes, targets, settings) after you confirm each change, and changes your dashboards. Hands chart requests to Sami.",
   },
   {
     id: "sami", name: "Sami", role: "Dashboard builder", parent: "layla", relation: "sub-agent", icon: "chart", hue: "lavender", reads: ["Sales database"],

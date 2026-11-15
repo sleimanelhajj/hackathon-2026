@@ -16,6 +16,7 @@ import { TOOL_DECLARATIONS } from "../server/agent/sales-tools.js";
 import { WIDGET_TOOL_DECLARATIONS } from "../server/agent/widget-builder.js";
 import * as salesAgent from "../server/agent/sales-agent.js";
 import { PRICES, PRICE_SOURCE } from "../server/agent/pricing.js";
+import { CHANGE_DECLARATIONS, EXPENSES_DECLARATION } from "../server/sales/changes.js";
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : fallback; };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -259,7 +260,7 @@ stats([
   { value: String(all.length), label: "automated test cases" },
   { value: `${count(all, "passed")}`, label: `passed (${count(all, "failed")} failed, ${count(all, "skipped")} skipped)`, tone: "ok" },
   { value: String(team?.agents?.length ?? 7), label: "named AI agents" },
-  { value: String(TOOL_DECLARATIONS.length + layla.length + WIDGET_TOOL_DECLARATIONS.length), label: "tools the agents can run" },
+  { value: String(TOOL_DECLARATIONS.length + layla.length + WIDGET_TOOL_DECLARATIONS.length + CHANGE_DECLARATIONS.length + 1), label: "tools the agents can run" },
 ]);
 h2("At a glance");
 bullets([
@@ -397,6 +398,9 @@ para("Layla is a LangGraph agent with Gemini function calling. She never sees SQ
 table([{ head: "Tool", w: 0.24, bold: true }, { head: "What it returns", w: 0.76 }], TOOL_DECLARATIONS.map((t) => [t.name, t.description]), { size: 8.4 });
 h2("Layla: dashboard and file tools");
 table([{ head: "Tool", w: 0.27, bold: true }, { head: "What it does", w: 0.73 }], layla.map((t) => [t.name, t.description]), { size: 8.4 });
+h2("Layla: updating the records (each change confirmed by the user)");
+para("Every change is proposed first: the chat shows exactly what will change (before → after, with warnings) and nothing is written until the user presses Save. Saved changes are logged and can be undone; an undo is refused if the record changed again since. Sales and supplier purchases go through the same invoice log as emailed invoices, so stock, revenue and the Sales page's Undo stay consistent.");
+table([{ head: "Tool", w: 0.27, bold: true }, { head: "What it proposes", w: 0.73 }], [...CHANGE_DECLARATIONS, EXPENSES_DECLARATION].map((t) => [t.name, t.description.replace(/ The user sees exactly.*$/, "")]), { size: 8.4 });
 h2("Sami: the dashboard builder (Layla's sub-agent)");
 table([{ head: "Tool", w: 0.24, bold: true }, { head: "What it does", w: 0.76 }], WIDGET_TOOL_DECLARATIONS.map((t) => [t.name, t.description]), { size: 8.4 });
 para("Sami's widget is checked by code (valid measure, grouping, filters, period) and its numbers are run before it goes on the board; if a check fails he gets the reason back and tries again.");

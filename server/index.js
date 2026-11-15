@@ -24,7 +24,7 @@ import { applyAppInvoice, applyEmailInvoice, emailInvoicesSince, listInvoiceChan
 import { DEFAULT_TIME_ZONE, answerMeetingRequest, loadSchedule, processMeetingRequests, retryMeetingEmail, safeTimeZone, saveAvailability, syncSchedule } from "./schedule-data.js";
 import { chat } from "./agent/chat.js";
 import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
-import { assistantError, getAssistant } from "./agent/assistant.js";
+import { assistantError, getAssistant, getChangeDesk } from "./agent/assistant.js";
 import { companyData } from "./company-data/index.js";
 import { applySecurity, healthRoute, serveClient } from "./http.js";
 import { reportEnv } from "./env.js";
@@ -165,6 +165,13 @@ app.post("/api/assistant/message", async (req, res) => {
     res.status(400).json({ error: err?.issues ? "Type a message for the assistant." : assistantError(err) });
   }
 });
+// Changes to the sales records the user saved through the assistant (decision #68): the latest, and Undo.
+app.get("/api/assistant/changes", wrap(async (_req, res) => res.json({ changes: await getChangeDesk().recent({ limit: 30 }) })));
+app.post("/api/assistant/changes/:id/undo", wrap(async (req, res) => {
+  const out = await getChangeDesk().undo(req.params.id);
+  await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "user", action: "record_change_undone", changeId: out.id, ok: true }).catch(() => {});
+  res.json(out);
+}));
 app.post("/api/assistant/confirm", async (req, res) => {
   try {
     const input = AssistantConfirm.parse(req.body);

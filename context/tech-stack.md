@@ -96,6 +96,8 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 
 | Method | Path | Does |
 |---|---|---|
+| GET | `/api/assistant/changes` | The latest changes to the sales records saved through the assistant (#68) |
+| POST | `/api/assistant/changes/:id/undo` | Undoes one saved change; refused if the record changed again since (#68) |
 | GET | `/api/agents` | The AI team: names, roles, avatars, who is above whom (#67) |
 | GET | `/api/logs/usage?days=` | Gemini calls, tokens and cost for 1–90 days: totals, by agent, by model, by day, latest 100 calls, price list (#67) |
 | GET | `/api/logs/runs?days=&limit=` | Latest top-level agent runs with their steps and sub-agent runs nested (#67) |
@@ -158,6 +160,8 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 |---|---|
 | `connections` | One doc per provider (tokens encrypted). `analysis` sub-doc: status, progress, counts, last run, error |
 | `messages` | Synced Gmail metadata (unique on `gmailId`) |
+| Postgres `expenses` | Running costs that aren't stock: category, amount, date, description, payee, branch (#68) |
+| Postgres `record_changes` | Every change saved through the assistant: kind, title, target, before/after (jsonb), invoice key for sales and purchases, undone_at (#68) |
 | `agent_runs` | One document per agent run: agent, task label, trigger, parent/root run, tokens, cost, steps (model calls, tools, hand-overs). TTL 90 days. No message content (#67) |
 | `telegram_chats` | Followed Telegram chats: title, kind, unread, last message time, count. No message text; `insight` holds the AI insight encrypted (`enc`) with the message id it was based on (#64, #65) |
 | `telegram_messages` | Telegram messages (unique on chatId + id): date, out, sender name, hasMedia, `textEnc` (encrypted) |

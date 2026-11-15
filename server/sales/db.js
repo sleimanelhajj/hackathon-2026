@@ -104,6 +104,15 @@ export async function createSchema(pool, schema = DEFAULT_SCHEMA) {
       purchase_id integer NOT NULL REFERENCES ${s}.purchases(id) ON DELETE CASCADE, product_id integer NOT NULL REFERENCES ${s}.products(id),
       quantity integer NOT NULL CHECK (quantity > 0), unit_cost numeric(12,2), PRIMARY KEY (purchase_id, product_id));
     CREATE TABLE IF NOT EXISTS ${s}.inventory_settings (id integer PRIMARY KEY CHECK (id = 1), email_invoices_since timestamptz NOT NULL);
+    -- Changes the user confirmed through the assistant (decision #68, server/sales/changes.js): running costs that aren't
+    -- stock (rent, salaries…), and a log of every change with what it was before and after, so it can be undone.
+    CREATE TABLE IF NOT EXISTS ${s}.expenses (
+      id serial PRIMARY KEY, category text NOT NULL, amount numeric(12,2) NOT NULL CHECK (amount > 0), currency text NOT NULL DEFAULT 'USD',
+      spent_at timestamptz NOT NULL, description text, payee text, branch text, created_at timestamptz NOT NULL DEFAULT now());
+    CREATE INDEX IF NOT EXISTS expenses_spent_at ON ${s}.expenses (spent_at);
+    CREATE TABLE IF NOT EXISTS ${s}.record_changes (
+      id uuid PRIMARY KEY, kind text NOT NULL, title text NOT NULL, target text, entity text NOT NULL, entity_id text,
+      before jsonb, after jsonb, invoice_key text, applied_at timestamptz NOT NULL DEFAULT now(), undone_at timestamptz);
   `);
 }
 
@@ -125,7 +134,7 @@ export async function loadData(pool, schema, data) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`TRUNCATE ${s}.stock_movements, ${s}.invoice_changes, ${s}.purchase_items, ${s}.purchases, ${s}.order_items, ${s}.orders, ${s}.deals, ${s}.customers, ${s}.products, ${s}.reps, ${s}.store_profile`);
+    await client.query(`TRUNCATE ${s}.record_changes, ${s}.expenses, ${s}.stock_movements, ${s}.invoice_changes, ${s}.purchase_items, ${s}.purchases, ${s}.order_items, ${s}.orders, ${s}.deals, ${s}.customers, ${s}.products, ${s}.reps, ${s}.store_profile`);
     if (data.profile) {
       const p = data.profile;
       await client.query(`INSERT INTO ${s}.store_profile (id, name, email, phone, address, currency, tax_rate_bps, payment_terms_days) VALUES (1, $1, $2, $3, $4, $5, $6, $7)`,

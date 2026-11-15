@@ -98,10 +98,24 @@ export type InvoiceProposal = {
 /** A widget the assistant added to a board (a custom chart, or a ready-made widget without a chart or summary). */
 export type AddedWidget = { board: Board; boardName?: string; id: string; title: string; chart: "number" | "line" | "bar" | "table" | null; summary: string | null };
 
+/** A change to the sales records the assistant proposes (decision #68): exactly what will change, waiting for Save. */
+export type ChangeDraft = {
+  id: string; kind: string; title: string; target: string; warnings: string[];
+  fields: { label: string; before: string | number | null; after: string | number | null }[];
+  lines?: { sku: string; name: string; quantity: number; unitPrice: number; amount: number }[];
+  total?: number; number?: string | null;
+};
+/** A change the user saved; `id` undoes it. */
+export type AppliedChange = { applied: true; id: string; kind: string; title: string; target: string; summary: string };
+
 /** One turn of the assistant (POST /api/assistant/message or /confirm). */
 export type AssistantReply = {
   reply: string;
   pendingInvoice: InvoiceProposal | null;
+  /** A change to the records waiting for Save (decision #68). */
+  pendingChange: ChangeDraft | null;
+  /** Changes saved this turn. */
+  applied: AppliedChange[];
   invoice: InvoiceDraft | null;
   toolsUsed: string[];
   widgets: AddedWidget[];
@@ -667,6 +681,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threadId, message }),
     }),
+  assistantUndoChange: (id: string) => postJson<{ undone: true; id: string; summary: string }>(`/api/assistant/changes/${encodeURIComponent(id)}/undo`, {}),
   assistantConfirm: (threadId: string, approve: boolean, message?: string) =>
     request<AssistantReply>("/api/assistant/confirm", {
       method: "POST",

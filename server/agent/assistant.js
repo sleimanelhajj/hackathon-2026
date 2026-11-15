@@ -8,6 +8,7 @@ import { asAgent } from "./trace.js";
 import { prepareInvoice, publicInvoice } from "./invoice.js";
 import { createSalesTools } from "./sales-tools.js";
 import { createSalesAgent } from "./sales-agent.js";
+import { createChangeDesk } from "../sales/changes.js";
 import { createWidgetBuilder } from "./widget-builder.js";
 import { filterValues, runCustomQuery } from "../sales/custom.js";
 import { loadDocuments, searchDocs } from "../documents.js";
@@ -34,6 +35,13 @@ export async function saveConfirmedInvoice(draft, { db = getDb(), now = new Date
 }
 
 let agent = null;
+let desk = null;
+/** The change desk (decision #68): drafts, saves and undoes changes to the sales records; one per server. */
+export function getChangeDesk() {
+  if (!postgresConfigured()) throw new Error("Set POSTGRES_URL on the server, then load the sales records on the Sales page.");
+  desk ??= createChangeDesk({ pool: getPool() });
+  return desk;
+}
 export function getAssistant() {
   if (!geminiConfigured()) throw new Error("The assistant needs Gemini. Add GEMINI_API_KEY to .env and restart the server.");
   if (!postgresConfigured()) throw new Error("The assistant reads the sales database. Set POSTGRES_URL on the server, then load the sales records on the Sales page.");
@@ -103,7 +111,7 @@ export function getAssistant() {
       if (!out.unchanged) await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_resized", board, widgetId: id, from: out.from, to: out.to, ok: true }).catch(() => {});
       return { board, id, ...out };
     };
-    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), addWidget, listWidgets, removeWidget, resizeWidget,
+    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), changes: getChangeDesk(), addWidget, listWidgets, removeWidget, resizeWidget,
       searchDocuments: async (query) => searchDocs(await loadDocuments(), query), createPage, addReadyWidget, addEmailWidget });
   }
   return agent;

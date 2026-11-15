@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  AlertTriangle, ArrowRight, Scaling, BarChart3, CheckCircle2, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, Table2, Trash2, Undo2, X,
+  AlertTriangle, ArrowRight, Scaling, BarChart3, CheckCircle2, DatabaseZap, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Save, Send, ShieldCheck, Table2, Trash2, Undo2, X,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, type AddedWidget, type AssistantReply, type Board, type InvoiceDraft, type InvoiceProposal, type ResizedWidget, type Status } from "../lib/api";
+import { api, type AddedWidget, type AppliedChange, type AssistantReply, type Board, type ChangeDraft, type InvoiceDraft, type InvoiceProposal, type ResizedWidget, type Status } from "../lib/api";
 import { useHighlight } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { errorMessage } from "../lib/errors";
@@ -17,6 +17,9 @@ type ChatMessage = {
   text: string;
   toolsUsed?: string[];
   proposal?: InvoiceProposal | null;
+  /** A change to the records waiting for Save (decision #68); shares proposalState with the invoice draft. */
+  change?: ChangeDraft | null;
+  applied?: AppliedChange[];
   /** What happened to the proposal on this message: still waiting, confirmed, or handed back for changes. */
   proposalState?: "waiting" | "confirmed" | "changed";
   invoice?: InvoiceDraft | null;
@@ -32,6 +35,8 @@ const SUGGESTIONS = [
   "I'm repainting a 12 by 12 ft bedroom. What do I need?",
   "Show me monthly sales of the 5 kWh battery",
   "Create an invoice for a trade customer",
+  "Record a sale of 10 panels to Khoury Solar",
+  "Add $1,200 rent for this month",
 ];
 
 /** Plain words for the tools the agent used, shown under its answer. */
@@ -41,6 +46,9 @@ const TOOL_LABELS: Record<string, string> = {
   store_profile: "store profile", staff_performance: "staff targets", quote_pipeline: "trade quotes", propose_invoice: "invoice draft",
   add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets", resize_dashboard_widget: "dashboard widgets", create_dashboard_page: "dashboard pages", add_ready_widget: "dashboard widgets",
   add_email_widget: "email data", search_documents: "email files",
+  propose_new_customer: "customer draft", propose_customer_update: "customer draft", propose_new_product: "product draft", propose_product_update: "product draft",
+  propose_sale: "sale draft", propose_purchase: "purchase draft", propose_expense: "expense draft", propose_order_status: "order draft", propose_quote: "quote draft",
+  propose_staff_target: "target draft", propose_store_settings: "settings draft", expenses_summary: "expenses",
 };
 
 const newThread = () => crypto.randomUUID();
@@ -230,6 +238,98 @@ function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
   );
 }
 
+const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+const fieldValue = (label: string, v: string | number | null) =>
+  v == null || v === "" ? "(empty)" : typeof v === "number" && /price|cost|amount|target/i.test(label) ? usd(v) : typeof v === "number" && /tax/i.test(label) ? `${v}%` : String(v);
+
+/** A change to the records, shown exactly as it will be saved (decision #68). Nothing is written until Save. */
+function ChangeCard({ change, state, busy, onSave, onChange }: {
+  change: ChangeDraft; state: ChatMessage["proposalState"]; busy: boolean; onSave: () => void; onChange: () => void;
+}) {
+  return (
+    <section className="invoice-card change-card" role="region" aria-label={`${change.title}: ${change.target}`}>
+      <header className="invoice-card-head">
+        <span className="invoice-icon"><DatabaseZap size={16} aria-hidden /></span>
+        <div>
+          <strong>{change.title}</strong>
+          <span>{change.target}</span>
+        </div>
+        <span className="tag" data-tone={state === "confirmed" ? "ok" : state === "changed" ? undefined : "accent"}>
+          {state === "confirmed" ? "Saved" : state === "changed" ? "Being changed" : "Not saved yet"}
+        </span>
+      </header>
+      <dl className="change-fields">
+        {change.fields.map((f) => (
+          <div key={f.label} className="change-field">
+            <dt>{f.label}</dt>
+            <dd>
+              {f.before != null ? <><span className="change-before">{fieldValue(f.label, f.before)}</span><ArrowRight size={12} aria-label="becomes" /></> : null}
+              <span className="change-after">{fieldValue(f.label, f.after)}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {change.lines?.length ? (
+        <div className="invoice-lines">
+          {change.lines.map((l) => (
+            <div className="invoice-line" key={l.sku}>
+              <span>{l.name}<span className="invoice-line-sub">{l.sku} · <span className="num">{l.quantity}</span> × <span className="num">{usd(l.unitPrice)}</span></span></span>
+              <span className="num">{usd(l.amount)}</span>
+            </div>
+          ))}
+          {change.total != null && <div className="invoice-total"><span>Total</span><span className="num">{usd(change.total)}</span></div>}
+        </div>
+      ) : null}
+      {!!change.warnings.length && <ul className="invoice-reasons">{change.warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
+      {state === "waiting" && (
+        <div className="invoice-actions">
+          <button type="button" className="btn btn-primary btn-sm" onClick={onSave} disabled={busy}><Save size={14} aria-hidden /> Save</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onChange} disabled={busy}><Pencil size={14} aria-hidden /> Change something</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** A saved change, with Undo (asks first). */
+function AppliedCard({ item }: { item: AppliedChange }) {
+  const qc = useQueryClient();
+  const [state, setState] = useState<"saved" | "working" | "undone">("saved");
+  const [error, setError] = useState<string | null>(null);
+  const undo = async () => {
+    const ok = await confirm({ title: `Undo "${item.title.toLowerCase()}"?`, message: `This puts ${item.target} back the way it was before this change.`, confirmLabel: "Undo change", tone: "danger" });
+    if (!ok) return;
+    setState("working");
+    setError(null);
+    try {
+      await api.assistantUndoChange(item.id);
+      setState("undone");
+      for (const key of ["sales", "sales-status", "sales-custom", "stock-changes", "payments"]) void qc.invalidateQueries({ queryKey: [key] });
+      toast.success("Change undone", item.target);
+    } catch (err) {
+      setState("saved");
+      setError(errorMessage(err));
+    }
+  };
+  return (
+    <section className="widget-card" role="region" aria-label={`Saved: ${item.title}`} data-state={state === "undone" ? "removed-card" : "added"}>
+      <span className="widget-card-icon" data-tone={state === "undone" ? "muted" : undefined}>{state === "undone" ? <Undo2 size={18} aria-hidden /> : <CheckCircle2 size={18} aria-hidden />}</span>
+      <div className="widget-card-text">
+        <strong>{item.title}</strong>
+        <span className="widget-card-status" data-tone={state === "undone" ? "muted" : undefined}>{state === "undone" ? "Undone" : item.summary}</span>
+      </div>
+      {state !== "undone" && (
+        <div className="widget-card-actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void undo()} disabled={state === "working"}>
+            {state === "working" ? <Loader2 size={13} className="spin" aria-hidden /> : <Undo2 size={13} aria-hidden />} Undo
+          </button>
+        </div>
+      )}
+      {error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {error}</p>}
+    </section>
+  );
+}
+
 /** Plain words for a size change: "full width", "wider and taller"… (the grid is 12 columns wide). */
 function describeResize({ from, to }: ResizedWidget) {
   const parts: string[] = [];
@@ -372,9 +472,12 @@ export function AgentAssistant() {
     // A page the assistant created shows up as a tab right away (decision #60).
     if (result.toolsUsed?.includes("create_dashboard_page")) void qc.invalidateQueries({ queryKey: ["dashboard-pages"] });
     if (result.widgets?.length) useHighlight.getState().set(result.widgets.at(-1)!.id);
+    // A saved change to the records (decision #68): every sales view reloads.
+    if (result.applied?.length) for (const key of ["sales", "sales-status", "sales-custom", "stock-changes", "payments"]) void qc.invalidateQueries({ queryKey: [key] });
     setMessages((current) => [...current, {
       id: crypto.randomUUID(), role: "assistant", text: result.reply, toolsUsed: result.toolsUsed,
-      proposal: result.pendingInvoice, proposalState: result.pendingInvoice ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed, resized: result.resized,
+      proposal: result.pendingInvoice, change: result.pendingChange, applied: result.applied,
+      proposalState: result.pendingInvoice || result.pendingChange ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed, resized: result.resized,
     }]);
   };
   const addError = (err: unknown) =>
@@ -459,6 +562,11 @@ export function AgentAssistant() {
                   <ProposalCard proposal={message.proposal} state={message.proposalState} busy={working}
                     onConfirm={() => void answerDraft(true)} onChange={() => void answerDraft(false)} />
                 )}
+                {message.change && (
+                  <ChangeCard change={message.change} state={message.proposalState} busy={working}
+                    onSave={() => void answerDraft(true)} onChange={() => void answerDraft(false)} />
+                )}
+                {message.applied?.map((a) => <AppliedCard key={a.id} item={a} />)}
                 {message.widgets?.map((w) => <WidgetCard key={w.id} widget={w} />)}
                 {message.removed?.map((w) => <RemovedCard key={w.id} item={w} />)}
                 {message.resized?.map((w, i) => <ResizedCard key={`${w.id}-${i}`} item={w} />)}

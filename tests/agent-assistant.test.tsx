@@ -48,7 +48,7 @@ const invoice: InvoiceDraft = {
   status: "draft", readiness: { ready: true, reasons: [] }, pdfUrl: "/api/invoices/invoice-1/pdf",
 };
 
-const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, invoice: null, toolsUsed: [], widgets: [], removed: [], resized: [], ...extra });
+const reply = (extra: Partial<AssistantReply>): AssistantReply => ({ reply: "", pendingInvoice: null, pendingChange: null, applied: [], invoice: null, toolsUsed: [], widgets: [], removed: [], resized: [], ...extra });
 
 async function ask(text: string) {
   fireEvent.change(screen.getByRole("textbox", { name: "Ask the assistant" }), { target: { value: text } });
@@ -232,4 +232,34 @@ test("shows a readable error and New chat starts a fresh thread", async () => {
   await ask("hi again");
   await screen.findByText("Hello again.");
   expect(send.mock.calls[1][0]).not.toBe(send.mock.calls[0][0]);
+});
+
+// ---- Updating the records (decision #68): a change is shown before → after, saved only on Save, and can be undone.
+const change = {
+  id: "chg-1", kind: "products_update", title: "Update a product", target: "Solar panel 550W (mono)", warnings: [],
+  fields: [{ label: "Price", before: 110, after: 115 }, { label: "Stock", before: 72, after: 60 }],
+};
+const applied = { applied: true as const, id: "chg-1", kind: "products_update", title: "Update a product", target: "Solar panel 550W (mono)", summary: "Saved for Solar panel 550W (mono): Price 115, Stock 60." };
+
+test("a proposed change shows before and after, is saved only on Save, and can be undone after asking", async () => {
+  vi.spyOn(api, "status").mockResolvedValue(connectedStatus);
+  vi.spyOn(api, "assistantMessage").mockResolvedValue(reply({ reply: "Here's the change.", pendingChange: change, applied: [] }));
+  const save = vi.spyOn(api, "assistantConfirm").mockResolvedValue(reply({ reply: "Saved. You can undo it from the chat.", pendingChange: null, applied: [applied] }));
+  const undo = vi.spyOn(api, "assistantUndoChange").mockResolvedValue({ undone: true, id: "chg-1", summary: "Update a product undone." });
+  renderAssistant();
+  fireEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+  await ask("Raise the 550W panel to $115 and set stock to 60");
+  const card = await screen.findByRole("region", { name: "Update a product: Solar panel 550W (mono)" });
+  expect(within(card).getByText("Not saved yet")).toBeTruthy();
+  expect(within(card).getByText("$110.00")).toBeTruthy();
+  expect(within(card).getByText("$115.00")).toBeTruthy();
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(within(card).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.any(String), true, undefined));
+  const saved = await screen.findByRole("region", { name: "Saved: Update a product" });
+  fireEvent.click(within(saved).getByRole("button", { name: "Undo" }));
+  expect(undo).not.toHaveBeenCalled();
+  await confirmDialog(/Undo "update a product"/, "Undo change");
+  await waitFor(() => expect(undo).toHaveBeenCalledWith("chg-1"));
+  expect(await within(saved).findByText("Undone")).toBeTruthy();
 });
