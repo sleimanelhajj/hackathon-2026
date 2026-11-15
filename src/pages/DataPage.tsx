@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ChevronLeft, ChevronRight, Code2, Database, FlaskConical, Paperclip, Search, SlidersHorizontal, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Code2, Database, Paperclip, Search, SlidersHorizontal, X } from "lucide-react";
 import { Reply } from "lucide-react";
 import { CATEGORY_LABELS, categoryInfo } from "../../shared/spec.js";
 import { useReply } from "../components/ReplyModal";
@@ -8,11 +8,12 @@ import { Select } from "../components/Select";
 import type { Address, Category, MessageFilters, StoredMessage, StoredMessageDetail } from "../lib/api";
 import { useMessage, useMessages, usePeople, useStatus } from "../lib/queries";
 import { Callout } from "../components/ui";
+import { errorMessage } from "../lib/errors";
 import { TableSkeleton } from "../components/Skeletons";
 
 const PAGE_SIZE = 25;
 
-// Older sample imports stored recipients as a string and omitted full-format arrays.
+// Older imports stored recipients as a string and omitted full-format arrays.
 // Keep the raw record intact; adapt only its presentation.
 const addr = (a: Address | string | null | undefined) => typeof a === "string" ? a : (a ? (a.name && a.name !== a.email ? `${a.name} <${a.email}>` : a.email) : "");
 const addressList = (value: Address[] | string | null | undefined): (Address | string)[] => Array.isArray(value) ? value : value ? [value] : [];
@@ -66,7 +67,6 @@ export default function DataPage() {
   const { data, isLoading, isFetching, error } = useMessages({ q, direction, from, status: mailStatus, priority, category, page, limit: PAGE_SIZE });
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-  const sample = status?.gmail?.mode === "sample";
   const filtered = Boolean(q || direction || from || mailStatus || priority || category);
   const clearFilters = () => {
     setQuery("");
@@ -91,13 +91,10 @@ export default function DataPage() {
         </div>
       </header>
 
-      {sample && (
-        <Callout tone="warn" icon={<FlaskConical size={18} />} title="Sample data" text="These emails are fictional, built in the same shape the Gmail API returns." />
-      )}
       {!status?.gmail && status && (
-        <Callout icon={<Database size={18} />} title="No email yet" text="Connect Gmail or load sample data first." action={<a className="btn btn-primary" href="#/integrations">Go to Integrations</a>} />
+        <Callout icon={<Database size={18} />} title="No email yet" text="Connect Gmail to see your email here." action={<a className="btn btn-primary" href="#/integrations">Go to Integrations</a>} />
       )}
-      {error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load emails" text={(error as Error).message} />}
+      {error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load emails" text={errorMessage(error)} />}
 
       <div className="data-toolbar">
         <label className="search data-search">
@@ -253,7 +250,7 @@ function DetailPanel({ id, onClose }: { id: string; onClose: () => void }) {
         <button className="icon-btn" onClick={onClose} aria-label="Close details"><X size={18} /></button>
       </header>
       {isLoading && <div className="skeleton" style={{ height: 240 }} />}
-      {error && <p className="error-text">{(error as Error).message}</p>}
+      {error && <p className="error-text">{errorMessage(error)}</p>}
       {m && (
         <div className="detail-body">
           <div className="detail-actions">

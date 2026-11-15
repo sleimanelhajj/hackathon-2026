@@ -86,7 +86,7 @@ test("the glass token is translucent white", () => {
 // full re-blur on every scroll, drag and resize frame and changes nothing you can see. Only layers that float over
 // other content (menus, the widget settings box, dialogs) blur what is behind them.
 const PANES = [".sidebar", ".widget", ".panel", ".surface", ".callout", ".skeleton", ".side-panel-slot"];
-const FLOATING = [".modal", ".widget-config", ".select-menu"];
+const FLOATING = [".ui-modal", ".widget-config", ".select-menu"];
 const ruleOf = (sel) => {
   const m = css.match(new RegExp(`(^|\\n)${sel.replace(".", "\\.")}\\s*\\{([^}]*)\\}`));
   assert.ok(m, `${sel} has a rule`);
@@ -183,7 +183,7 @@ test("loading skeletons are glass, not an opaque old-palette stripe", () => {
 
 test("the closest panes keep the white top-edge highlight", () => {
   assert.match(token("shadow-lift"), /^inset 0 1px 0 rgba\(255, 255, 255/);
-  assert.match(rule(".modal"), /border:\s*1px solid var\(--glass-edge\)/);
+  assert.match(rule(".ui-modal"), /border:\s*1px solid var\(--glass-edge\)/);
 });
 
 test("the 'Rule' tag uses tokens, readable and in the blue family", () => {

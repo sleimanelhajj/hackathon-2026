@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, FolderOpen, Inbox, Mail, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles, TrendingUp } from "lucide-react";
+import { Activity, CalendarDays, FolderOpen, Inbox, Mail, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Send, Sparkles, TrendingUp } from "lucide-react";
 import { useUi, type Route } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { timeAgo } from "../lib/api";
@@ -10,8 +10,10 @@ const NAV: { route: Route; label: string; icon: typeof Plug }[] = [
   { route: "data", label: "All email", icon: Inbox },
   { route: "calendar", label: "Schedule", icon: CalendarDays },
   { route: "files", label: "Files", icon: FolderOpen },
+  { route: "telegram", label: "Telegram", icon: Send },
   { route: "sales", label: "Sales", icon: TrendingUp },
   { route: "integrations", label: "Integrations", icon: Plug },
+  { route: "logs", label: "Logs", icon: Activity },
 ];
 
 export function Sidebar({ route }: { route: Route }) {
@@ -38,9 +40,7 @@ export function Sidebar({ route }: { route: Route }) {
       ? "Syncing…"
       : gmail.status === "error"
         ? "Needs attention"
-        : gmail.mode === "sample"
-          ? "Sample data"
-          : `Synced ${timeAgo(gmail.lastSyncAt)}`;
+        : `Synced ${timeAgo(gmail.lastSyncAt)}`;
 
   return (
     <>

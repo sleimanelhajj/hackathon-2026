@@ -5,6 +5,8 @@
 // Resilience: if the main model is overloaded (503), rate-limited (429) or too slow, we retry once and then fall
 // back to GEMINI_FALLBACK_MODEL. Callers get back the model that actually answered, so labels record it.
 
+import { noteModelCall } from "./trace.js";
+
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 export const DEFAULT_MODEL = "gemini-3.8-flash";
 export const DEFAULT_FALLBACK_MODEL = "gemini-3.5-flash-lite";
@@ -57,14 +59,14 @@ function parseJson(text) {
 }
 
 /** One HTTP call to one model. Throws GeminiError with `retryable` set for 429 / 5xx / network / timeout. */
-async function callOnce(model, body, read = readJsonAnswer) {
+async function callOnce(model, body, read = readJsonAnswer, timeoutMs = TIMEOUT_MS) {
   let res;
   try {
     res = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY.trim() },
       body,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     const msg = err?.name === "TimeoutError" ? "Gemini took too long to answer." : "Can't reach Gemini. Check your internet connection.";
@@ -95,9 +97,11 @@ function readJsonAnswer(json) {
  * The schema guides the model; callers must still validate the result with zod before using it.
  * `system` holds our rules. `prompt` may contain untrusted email data, so it goes in the user turn only.
  * `files` ([{ mimeType, data: Buffer }]) are sent inline in the user turn too, for vision (images, scanned PDFs).
+ * `timeoutMs` limits each attempt (default a minute); something the user waits on can pass less so a hanging
+ * main model gives way to the fallback sooner.
  * Returns { data, model, usage } where `model` is the one that actually answered.
  */
-export async function generateJson({ system, prompt, schema, files = [], maxOutputTokens = 8192 }) {
+export async function generateJson({ system, prompt, schema, files = [], maxOutputTokens = 8192, timeoutMs = TIMEOUT_MS }) {
   if (!geminiConfigured()) throw new GeminiError("Gemini isn't set up. Add GEMINI_API_KEY to .env and restart the server.");
   const fileParts = files.map((f) => ({ inlineData: { mimeType: f.mimeType, data: Buffer.from(f.data).toString("base64") } }));
   const body = JSON.stringify({
@@ -106,12 +110,28 @@ export async function generateJson({ system, prompt, schema, files = [], maxOutp
     generationConfig: { responseMimeType: "application/json", responseSchema: schema, maxOutputTokens },
   });
 
-  const { result: { data, usage }, model } = await withFallback(body, readJsonAnswer);
+  const { result: { data, usage }, model } = await logged(() => withFallback(body, readJsonAnswer, timeoutMs));
   return { data, model, usage };
 }
 
+/**
+ * Notes the call in the Logs (decision #67): the model that answered, Google's token counts, how long it took, and
+ * whether the fallback answered. A call that failed in the end is noted too (it costs nothing).
+ */
+async function logged(call) {
+  const started = Date.now();
+  try {
+    const out = await call();
+    noteModelCall({ model: out.model, usage: out.result?.usage ?? null, durationMs: Date.now() - started, fellBack: out.model !== geminiModels()[0] });
+    return out;
+  } catch (err) {
+    noteModelCall({ model: geminiModel(), ok: false, error: err?.message ?? String(err), durationMs: Date.now() - started });
+    throw err;
+  }
+}
+
 /** Main model, retry, then fallback (see the top of the file). Returns { result, model }. */
-async function withFallback(body, read) {
+async function withFallback(body, read, timeoutMs = TIMEOUT_MS) {
   const models = geminiModels();
   // Skip a model that just failed from overload, as long as there's another one to try.
   const usable = models.filter((m) => !(cooling.get(m) > Date.now()));
@@ -119,7 +139,7 @@ async function withFallback(body, read) {
   for (const model of usable.length ? usable : models) {
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
       try {
-        const result = await callOnce(model, body, read);
+        const result = await callOnce(model, body, read, timeoutMs);
         cooling.delete(model);
         return { result, model };
       } catch (err) {
@@ -148,7 +168,7 @@ export async function generateContent({ system, contents, tools = [], maxOutputT
     ...(tools.length ? { tools: [{ functionDeclarations: tools }], toolConfig: { functionCallingConfig: { mode: "AUTO" } } } : {}),
     generationConfig: { maxOutputTokens, temperature },
   });
-  const { result, model } = await withFallback(body, readContent);
+  const { result, model } = await logged(() => withFallback(body, readContent));
   return { content: result.content, usage: result.usage, model };
 }
 

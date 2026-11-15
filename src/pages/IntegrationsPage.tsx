@@ -19,10 +19,14 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api, timeAgo, type Status } from "../lib/api";
-import { useDisconnect, useLoadSample, useSetAutoSync, useStatus, useSync } from "../lib/queries";
+import { useDisconnect, useSetAutoSync, useStatus, useSync } from "../lib/queries";
+import { confirm } from "../components/ConfirmDialog";
+import { toast } from "../components/Toaster";
+import { errorMessage } from "../lib/errors";
 import { Callout, GmailLogo, Panel } from "../components/ui";
 import { useUi } from "../lib/store";
 import { IntegrationsSkeleton } from "../components/Skeletons";
+import { TelegramCard } from "../telegram/TelegramCard";
 
 const REDIRECT_URI = "http://localhost:8787/api/auth/google/callback";
 
@@ -87,7 +91,7 @@ function NextStep({ status }: { status: Status }) {
         tone="warn"
         icon={<Settings2 size={18} />}
         title="Google sign-in isn't set up yet"
-        text="Add your Google OAuth keys to .env (steps below), or try the dashboard with sample data first."
+        text="Add your Google OAuth keys to .env (steps below), then connect Gmail."
         action={<a className="btn btn-secondary" href="#google-setup" onClick={(e) => { e.preventDefault(); useUi.getState().openPanel("google-setup"); requestAnimationFrame(() => document.getElementById("section-google-setup")?.scrollIntoView({ behavior: "smooth" })); }}>See setup steps</a>}
       />
     );
@@ -113,28 +117,10 @@ function NextStep({ status }: { status: Status }) {
     <Callout
       tone="ok"
       icon={<CheckCircle2 size={18} />}
-      title={g.mode === "sample" ? "Sample data is loaded" : "Gmail is connected"}
-      text={g.mode === "sample" ? "Explore the dashboard with fictional emails, then connect your real Gmail." : "Your dashboard is ready."}
+      title="Gmail is connected"
+      text="Your dashboard is ready."
       action={<a className="btn btn-primary" href="#/dashboard">Open dashboard <ArrowRight size={16} /></a>}
     />
-  );
-}
-
-function ConfirmButton({ label, confirmLabel, onConfirm, busy }: { label: string; confirmLabel: string; onConfirm: () => void; busy: boolean }) {
-  const [armed, setArmed] = useState(false);
-  if (!armed)
-    return (
-      <button className="btn btn-ghost" onClick={() => setArmed(true)} disabled={busy}>
-        {label}
-      </button>
-    );
-  return (
-    <span className="integration-actions">
-      <button className="btn btn-danger" onClick={() => { onConfirm(); setArmed(false); }} disabled={busy}>
-        {confirmLabel}
-      </button>
-      <button className="btn btn-ghost" onClick={() => setArmed(false)}>Cancel</button>
-    </span>
   );
 }
 
@@ -156,7 +142,7 @@ function AutoSyncSwitch({ gmail }: { gmail: NonNullable<Status["gmail"]> }) {
           ? `Checks Gmail ${cadence} and imports new email, then sorts it. Last checked ${timeAgo(gmail.autoSyncCheckedAt ?? null)}.`
           : "Off. New email comes in when you click Sync now."}
       </p>
-      {set.error && <p role="alert" className="small" style={{ color: "var(--danger)" }}>{(set.error as Error).message}</p>}
+      {set.error ? <p role="alert" className="field-error">{errorMessage(set.error)}</p> : null}
     </div>
   );
 }
@@ -164,9 +150,20 @@ function AutoSyncSwitch({ gmail }: { gmail: NonNullable<Status["gmail"]> }) {
 function GmailCard({ status }: { status: Status }) {
   const g = status.gmail;
   const sync = useSync();
-  const sample = useLoadSample();
   const disconnect = useDisconnect();
-  const error = sync.error || sample.error || disconnect.error;
+  // Disconnecting deletes the imported email from this app (Gmail itself is untouched), so it asks first.
+  const askDisconnect = async (wasSample: boolean) => {
+    const ok = await confirm({
+      title: wasSample ? "Remove the old sample emails?" : "Disconnect Gmail?",
+      message: wasSample
+        ? "The fictional emails are deleted from this app."
+        : "The email imported into this app, its AI summaries and files are deleted here. Nothing changes in your Gmail, and you can connect again any time.",
+      confirmLabel: wasSample ? "Remove sample emails" : "Disconnect and delete imported email",
+      tone: "danger",
+      action: () => disconnect.mutateAsync(),
+    });
+    if (ok) toast.success(wasSample ? "Sample emails removed" : "Gmail disconnected", wasSample ? undefined : "Imported email was deleted from this app.");
+  };
 
   const tag = !g ? (
     <span className="tag">Not connected</span>
@@ -174,8 +171,6 @@ function GmailCard({ status }: { status: Status }) {
     <span className="tag" data-tone="accent"><Loader2 size={12} className="spin" /> Syncing</span>
   ) : g.status === "error" ? (
     <span className="tag" data-tone="error">Needs attention</span>
-  ) : g.mode === "sample" ? (
-    <span className="tag" data-tone="warn">Sample data</span>
   ) : (
     <span className="tag" data-tone="ok">Connected</span>
   );
@@ -200,9 +195,6 @@ function GmailCard({ status }: { status: Status }) {
                 <Lock size={16} /> Connect Gmail
               </button>
             )}
-            <button className="btn btn-secondary btn-lg" onClick={() => sample.mutate()} disabled={sample.isPending}>
-              {sample.isPending && <Loader2 size={16} className="spin" />} Try with sample data
-            </button>
           </>
         )}
         {g?.mode === "live" && (
@@ -210,20 +202,20 @@ function GmailCard({ status }: { status: Status }) {
             <button className="btn btn-secondary" onClick={() => sync.mutate()} disabled={sync.isPending || g.status === "syncing"}>
               <RefreshCw size={15} className={sync.isPending || g.status === "syncing" ? "spin" : undefined} /> Sync now
             </button>
-            <ConfirmButton label="Disconnect" confirmLabel="Disconnect and delete imported email" busy={disconnect.isPending} onConfirm={() => disconnect.mutate()} />
+            <button type="button" className="btn btn-ghost" onClick={() => void askDisconnect(false)} aria-haspopup="dialog">Disconnect</button>
           </>
         )}
         {g?.mode === "sample" && (
           <>
-            {status.googleConfigured && <a className="btn btn-primary" href={api.connectUrl}><Mail size={16} /> Connect real Gmail</a>}
-            <ConfirmButton label="Remove sample data" confirmLabel="Remove sample data" busy={disconnect.isPending} onConfirm={() => disconnect.mutate()} />
+            {status.googleConfigured ? <a className="btn btn-primary" href={api.connectUrl}><Mail size={16} aria-hidden /> Connect Gmail</a> : null}
+            <button type="button" className="btn btn-ghost" onClick={() => void askDisconnect(true)} aria-haspopup="dialog">Remove sample emails</button>
           </>
         )}
       </div>
 
       {g?.mode === "live" && <AutoSyncSwitch gmail={g} />}
 
-      {error && <p role="alert" style={{ color: "var(--danger)" }}>{(error as Error).message}</p>}
+      {sync.error ? <p role="alert" className="field-error">Couldn't sync: {errorMessage(sync.error)}</p> : null}
 
       {g && (
         <div className="facts">
@@ -344,8 +336,6 @@ function PostgresCard() {
     <span className="tag">Not connected</span>
   ) : !pg.connected ? (
     <span className="tag" data-tone="error">Needs attention</span>
-  ) : pg.counts?.orders ? (
-    <span className="tag" data-tone="warn">Demo data</span>
   ) : (
     <span className="tag" data-tone="ok">Connected</span>
   );
@@ -360,10 +350,10 @@ function PostgresCard() {
               ? `Sales data: ${pg.counts.orders.toLocaleString()} orders, ${pg.counts.customers} customers, ${pg.counts.deals} deals.`
               : "Your sales database: revenue, orders, customers and pipeline for the Sales page."}
           </p>
-          {pg?.error && <p className="error-text small" style={{ padding: 0, marginTop: 6 }}>{pg.error}</p>}
+          {pg?.error ? <p className="field-error" role="alert">{pg.error}</p> : null}
           {pg && !pg.configured && (
             <p className="integration-desc" style={{ marginTop: 6 }}>
-              Add <span className="code">POSTGRES_URL</span> to <span className="code">.env</span> and restart the server.
+              Set <span className="code">POSTGRES_URL</span> on the server and restart it.
             </p>
           )}
         </div>
@@ -393,7 +383,7 @@ export function IntegrationsPage() {
 
       {returned && <Callout tone={returned.tone} icon={returned.tone === "ok" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />} title={returned.title} text={returned.text} />}
 
-      {error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't reach the server" text={(error as Error).message} />}
+      {error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't reach the server" text={errorMessage(error)} />}
       {isLoading && <IntegrationsSkeleton label="Loading integrations" />}
 
       {status && (
@@ -405,6 +395,7 @@ export function IntegrationsPage() {
           <CompanyDataCard status={status} />
           <GmailCard status={status} />
           {!status.googleConfigured && <SetupSteps />}
+          <TelegramCard />
           <PostgresCard />
           <Panel id="planned" title="More integrations" subtitle="Not available yet">
             <div className="planned">

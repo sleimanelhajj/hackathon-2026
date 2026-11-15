@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { ArrowDownRight, ArrowUpRight, Minus, Sparkles } from "lucide-react";
 import { CUSTOM_GROUP_LABELS, CUSTOM_METRIC_LABELS, TIME_GROUPS } from "../../shared/spec.js";
 import { api, type CustomResult, type Widget } from "../lib/api";
+import { errorMessage } from "../lib/errors";
 
 // A widget the assistant's dashboard builder made from a plain request. It stores a typed query, not data: it loads
 // its own numbers from Postgres (POST /api/sales/custom) and says exactly what it counts and over which dates.
@@ -51,7 +52,7 @@ export const CustomSalesWidget = memo(function CustomSalesWidget({ widget }: Pro
   const { data, isLoading, error } = useQuery({ queryKey: ["sales-custom", widget.query], queryFn: () => api.salesCustom(widget.query), staleTime: 60_000 });
 
   if (isLoading) return <div className="custom-loading" aria-busy="true"><span className="bone" style={{ width: "40%", height: 22 }} /><span className="bone" style={{ flex: 1, height: "auto", minHeight: 60 }} /></div>;
-  if (error || !data) return <div className="widget-empty"><p>Couldn't load this widget.</p><p className="widget-empty-rule">{(error as Error)?.message}</p></div>;
+  if (error || !data) return <div className="widget-empty"><p>Couldn't load this widget.</p><p className="widget-empty-rule">{errorMessage(error)}</p></div>;
 
   const what = data.filters.map((f) => f.replace(/^[^:]+:\s*/, "")).join(", ") || "All sales";
   // Show the years only when the period crosses one ("Dec 1, 2025 – Nov 14, 2026"), so "Dec 1 – Nov 14" is never ambiguous.

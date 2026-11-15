@@ -1,11 +1,13 @@
 // The main Dashboard (src/pages/MainDashboardPage.tsx, decision #60): pages as tabs, each a board that takes email and
 // sales widgets; add, rename and delete pages. The Email dashboard and Sales keep their own pages.
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DEFAULT_MAIN_SPEC } from "../shared/spec.js";
 import { api, type Dashboard, type SavedDashboard } from "../src/lib/api";
 import MainDashboardPage from "../src/pages/MainDashboardPage";
+import { ConfirmHost, dismissConfirm } from "../src/components/ConfirmDialog";
+import { Toaster, toast } from "../src/components/Toaster";
 
 vi.mock("../src/widgets/registry", async (importOriginal) => ({
   ...await importOriginal<typeof import("../src/widgets/registry")>(),
@@ -26,10 +28,10 @@ beforeEach(() => {
   vi.spyOn(api, "salesStatus").mockResolvedValue({ configured: true, connected: true, counts: { orders: 0 } } as never);
   const slot = document.createElement("aside"); slot.id = "side-panel"; document.body.append(slot);
 });
-afterEach(() => { cleanup(); document.body.innerHTML = ""; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => { dismissConfirm(); toast.clear(); }); cleanup(); document.body.innerHTML = ""; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function open() {
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}><MainDashboardPage /></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}><MainDashboardPage /><ConfirmHost /><Toaster /></QueryClientProvider>);
 }
 
 test("pages are tabs; the first page's board mixes email and sales widgets", async () => {
@@ -55,7 +57,7 @@ test("a new page is named, created and opened", async () => {
   open();
   fireEvent.click(await screen.findByRole("button", { name: /New page/ }));
   fireEvent.change(screen.getByRole("textbox", { name: "Page name" }), { target: { value: "Suppliers" } });
-  fireEvent.click(screen.getByRole("button", { name: "Create page" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add a page" })).getByRole("button", { name: "Add page" }));
   await waitFor(() => expect(create).toHaveBeenCalledWith("Suppliers"));
   await waitFor(() => expect(window.location.hash).toBe("#/dashboard/page-new111"));
 });
@@ -73,7 +75,7 @@ test("a page can be renamed, and deleted after a confirm; the first page can't b
   await waitFor(() => expect(rename).toHaveBeenCalledWith("page-abc123", "Cash"));
   fireEvent.click(screen.getByRole("button", { name: "Delete page" }));
   expect(del).not.toHaveBeenCalled();
-  fireEvent.click(within(screen.getByRole("alertdialog", { name: /Delete/ })).getByRole("button", { name: "Delete" }));
+  fireEvent.click(within(await screen.findByRole("alertdialog", { name: /Delete the ".+" page/ })).getByRole("button", { name: "Delete page" }));
   await waitFor(() => expect(del).toHaveBeenCalledWith("page-abc123"));
   await waitFor(() => expect(window.location.hash).toBe("#/dashboard"));
 });

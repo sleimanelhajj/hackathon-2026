@@ -5,6 +5,7 @@
 // the user turn only.
 import { z } from "zod";
 import { generateJson, geminiConfigured } from "./llm.js";
+import { asAgent } from "./trace.js";
 
 export const VISION_LIMITS = {
   maxBytes: 7 * 1024 * 1024, // inline requests are capped by Gemini; base64 adds a third
@@ -37,13 +38,14 @@ const Answer = z.object({ description: z.string().trim(), text: z.string() });
 /** Description + text of an image or scanned PDF, or "" when it can't or shouldn't be read. Throws on API errors. */
 export async function describeFile({ mimeType, data, filename = "" }) {
   if (!geminiConfigured() || !VISION_LIMITS.types.has(mimeType) || !data?.length || data.length > VISION_LIMITS.maxBytes) return "";
-  const { data: raw } = await generateJson({
+  // Lina reads it (decision #67): under Nadia or Hadi, whoever needed the file.
+  const { data: raw } = await asAgent({ agent: "lina", task: `Read a ${mimeType === "application/pdf" ? "scanned PDF" : "photo"}`, trigger: "app" }, () => generateJson({
     system: SYSTEM,
     prompt: `Read the attached file${filename ? ` (file name: ${JSON.stringify(filename.slice(0, 120))})` : ""}.`,
     schema: SCHEMA,
     files: [{ mimeType, data }],
     maxOutputTokens: 8192,
-  });
+  }));
   const a = Answer.safeParse(raw);
   if (!a.success || !a.data.description) return "";
   const text = a.data.text.trim().slice(0, VISION_LIMITS.maxTextChars);

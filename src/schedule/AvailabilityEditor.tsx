@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarPlus, Loader2, Plus, Save, Trash2, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, CalendarPlus, Loader2, Mail, Plus, Save, Trash2, X } from "lucide-react";
 import { api, type Availability, type Weekday } from "../lib/api";
 import { availabilityProblems, DAY_NAMES, WEEKDAYS } from "./availability";
+import { Modal } from "../components/Modal";
+import { confirm } from "../components/ConfirmDialog";
+import { toast } from "../components/Toaster";
+import { errorMessage } from "../lib/errors";
 
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 type Ranges = [string, string][];
@@ -43,7 +47,6 @@ const nextSlot = (ranges: Ranges): [string, string] => {
  */
 export function AvailabilityEditor({ initial, firstTime, onClose }: { initial: Availability; firstTime: boolean; onClose: () => void }) {
   const qc = useQueryClient();
-  const ref = useRef<HTMLDialogElement>(null);
   const [weekly, setWeekly] = useState<Record<Weekday, Ranges>>(() => structuredClone(initial.weekly));
   const [dates, setDates] = useState<DateRow[]>(() => Object.entries(initial.dates).sort(([a], [b]) => a.localeCompare(b)).map(([date, ranges]) => ({ date, ranges })));
   const [problems, setProblems] = useState<string[]>([]);
@@ -51,13 +54,6 @@ export function AvailabilityEditor({ initial, firstTime, onClose }: { initial: A
     mutationFn: (a: Availability) => api.saveAvailability(a, TZ),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["schedule"] }); onClose(); },
   });
-
-  useEffect(() => {
-    const d = ref.current;
-    if (!d || d.open) return;
-    if (typeof d.showModal === "function") d.showModal();
-    else d.setAttribute("open", "");
-  }, []);
 
   const submit = () => {
     const found: string[] = [];
@@ -67,26 +63,40 @@ export function AvailabilityEditor({ initial, firstTime, onClose }: { initial: A
     const availability: Availability = { weekly, dates: Object.fromEntries(dates.map((r) => [r.date, r.ranges])) };
     found.push(...availabilityProblems(availability));
     setProblems(found);
-    if (!found.length) save.mutate(availability);
+    if (found.length) return;
+    void (async () => {
+      // The first save switches on automatic availability replies, which send real email: say so and ask.
+      if (firstTime && !(await confirm({
+        title: "Turn on automatic meeting replies?",
+        message: "From now on, a meeting request for a time that has passed, or that clashes with your calendar, gets an automatic email with your free times. Requests outside your hours wait for you.",
+        confirmLabel: "Save and turn on",
+        icon: <Mail size={18} />,
+      }))) return;
+      save.mutate(availability, { onSuccess: () => toast.success("Availability saved", "Meeting requests are now checked against these hours.") });
+    })();
   };
 
   const setDay = (d: Weekday, ranges: Ranges) => setWeekly((w) => ({ ...w, [d]: ranges }));
   const setDate = (i: number, row: Partial<DateRow>) => setDates((list) => list.map((r, k) => (k === i ? { ...r, ...row } : r)));
 
   return (
-    <dialog ref={ref} className="modal modal-wide avail-modal" aria-labelledby="avail-title" onClose={onClose} onCancel={onClose}>
-      <div className="modal-body">
-        <header className="modal-head">
-          <div>
-            <h2 id="avail-title" className="modal-title">Your availability</h2>
-            <p className="muted small">
-              {firstTime ? "Once saved, meeting requests from now on are checked against these hours." : "Meeting requests are checked against these hours."}{" "}
-              Times are in your time zone ({TZ}).
-            </p>
-          </div>
-          <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden /></button>
-        </header>
-
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      className="avail-modal"
+      icon={<CalendarClock size={18} />}
+      title="Your availability"
+      description={<>{firstTime ? "Once saved, meeting requests from now on are checked against these hours." : "Meeting requests are checked against these hours."} Times are in your time zone ({TZ}).</>}
+      dismissible={!save.isPending}
+      footer={<>
+        <span className="muted small">Reply tasks are planned inside these hours too.</span>
+        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={save.isPending}>Cancel</button>
+        <button type="button" className="btn btn-primary" onClick={submit} disabled={save.isPending}>
+          {save.isPending ? <Loader2 size={15} className="spin" aria-hidden /> : <Save size={15} aria-hidden />} Save availability
+        </button>
+      </>}
+    >
         <ul className="avail-rules" aria-label="What happens to a meeting request">
           <li><strong>Inside your hours and free</strong> goes on your calendar.</li>
           <li><strong>Outside your hours</strong> waits for you to accept or decline.</li>
@@ -145,21 +155,12 @@ export function AvailabilityEditor({ initial, firstTime, onClose }: { initial: A
           </button>
         </section>
 
-        {(problems.length > 0 || save.error) && (
-          <div className="agent-error avail-problems" role="alert">
-            <AlertTriangle size={14} aria-hidden />
-            <div>{problems.length ? problems.map((p) => <p key={p}>{p}</p>) : <p>{(save.error as Error).message}</p>}</div>
+        {problems.length > 0 || save.error ? (
+          <div className="ui-modal-error avail-problems" role="alert">
+            <AlertTriangle size={15} aria-hidden />
+            <div>{problems.length ? problems.map((p) => <p key={p}>{p}</p>) : <p>{errorMessage(save.error)}</p>}</div>
           </div>
-        )}
-
-        <footer className="modal-foot">
-          <span className="muted small">Reply tasks are planned inside these hours too.</span>
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={save.isPending}>Cancel</button>
-          <button type="button" className="btn btn-primary" onClick={submit} disabled={save.isPending}>
-            {save.isPending ? <Loader2 size={15} className="spin" aria-hidden /> : <Save size={15} aria-hidden />} Save availability
-          </button>
-        </footer>
-      </div>
-    </dialog>
+        ) : null}
+    </Modal>
   );
 }

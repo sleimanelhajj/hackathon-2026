@@ -15,7 +15,7 @@ const Ctx = createContext<SalesData | null>(null);
 export const SalesDataProvider = Ctx.Provider;
 function useSalesData(): SalesData {
   const v = useContext(Ctx);
-  if (!v) throw new MissingDataError("No sales data yet. Load the demo data on the Sales page.");
+  if (!v) throw new MissingDataError("No sales yet. Open the Sales page to set up the sales database.");
   return v;
 }
 

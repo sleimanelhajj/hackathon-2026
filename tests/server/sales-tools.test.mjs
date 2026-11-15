@@ -1,5 +1,5 @@
 // The assistant's read-only sales tools (server/agent/sales-tools.js), checked against real Postgres with the demo
-// hardware-store data in a throwaway schema. Needs POSTGRES_URL (in .env); skipped without it.
+// solar-shop data in a throwaway schema. Needs POSTGRES_URL (in .env); skipped without it.
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -29,16 +29,16 @@ after(async () => {
 });
 
 test("finds products for a situation, by what they're for", { skip }, async () => {
-  const { products } = await tools.run("find_products", { query: "leaking pipe under the sink" });
+  const { products } = await tools.run("find_products", { query: "power cuts at night" });
   assert.ok(products.length > 0 && products.length <= 8);
-  assert.ok(products.some((p) => p.category === "Plumbing"), products.map((p) => p.name).join(", "));
+  assert.ok(products.some((p) => p.category === "Batteries"), products.map((p) => p.name).join(", "));
   for (const p of products) assert.ok(p.sku && p.price > 0 && typeof p.stock === "number" && p.description);
 });
 
 test("respects a budget and a category", { skip }, async () => {
-  const { products } = await tools.run("find_products", { query: "drill", category: "Power tools", maxPrice: 150 });
+  const { products } = await tools.run("find_products", { query: "inverter", category: "Inverters", maxPrice: 500 });
   assert.ok(products.length > 0);
-  for (const p of products) assert.ok(p.price <= 150 && p.category === "Power tools", `${p.name} $${p.price}`);
+  for (const p of products) assert.ok(p.price <= 500 && p.category === "Inverters", `${p.name} $${p.price}`);
 });
 
 test("breakdowns add up to the summary total", { skip }, async () => {
@@ -84,18 +84,18 @@ test("finds customers who stopped ordering: regulars with no order for a while, 
   assert.equal(sinceDays, 60);
   const abiNader = customers.find((c) => c.name === "Abi Nader Construction");
   assert.ok(abiNader, customers.map((c) => c.name).join(", "));
-  assert.ok(abiNader.daysSinceLastOrder >= 150 && abiNader.orders >= 15 && abiNader.spentBefore > 0);
+  assert.ok(abiNader.daysSinceLastOrder >= 150 && abiNader.orders >= 5 && abiNader.spentBefore > 0);
   for (const c of customers) assert.ok(c.daysSinceLastOrder >= 60 && c.orders >= 3);
   for (let i = 1; i < customers.length; i++) assert.ok(customers[i - 1].spentBefore >= customers[i].spentBefore);
 });
 
 test("sales_figures answers any measure by any grouping, with product filters (same engine as custom widgets)", { skip }, async () => {
-  const heater = data.products.find((p) => p.name.includes("heater"));
-  const res = await tools.run("sales_figures", { metric: "units", groupBy: "month", months: 12, products: [heater.sku] });
+  const pump = data.products.find((p) => p.name.includes("pump"));
+  const res = await tools.run("sales_figures", { metric: "units", groupBy: "month", months: 12, products: [pump.sku] });
   assert.equal(res.rows.length, 12);
-  assert.deepEqual(res.filters, [`Product: ${heater.name}`]);
-  const winter = res.rows.filter((r) => ["12", "01", "02"].includes(r.key.slice(5))).reduce((s, r) => s + r.value, 0);
-  assert.ok(winter > res.total * 0.5, "the winter peak is visible");
+  assert.deepEqual(res.filters, [`Product: ${pump.name}`]);
+  const summer = res.rows.filter((r) => ["06", "07", "08", "09"].includes(r.key.slice(5))).reduce((s, r) => s + r.value, 0);
+  assert.ok(summer > res.total * 0.5, "the summer peak is visible");
   await assert.rejects(tools.run("sales_figures", { metric: "salary", groupBy: "month" }));
 });
 

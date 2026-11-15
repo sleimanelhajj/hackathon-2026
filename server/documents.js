@@ -8,6 +8,7 @@
 import { z } from "zod";
 import { getDb } from "./db.js";
 import { generateJson, geminiConfigured } from "./agent/llm.js";
+import { asAgent } from "./agent/trace.js";
 import { attachmentText, readableAttachments } from "./agent/content.js";
 
 export const DOC_TYPES = ["invoice", "quote", "purchase-order", "receipt", "statement", "delivery-note", "contract", "price-list", "report", "other"];
@@ -220,6 +221,9 @@ export function summariseAttachments({ limit = 24, now = Date.now(), onSaved = a
     if (!geminiConfigured()) return 0;
     const db = getDb();
     const todo = (await pendingFiles(db, now)).slice(0, limit);
+    if (!todo.length) return 0;
+    // Hadi's task (decision #67); Lina reads any scanned file inside it.
+    return asAgent({ agent: "hadi", task: `File ${todo.length} new attachment${todo.length === 1 ? "" : "s"}`, trigger: "app" }, async () => {
     let saved = 0;
     for (let i = 0; i < todo.length; i += BATCH) {
       const batch = todo.slice(i, i + BATCH);
@@ -253,6 +257,7 @@ export function summariseAttachments({ limit = 24, now = Date.now(), onSaved = a
       }
     }
     return saved;
+    });
   })().finally(() => { busy = null; });
   return busy;
 }

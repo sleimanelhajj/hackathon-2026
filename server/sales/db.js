@@ -75,7 +75,7 @@ export async function createSchema(pool, schema = DEFAULT_SCHEMA) {
       amount numeric(12,2) NOT NULL CHECK (amount > 0), created_at timestamptz NOT NULL, closed_at timestamptz, expected_close timestamptz);
     CREATE INDEX IF NOT EXISTS orders_ordered_at ON ${s}.orders (ordered_at);
     CREATE INDEX IF NOT EXISTS deals_stage ON ${s}.deals (stage);
-    -- Hardware store details (2026-11-14): what the assistant needs to recommend products and issue invoices.
+    -- Shop details (2026-11-14): what the assistant needs to recommend products and issue invoices.
     -- Added with IF NOT EXISTS so an older database upgrades in place.
     ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS brand text;
     ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS unit text;

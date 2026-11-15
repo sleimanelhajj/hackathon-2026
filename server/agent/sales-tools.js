@@ -1,4 +1,4 @@
-// The assistant's tools over the Postgres sales database (the hardware store). Read-only and bounded:
+// The assistant's tools over the Postgres sales database (the solar shop). Read-only and bounded:
 // - every query is a fixed, parameterized statement; the model picks a tool and fills typed arguments, never SQL;
 // - each call runs in a READ ONLY transaction with a statement timeout;
 // - results are capped (rows, text length) before they reach the model.
@@ -66,7 +66,7 @@ export const TOOL_DECLARATIONS = [
     parameters: { type: "OBJECT", properties: { months: { type: "INTEGER", description: "1-24, default 3" } } } },
   { name: "sales_breakdown", description: "Revenue, orders, units and gross margin over the last N months, grouped by one dimension: category, product, customer, branch, staff, month, channel or segment, with the previous period's revenue and the % change per row (use it for 'what grew or fell most'). Same periods as sales_summary. Sorted by revenue (month rows are sorted by date and have no comparison).",
     parameters: { type: "OBJECT", properties: { by: { type: "STRING", enum: Object.keys(BREAKDOWNS) }, months: { type: "INTEGER" }, limit: { type: "INTEGER", description: "1-50, default 10" } }, required: ["by"] } },
-  { name: "find_products", description: "Search the store's catalogue by a need or situation (e.g. 'leaking pipe', 'paint a bedroom', 'build a deck') or by name. Returns matching products with SKU, price, stock, description, what they're used for and recent popularity. Use it before recommending anything.",
+  { name: "find_products", description: "Search the store's catalogue by a need or situation (e.g. 'power cuts at night', 'replace my generator', 'irrigate a farm') or by name. Returns matching products with SKU, price, stock, description, what they're used for and recent popularity. Use it before recommending anything.",
     parameters: { type: "OBJECT", properties: { query: { type: "STRING" }, category: { type: "STRING", description: "Optional exact category name" }, maxPrice: { type: "NUMBER", description: "Optional budget per item in USD" }, inStockOnly: { type: "BOOLEAN" }, limit: { type: "INTEGER" } } } },
   { name: "find_customers", description: "Find customers by part of their name, email or phone. Returns id, segment (Retail customer, Trade account, Commercial account), contact details, branch, lifetime spend and last order date.",
     parameters: { type: "OBJECT", properties: { query: { type: "STRING" }, limit: { type: "INTEGER" } }, required: ["query"] } },
@@ -121,7 +121,7 @@ export function createSalesTools({ pool, schema = DEFAULT_SCHEMA, now = () => ne
 
   async function profile(client) {
     const { rows: [p] } = await client.query(`SELECT name, email, phone, address, currency, tax_rate_bps, payment_terms_days FROM ${s}.store_profile WHERE id = 1`);
-    if (!p) throw new Error("The store profile is missing. Reload the demo data on the Sales page.");
+    if (!p) throw new Error("The store profile is missing. Load the sales records on the Sales page.");
     return { name: p.name, email: p.email, phone: p.phone, address: p.address, currency: p.currency, taxRateBps: p.tax_rate_bps, paymentTermsDays: p.payment_terms_days };
   }
 

@@ -4,14 +4,22 @@ import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AgentAssistant } from "../src/agent/AgentAssistant";
+import { ConfirmHost, dismissConfirm } from "../src/components/ConfirmDialog";
 import { api, type AssistantReply, type InvoiceDraft, type InvoiceProposal, type Status } from "../src/lib/api";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { dismissConfirm(); cleanup(); vi.restoreAllMocks(); });
+
+/** Click the confirm button in the open confirmation dialog. */
+async function confirmDialog(title: RegExp | string, button: string) {
+  const dialog = await screen.findByRole("alertdialog", { name: title });
+  fireEvent.click(within(dialog).getByRole("button", { name: button }));
+}
 
 function renderAssistant() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <AgentAssistant />
+      <ConfirmHost />
     </QueryClientProvider>
   );
 }
@@ -133,6 +141,8 @@ test("a widget the assistant added shows as a card with Open and Remove, and the
   expect(within(card).getByRole("link", { name: /Open/ }).getAttribute("href")).toBe("#/sales");
   expect(screen.getByText(/Checked: dashboard builder/)).toBeTruthy();
   fireEvent.click(within(card).getByRole("button", { name: /Remove/ }));
+  expect(remove).not.toHaveBeenCalled();
+  await confirmDialog(/Remove "Cordless drill sales"/, "Remove widget");
   await waitFor(() => expect(remove).toHaveBeenCalledWith("sales", "ai-cordless-drill-1a2b"));
   expect(await within(card).findByText("Removed from the dashboard")).toBeTruthy();
 });
@@ -202,6 +212,8 @@ test("sending a created invoice is a separate, reviewed step", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Review sending" }));
   expect(send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Send invoice" }));
+  expect(send).not.toHaveBeenCalled();
+  await confirmDialog(/Send invoice/, "Send invoice");
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   expect(await screen.findByText(/Sent to accounts@summitplumbing\.example/)).toBeTruthy();
 });
@@ -214,6 +226,8 @@ test("shows a readable error and New chat starts a fresh thread", async () => {
   await ask("hi");
   expect(await screen.findByText(/can't reach the sales database/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+  await confirmDialog("Start a new chat?", "Start new chat");
+  await waitFor(() => expect(screen.queryByText(/can.t reach the sales database/)).toBeNull());
   expect(screen.queryByText(/can't reach the sales database/)).toBeNull();
   await ask("hi again");
   await screen.findByText("Hello again.");

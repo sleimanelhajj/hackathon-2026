@@ -66,17 +66,16 @@ test("the chat panel's grid rows match its parts, and only the message list stre
   assert.match(tracks[1], /1fr/, "the message list (second part) stretches");
 });
 
-test("the reply dialog keeps its header and footer fixed and scrolls only the middle", () => {
-  assert.match(block(".modal-reply"), /overflow:\s*hidden/);
-  const form = block(".modal-reply .modal-body");
-  assert.match(form, /max-height:\s*calc\(100vh - \d+px\)/);
-  assert.match(form, /padding:\s*0/);
-  const scroll = block(".modal-scroll");
+test("dialogs keep their header and footer fixed and scroll only the middle", () => {
+  // Every dialog (src/components/Modal.tsx) is one column: header, a scrolling body, footer.
+  assert.match(block(".ui-modal"), /overflow:\s*hidden/);
+  assert.match(block(".ui-modal-panel"), /max-height:\s*calc\(100dvh - \d+px\)/);
+  const scroll = block(".ui-modal-body");
   assert.match(scroll, /overflow-y:\s*auto/);
   assert.match(scroll, /min-height:\s*0/);
   assert.match(block(".reply-note"), /var\(--signal-subtle\)/, "a caution is amber, the only colour besides blue");
   // In a scrolling flex column, items shrink to fit unless told not to; the quoted email was squashed in half.
-  assert.match(block(".modal-scroll > *"), /flex-shrink:\s*0/);
+  assert.match(block(".ui-modal-body > *"), /flex-shrink:\s*0/);
 });
 
 test("the email table skeleton keeps its shapes off the card's edges wherever it's placed", () => {

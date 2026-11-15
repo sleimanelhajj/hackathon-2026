@@ -6,7 +6,7 @@ import { authUrl, canSend, checkForNewMail, consumeState, disconnectGmail, fetch
 import { createAutoSync } from "./autosync.js";
 import { buildDashboard } from "./dashboard.js";
 import { seedSample } from "./sample.js";
-import { decrypt } from "./crypto.js";
+import { decrypt, encrypt } from "./crypto.js";
 import { ConflictError, getDashboard, removeWidgetFromBoard, resetDashboard, saveDashboard, undoDashboard } from "./dashboards.js";
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
@@ -26,20 +26,30 @@ import { chat } from "./agent/chat.js";
 import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
 import { assistantError, getAssistant } from "./agent/assistant.js";
 import { companyData } from "./company-data/index.js";
+import { applySecurity, healthRoute, serveClient } from "./http.js";
+import { reportEnv } from "./env.js";
+import { createTelegram, gramConnect, mongoTelegramStore } from "./telegram.js";
+import { analyzeChat } from "./agent/telegram-insight.js";
+import { createAgentLog, mongoAgentLogStore } from "./agent/agent-log.js";
+import { asAgent, useAgentLog } from "./agent/trace.js";
+import { TEAM, APP_AGENT } from "./agent/team.js";
+import { fileURLToPath } from "node:url";
 import { Category, Priority } from "../shared/spec.js";
 
 /** Postgres errors in plain words, without echoing the connection string. */
 function friendlyPgError(err) {
   const code = err?.code;
   if (code === "28P01") return "Postgres refused the username or password in POSTGRES_URL.";
-  if (code === "3D000") return "The database in POSTGRES_URL doesn't exist. Click \"Load demo data\" to create it.";
+  if (code === "3D000") return "The database in POSTGRES_URL doesn't exist. Open the Sales page and click \"Load sales records\" to create it.";
   if (code === "ECONNREFUSED") return "Can't reach Postgres. Is it running on the host and port in POSTGRES_URL?";
-  if (code === "42P01") return "The sales tables don't exist yet. Load the demo data first.";
+  if (code === "42P01") return "The sales tables don't exist yet. Open the Sales page and load the sales records.";
   return `Postgres error: ${String(err?.message || err).replace(/postgres(ql)?:\/\/[^\s]+/gi, "[connection string]")}`;
 }
 
 const app = express();
-app.use(express.json());
+applySecurity(app);
+app.use(express.json({ limit: "2mb" }));
+app.get("/api/health", healthRoute(pingDb));
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 /** How often auto-sync asks Gmail for new mail (GMAIL_POLL_SECONDS, at least 20, default 60). */
@@ -139,7 +149,8 @@ app.get("/api/dashboard", wrap(async (_req, res) => res.json(await buildDashboar
 // Company-data assistant. The model sees only normalized, bounded records from server/company-data/provider.js.
 // It has no database client, SQL or send tool. The client sends at most the last 10 text turns.
 app.post("/api/agent/chat", wrap(async (req, res) => {
-  res.json(await chat(req.body?.messages));
+  const last = Array.isArray(req.body?.messages) ? req.body.messages.at(-1)?.content : "";
+  res.json(await asAgent({ agent: "layla", task: String(last ?? ""), trigger: "you" }, () => chat(req.body?.messages)));
 }));
 
 // The workspace assistant (chat bubble): a LangGraph agent over the sales database (server/agent/sales-agent.js).
@@ -149,7 +160,7 @@ const AssistantConfirm = z.object({ threadId: z.string().uuid(), approve: z.bool
 app.post("/api/assistant/message", async (req, res) => {
   try {
     const input = AssistantMessage.parse(req.body);
-    res.json(await getAssistant().send(input));
+    res.json(await asAgent({ agent: "layla", task: input.message, trigger: "you" }, () => getAssistant().send(input)));
   } catch (err) {
     res.status(400).json({ error: err?.issues ? "Type a message for the assistant." : assistantError(err) });
   }
@@ -157,7 +168,8 @@ app.post("/api/assistant/message", async (req, res) => {
 app.post("/api/assistant/confirm", async (req, res) => {
   try {
     const input = AssistantConfirm.parse(req.body);
-    res.json(await getAssistant().resume(input));
+    const task = input.approve ? "Save the invoice you confirmed" : "Change the invoice draft";
+    res.json(await asAgent({ agent: "layla", task, trigger: "you" }, () => getAssistant().resume(input)));
   } catch (err) {
     res.status(400).json({ error: err?.issues ? "That confirmation wasn't valid. Try again." : assistantError(err) });
   }
@@ -339,7 +351,7 @@ app.post("/api/sales/seed", async (_req, res) => {
     if (!postgresConfigured()) return res.status(400).json({ error: "Postgres isn't set up. Add POSTGRES_URL to .env and restart the server." });
     await ensureDatabase();
     await createSchema(getPool());
-    await loadData(getPool(), DEFAULT_SCHEMA, generateSalesData({ seed: 42, months: 24, now: new Date() }));
+    await loadData(getPool(), DEFAULT_SCHEMA, generateSalesData({ months: 24, now: new Date() }));
     res.json({ ok: true, counts: await tableCounts(getPool()) });
   } catch (err) {
     res.status(400).json({ error: friendlyPgError(err) });
@@ -349,7 +361,7 @@ app.get("/api/sales/dashboard", async (req, res) => {
   try {
     if (!postgresConfigured()) return res.status(400).json({ error: "Postgres isn't set up. Add POSTGRES_URL to .env and restart the server." });
     const months = [1, 3, 6, 12].includes(Number(req.query.months)) ? Number(req.query.months) : 12;
-    if (!(await tableCounts(getPool()))?.orders) return res.status(404).json({ error: "No sales data yet. Load the demo data first." });
+    if (!(await tableCounts(getPool()))?.orders) return res.status(404).json({ error: "No sales data yet. Load the sales records on the Sales page first." });
     res.json(await salesDashboard(getPool(), { months }));
   } catch (err) {
     res.status(400).json({ error: friendlyPgError(err) });
@@ -540,8 +552,65 @@ app.put("/api/integrations/gmail/auto-sync", wrap(async (req, res) => {
   res.json({ autoSync: req.body.enabled });
 }));
 
-// API_PORT (not PORT): dev tools often set PORT for the web server.
-const port = Number(process.env.API_PORT || 8787);
+// ---------- Logs (decision #67): Gemini costs and how the agents worked. Read-only; nothing an email or chat says. ----------
+const agentLogStore = mongoAgentLogStore(getDb);
+const agentLog = createAgentLog({ store: agentLogStore });
+useAgentLog(agentLog);
+const Days = z.coerce.number().int().min(1).max(90).catch(30);
+app.get("/api/agents", (_req, res) => res.json({ agents: TEAM, other: APP_AGENT }));
+app.get("/api/logs/usage", wrap(async (req, res) => res.json(await agentLog.usage({ days: Days.parse(req.query.days) }))));
+app.get("/api/logs/runs", wrap(async (req, res) => {
+  const limit = z.coerce.number().int().min(1).max(60).catch(30).parse(req.query.limit);
+  res.json(await agentLog.runs({ limit, days: Days.parse(req.query.days) }));
+}));
+
+// ---------- Telegram (decisions #64, #65): the user signs in with phone + code (+ two-step password), chooses the
+// people to follow, gets an AI insight per chat, and sends only messages they wrote and confirmed. ----------
+const telegramStore = mongoTelegramStore(getDb);
+const telegram = createTelegram({
+  store: telegramStore, connect: gramConnect(), encrypt, decrypt,
+  analyze: geminiConfigured() ? (input) => analyzeChat(input) : null,
+});
+// Telegram errors are already plain words; never echo a phone number, code or password back into a log.
+const tgRoute = (fn) => (req, res) => fn(req, res).catch((err) => res.status(400).json({ error: err.message }));
+app.get("/api/integrations/telegram", tgRoute(async (_req, res) => res.json(await telegram.status())));
+app.post("/api/integrations/telegram/code", tgRoute(async (req, res) => res.json(await telegram.requestCode(req.body?.phone))));
+app.post("/api/integrations/telegram/verify", tgRoute(async (req, res) => {
+  const out = await telegram.verifyCode(req.body?.code);
+  if (out.connected) telegram.sync().catch(() => {}); // first read in the background; the status shows progress
+  res.json(out);
+}));
+app.post("/api/integrations/telegram/password", tgRoute(async (req, res) => {
+  const out = await telegram.verifyPassword(req.body?.password);
+  telegram.sync().catch(() => {});
+  res.json(out);
+}));
+app.post("/api/integrations/telegram/cancel", tgRoute(async (_req, res) => res.json(await telegram.cancelLogin())));
+app.post("/api/integrations/telegram/sync", tgRoute(async (_req, res) => res.json(await telegram.sync())));
+app.delete("/api/integrations/telegram", tgRoute(async (_req, res) => res.json(await telegram.disconnect())));
+app.get("/api/telegram/chats", tgRoute(async (_req, res) => res.json({ chats: await telegram.chats() })));
+app.get("/api/telegram/chats/:id/messages", tgRoute(async (req, res) => res.json({ messages: await telegram.messages(req.params.id) })));
+// Who to follow: saved, then read again in the background so the list matches.
+app.put("/api/integrations/telegram/people", tgRoute(async (req, res) => {
+  const out = await telegram.setPeople(req.body?.people);
+  if ((await telegram.status()).connected) telegram.sync().catch(() => {});
+  res.json(out);
+}));
+// The saved insight, or a new one when the chat has newer messages; POST makes a new one now.
+app.get("/api/telegram/chats/:id/insight", tgRoute(async (req, res) => res.json(await telegram.insight(req.params.id))));
+app.post("/api/telegram/chats/:id/insight", tgRoute(async (req, res) => res.json(await telegram.insight(req.params.id, { refresh: true }))));
+// Sends one message the user wrote and confirmed in the app's dialog (decision #65). Never called by the assistant.
+app.post("/api/telegram/chats/:id/send", tgRoute(async (req, res) => {
+  if (req.body?.confirmed !== true) return res.status(400).json({ error: "Confirm the message before sending it." });
+  res.json({ message: await telegram.send(req.params.id, req.body?.text) });
+}));
+
+// The built web app (npm run build) is served from here too, so one process is the whole app in production.
+const DIST = fileURLToPath(new URL("../dist", import.meta.url));
+const servesClient = serveClient(app, DIST);
+
+// API_PORT (not PORT): dev tools often set PORT for the web server. In production a host's PORT is used when API_PORT is unset.
+const port = Number(process.env.API_PORT || (process.env.NODE_ENV === "production" && process.env.PORT) || 8787);
 /** Sales tables are upgraded in place, and invoices the AI reads from email start moving stock (decision #58). */
 async function startInventory() {
   if (!postgresConfigured()) return;
@@ -565,12 +634,16 @@ async function startInventory() {
   }
 }
 
+if (!reportEnv()) process.exit(1);
+
 connectDb()
+  .then(() => telegramStore.ensureIndexes())
+  .then(() => agentLogStore.ensureIndexes())
   .then(resetStaleAnalysis)
   .then(resetStaleSync)
   .then(startInventory)
   .then(() => app.listen(port, () => {
-    console.log(`API ready on http://localhost:${port} (MongoDB connected)`);
+    console.log(`API ready on http://localhost:${port} (MongoDB connected)${servesClient ? ", serving the built app" : ""}`);
     // New mail: a cheap check every POLL_SECONDS, a full sync and AI sorting only when the mailbox changed.
     createAutoSync({ check: checkForNewMail, sync: syncGmail, after: analyseInBackground, intervalMs: POLL_SECONDS * 1000 }).start();
     // Meeting requests (decision #55): answer new ones every minute, once the user has saved their availability.

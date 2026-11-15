@@ -3,8 +3,9 @@ import { useSlideWithSidebar } from "./lib/useSlideWithSidebar";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { ReplyModal } from "./components/ReplyModal";
 import { EmailViewer } from "./components/EmailViewer";
+import { ConfirmHost } from "./components/ConfirmDialog";
+import { Toaster } from "./components/Toaster";
 import { Sidebar } from "./components/Sidebar";
-import { AgentAssistant } from "./agent/AgentAssistant";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { useRoute, useSidebarShortcut } from "./lib/store";
 import { useRefreshOnNewMail, useStatus } from "./lib/queries";
@@ -17,6 +18,10 @@ const DataPage = lazy(() => import("./pages/DataPage"));
 const SalesPage = lazy(() => import("./pages/SalesPage"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
 const FilesPage = lazy(() => import("./pages/FilesPage"));
+const TelegramPage = lazy(() => import("./pages/TelegramPage"));
+const LogsPage = lazy(() => import("./pages/LogsPage"));
+// The assistant (chat, invoice and widget cards) is not needed for the first paint.
+const AgentAssistant = lazy(() => import("./agent/AgentAssistant").then((m) => ({ default: m.AgentAssistant })));
 
 export default function App() {
   const route = useRoute();
@@ -39,7 +44,7 @@ export default function App() {
   }, [busy]);
 
   useEffect(() => {
-    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : route === "sales" ? "Sales" : route === "calendar" ? "Schedule" : route === "files" ? "Files" : route === "email" ? "Email dashboard" : "Dashboard"} · AI Workspace OS`;
+    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : route === "sales" ? "Sales" : route === "calendar" ? "Schedule" : route === "files" ? "Files" : route === "telegram" ? "Telegram" : route === "logs" ? "Logs" : route === "email" ? "Email dashboard" : "Dashboard"} · AI Workspace OS`;
   }, [route]);
 
   return (
@@ -51,16 +56,19 @@ export default function App() {
           <IntegrationsPage />
         ) : (
           <Suspense fallback={<PageSkeleton kind={route === "data" ? "data" : route === "sales" ? "sales" : "dashboard"} />}>
-            {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : route === "calendar" ? <SchedulePage /> : route === "files" ? <FilesPage /> : route === "email" ? <DashboardPage /> : <MainDashboardPage />}
+            {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : route === "calendar" ? <SchedulePage /> : route === "files" ? <FilesPage /> : route === "telegram" ? <TelegramPage /> : route === "logs" ? <LogsPage /> : route === "email" ? <DashboardPage /> : <MainDashboardPage />}
           </Suspense>
         )}
         </PageErrorBoundary>
       </main>
       {/* Right-hand panel slot: pages portal into it (e.g. the widget library while editing). Hidden when empty. */}
       <aside id="side-panel" className="side-panel-slot" />
-      <AgentAssistant />
+      <Suspense fallback={null}><AgentAssistant /></Suspense>
       <ReplyModal />
       <EmailViewer />
+      {/* One confirmation dialog and one toast area for the whole app. */}
+      <ConfirmHost />
+      <Toaster />
     </div>
   );
 }

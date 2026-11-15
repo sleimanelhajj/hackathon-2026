@@ -71,10 +71,10 @@ test("a single number comes with the previous period for comparison", { skip }, 
 });
 
 test("groupings rank by value, respect the limit and the filter", { skip }, async () => {
-  const res = await runCustomQuery(pool, { metric: "orders", groupBy: "product", months: 3, limit: 5, filters: { categories: ["Plumbing"] } }, { schema, now });
+  const res = await runCustomQuery(pool, { metric: "orders", groupBy: "product", months: 3, limit: 5, filters: { categories: ["Batteries"] } }, { schema, now });
   assert.ok(res.rows.length >= 1 && res.rows.length <= 5, `${res.rows.length} rows`);
   for (let i = 1; i < res.rows.length; i++) assert.ok(res.rows[i - 1].value >= res.rows[i].value);
-  const plumbing = new Set(data.products.filter((p) => p.category === "Plumbing").map((p) => p.name));
+  const plumbing = new Set(data.products.filter((p) => p.category === "Batteries").map((p) => p.name));
   for (const r of res.rows) assert.ok(plumbing.has(r.key), r.key);
 });
 

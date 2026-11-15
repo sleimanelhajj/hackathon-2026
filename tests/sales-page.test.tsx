@@ -1,4 +1,4 @@
-// The Sales page: honest setup states, headline numbers with their change, clearly labelled demo data, a period
+// The Sales page: honest setup states, headline numbers with their change, no demo labels (decision #63), a period
 // picker, and every chart section present.
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api, type SalesDashboard, type SalesStatus, type SavedDashboard } from '../src/lib/api';
 import { DEFAULT_SALES_SPEC } from '../shared/spec.js';
 import SalesPage from '../src/pages/SalesPage';
+import { ConfirmHost, dismissConfirm } from '../src/components/ConfirmDialog';
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -19,7 +20,7 @@ beforeEach(() => {
   if (!document.getElementById('side-panel')) document.body.insertAdjacentHTML('beforeend', '<aside id="side-panel"></aside>');
   vi.spyOn(api, 'spec').mockResolvedValue({ ...structuredClone(DEFAULT_SALES_SPEC), id: 'sales', version: 1, canUndo: false, updatedAt: '' } as SavedDashboard);
 });
-afterEach(cleanup);
+afterEach(() => { dismissConfirm(); cleanup(); });
 
 const status = (s: Partial<SalesStatus>): SalesStatus => ({ configured: true, connected: true, counts: { customers: 180, products: 36, orders: 2724, deals: 320, reps: 8 }, error: null, ...s });
 
@@ -63,15 +64,19 @@ test('when Postgres refuses the connection it says why', async () => {
   expect(await screen.findByText(/refused the username or password/)).toBeTruthy();
 });
 
-test('connected but empty: one button loads the demo data', async () => {
+test('connected but empty: one button loads the sales records, after a confirm', async () => {
   vi.spyOn(api, 'salesStatus').mockResolvedValue(status({ counts: null }));
   const seed = vi.spyOn(api, 'seedSales').mockResolvedValue({ ok: true, counts: status({}).counts! });
   show();
-  fireEvent.click(await screen.findByRole('button', { name: /Load demo data/ }));
+  render(<ConfirmHost />);
+  fireEvent.click(await screen.findByRole('button', { name: /Load sales records/ }));
+  expect(seed).not.toHaveBeenCalled();
+  const dialog = await screen.findByRole('alertdialog', { name: /Load the store.s sales records/ });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Load sales records' }));
   await waitFor(() => expect(seed).toHaveBeenCalledTimes(1));
 });
 
-test('shows the headline numbers with their change against last year, labelled as demo data', async () => {
+test('shows the headline numbers with their change against last year, with no demo label', async () => {
   vi.spyOn(api, 'salesStatus').mockResolvedValue(status({}));
   vi.spyOn(api, 'salesDashboard').mockResolvedValue(structuredClone(dashboard));
   show();
@@ -82,7 +87,7 @@ test('shows the headline numbers with their change against last year, labelled a
   const margin = document.getElementById('widget-kpi-margin')!;
   expect(within(margin).getByText('42.5%')).toBeTruthy();
   expect(within(margin).getByText(/Down 1\.5 pts/)).toBeTruthy();
-  expect(screen.getByText('This is demo data')).toBeTruthy();
+  expect(screen.queryByText(/demo data/i)).toBeNull();
 });
 
 test('has every section', async () => {

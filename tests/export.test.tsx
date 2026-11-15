@@ -7,14 +7,25 @@ import { PDFDocument } from "pdf-lib";
 
 // A real 2×2 PNG, so pdf-lib can embed it.
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8DwnwEJMDGgAQYGBgB8aQH/2T0ILAAAAABJRU5ErkJggg==";
-const toPng = vi.fn(async () => PNG);
-vi.mock("html-to-image", () => ({ toPng: (...args: unknown[]) => toPng(...(args as [])) }));
+// And a real 1×1 JPEG: the PDF embeds a JPEG.
+const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+const blobOf = (url: string, type: string) => new Blob([Uint8Array.from(atob(url.split(",")[1]), (c) => c.charCodeAt(0))], { type });
+// What the capture saw: was the copy on the page, and did the app itself change meanwhile?
+let seen: { connected: boolean; liveClass: string } | null = null;
+const toCanvas = vi.fn(async (node: HTMLElement) => {
+  seen = { connected: node.isConnected, liveClass: document.documentElement.className };
+  return { toBlob: (done: (b: Blob | null) => void, type: string) => done(type === "image/jpeg" ? blobOf(JPEG, type) : blobOf(PNG, "image/png")) } as unknown as HTMLCanvasElement;
+});
+vi.mock("html-to-image", () => ({
+  toCanvas: (...args: unknown[]) => toCanvas(...(args as [HTMLElement])),
+  getFontEmbedCSS: async () => "",
+}));
 const { ExportButton } = await import("../src/dashboard/ExportButton");
 
 let downloads: { name: string; href: string }[] = [];
 let blobs: Blob[] = [];
 beforeEach(() => {
-  downloads = []; blobs = []; toPng.mockClear();
+  downloads = []; blobs = []; seen = null; toCanvas.mockClear();
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { downloads.push({ name: this.download, href: this.href }); });
   vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: (b: Blob) => { blobs.push(b); return "blob:report"; }, revokeObjectURL: () => {} }));
 });
@@ -24,15 +35,19 @@ function board() {
   return render(<div className="board"><h1>Money</h1><div className="board-grid">widgets</div><ExportButton title="Money" /></div>);
 }
 
-test("export as image: captures the dashboard (not the export button) and downloads a dated PNG", async () => {
-  board();
+test("export as image: draws an off-screen copy of the dashboard (not the export button) and downloads a dated PNG", async () => {
+  const { container } = board();
+  const live = container.querySelector(".board");
   fireEvent.click(screen.getByRole("button", { name: /Export/ }));
   fireEvent.click(screen.getByRole("menuitem", { name: /Image \(PNG\)/ }));
   await waitFor(() => expect(downloads).toHaveLength(1));
   expect(downloads[0].name).toMatch(/^Money-\d{4}-\d{2}-\d{2}\.png$/);
-  expect(downloads[0].href).toBe(PNG);
-  const [node, options] = toPng.mock.calls[0] as unknown as [HTMLElement, { filter: (n: Node) => boolean; pixelRatio: number }];
+  expect(blobs[0].type).toBe("image/png");
+  const [node, options] = toCanvas.mock.calls[0] as unknown as [HTMLElement, { filter: (n: Node) => boolean; pixelRatio: number }];
   expect(node.classList.contains("board")).toBe(true);
+  expect(node).not.toBe(live); // a copy, not the dashboard on screen
+  expect(seen).toEqual({ connected: true, liveClass: "" }); // the copy was on the page; the app itself didn't change
+  expect(document.querySelector(".export-stage")).toBeNull(); // and the copy is gone afterwards
   expect(options.pixelRatio).toBe(2);
   expect(options.filter(screen.getByRole("button", { name: /Export/ }).closest("[data-export-hide]")!)).toBe(false);
 });
@@ -50,7 +65,7 @@ test("export as PDF: a real PDF report with the dashboard's name", async () => {
 });
 
 test("a failed capture says so instead of failing silently", async () => {
-  toPng.mockRejectedValueOnce(new Error("canvas is tainted"));
+  toCanvas.mockRejectedValueOnce(new Error("canvas is tainted"));
   board();
   fireEvent.click(screen.getByRole("button", { name: /Export/ }));
   fireEvent.click(screen.getByRole("menuitem", { name: /Image \(PNG\)/ }));
@@ -60,12 +75,13 @@ test("a failed capture says so instead of failing silently", async () => {
 test("a capture that never finishes (a window in the background doesn't paint) ends with a clear message", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   try {
-    toPng.mockImplementationOnce(() => new Promise(() => {}));
+    toCanvas.mockImplementationOnce(() => new Promise(() => {}));
     board();
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Image \(PNG\)/ }));
     await vi.advanceTimersByTimeAsync(46_000);
     expect((await screen.findByRole("alert")).textContent).toMatch(/took too long.*in front/);
+    expect(document.querySelector(".export-stage")).toBeNull();
   } finally {
     vi.useRealTimers();
   }

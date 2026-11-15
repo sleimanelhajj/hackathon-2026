@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, Mail, Sparkles } from "lucide-react";
 import { api, type Payment, type Widget } from "../lib/api";
 import { useViewer } from "../components/EmailViewer";
+import { errorMessage } from "../lib/errors";
 
 const STATUS = { overdue: "Overdue", "due-soon": "Due soon", due: "Due", "no-due-date": "No due date", paid: "Paid" } as const;
 const PRIORITY = { high: "Urgent", medium: "Soon", low: "Later" } as const;
@@ -40,7 +41,7 @@ function Row({ p }: { p: Payment }) {
 export const PaymentsWidget = memo(function PaymentsWidget({ widget }: { widget: Extract<Widget, { type: "payments" }> }) {
   const { data, isLoading, error } = useQuery({ queryKey: ["payments"], queryFn: api.payments, refetchInterval: 60_000 });
   if (isLoading) return <div className="skeleton widget-skeleton" />;
-  if (error) return <p className="widget-empty">{(error as Error).message}</p>;
+  if (error) return <p className="widget-empty">{errorMessage(error)}</p>;
   const items = (data?.items ?? []).filter((p) => widget.show === "all" || p.direction === widget.show);
   const t = data!.totals;
   // Late counts only what this widget shows ("to collect" never counts a bill you have to pay).

@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bot, CalendarCheck2, CalendarX2, Check, Clock, FlaskConical, Loader2, Mail, RotateCcw, Send, UserCheck, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Bot, CalendarCheck2, CalendarX2, Check, Clock, FlaskConical, Mail, RotateCcw, Send, UserCheck, X } from "lucide-react";
 import { api, type MeetingRequest } from "../lib/api";
 import { useViewer } from "../components/EmailViewer";
+import { confirm } from "../components/ConfirmDialog";
+import { toast } from "../components/Toaster";
 
 export const requestWhen = (r: Pick<MeetingRequest, "start" | "end">) => {
   const s = new Date(r.start), e = new Date(r.end);
@@ -21,40 +22,30 @@ function waitingReason(r: MeetingRequest) {
 }
 
 /**
- * Accept or decline a request waiting for the user. Both send an email to the person who asked, so the first click
- * says exactly what will be sent and the second sends it (AGENTS.md rule 4).
+ * Accept or decline a request waiting for the user. Both send an email to the person who asked, so a confirmation says
+ * exactly what will be sent before anything goes (AGENTS.md rule 4).
  */
 export function RequestDecision({ request }: { request: MeetingRequest }) {
   const qc = useQueryClient();
-  const [confirming, setConfirming] = useState<null | "accept" | "decline">(null);
-  const answer = useMutation({
-    mutationFn: (accept: boolean) => api.answerMeetingRequest(request.id, accept),
-    onSuccess: () => { setConfirming(null); void qc.invalidateQueries({ queryKey: ["schedule"] }); },
-  });
-  if (confirming) {
-    const accept = confirming === "accept";
-    return (
-      <div className="req-confirm" role="group" aria-label={accept ? "Confirm accepting" : "Confirm declining"}>
-        <p>
-          {accept
-            ? <>We'll email {who(request)} that {requestWhen(request)} works for you, and add it to your calendar.</>
-            : <>We'll email {who(request)} that you're not available then, with your next free times to choose from.</>}
-        </p>
-        {answer.error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {(answer.error as Error).message}</p>}
-        <div className="req-actions">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setConfirming(null); answer.reset(); }} disabled={answer.isPending}>Cancel</button>
-          <button type="button" className={`btn btn-sm ${accept ? "btn-primary" : "btn-secondary"}`} onClick={() => answer.mutate(accept)} disabled={answer.isPending}>
-            {answer.isPending ? <Loader2 size={14} className="spin" aria-hidden /> : <Send size={14} aria-hidden />} {accept ? "Send and accept" : "Send and decline"}
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const decide = async (accept: boolean) => {
+    const ok = await confirm({
+      title: accept ? `Accept "${request.title}"?` : `Decline "${request.title}"?`,
+      message: accept
+        ? <>We'll email {who(request)} that {requestWhen(request)} works for you, and add it to your calendar.</>
+        : <>We'll email {who(request)} that you're not available then, with your next free times to choose from.</>,
+      confirmLabel: accept ? "Send and accept" : "Send and decline",
+      icon: <Send size={18} />,
+      action: () => api.answerMeetingRequest(request.id, accept),
+    });
+    if (!ok) return;
+    toast.success(accept ? "Accepted and added to your calendar" : "Declined", `Email sent to ${who(request)}.`);
+    void qc.invalidateQueries({ queryKey: ["schedule"] });
+  };
   return (
     <div className="req-actions">
       <button type="button" className="btn btn-ghost btn-sm" onClick={() => useViewer.getState().open(request.threadId)}><Mail size={14} aria-hidden /> Read the email</button>
-      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirming("decline")}><X size={14} aria-hidden /> Decline</button>
-      <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirming("accept")}><Check size={14} aria-hidden /> Accept</button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => void decide(false)} aria-haspopup="dialog"><X size={14} aria-hidden /> Decline</button>
+      <button type="button" className="btn btn-primary btn-sm" onClick={() => void decide(true)} aria-haspopup="dialog"><Check size={14} aria-hidden /> Accept</button>
     </div>
   );
 }
@@ -83,7 +74,6 @@ function emailStatus(r: MeetingRequest, testMode: boolean) {
 /** One email the assistant sent (or tried to) about a request. */
 function ReplyRow({ request, auto, testMode }: { request: MeetingRequest; auto: boolean; testMode: boolean }) {
   const qc = useQueryClient();
-  const retry = useMutation({ mutationFn: () => api.retryMeetingEmail(request.id), onSuccess: () => void qc.invalidateQueries({ queryKey: ["schedule"] }) });
   const status = emailStatus(request, testMode);
   // A failed email can be retried; one written in test mode can be sent once test mode is off. Both are your click.
   const sendLabel = request.email?.error ? "Retry" : request.email?.dryRun && !testMode ? "Send now" : null;
@@ -91,6 +81,20 @@ function ReplyRow({ request, auto, testMode }: { request: MeetingRequest; auto: 
     ? request.reason === "past" ? "The time had already passed" : `Clashed with ${request.clashWith ?? "another meeting"}`
     : request.status === "confirmed" ? "You accepted" : "You declined";
   const Icon = auto ? Bot : request.status === "confirmed" ? CalendarCheck2 : CalendarX2;
+  // Sending (or re-sending) the email is a confirmed step too.
+  const send = async () => {
+    const ok = await confirm({
+      title: sendLabel === "Retry" ? "Try sending this email again?" : "Send this email now?",
+      message: <>It goes to {who(request)} about "{request.title}" ({requestWhen(request)}).</>,
+      details: request.email?.body ? <pre className="ui-modal-details req-email-preview">{request.email.body}</pre> : undefined,
+      confirmLabel: sendLabel === "Retry" ? "Send again" : "Send now",
+      icon: <Send size={18} />,
+      action: () => api.retryMeetingEmail(request.id),
+    });
+    if (!ok) return;
+    toast.success("Email sent", `To ${who(request)}.`);
+    void qc.invalidateQueries({ queryKey: ["schedule"] });
+  };
   return (
     <li className="req-row">
       <span className="req-row-icon" data-tone={request.status === "confirmed" ? "ok" : undefined} aria-hidden><Icon size={16} /></span>
@@ -103,11 +107,10 @@ function ReplyRow({ request, auto, testMode }: { request: MeetingRequest; auto: 
             <pre>{request.email.body}</pre>
           </details>
         )}
-        {retry.error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {(retry.error as Error).message}</p>}
       </div>
       {sendLabel && (
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => retry.mutate()} disabled={retry.isPending}>
-          {retry.isPending ? <Loader2 size={13} className="spin" aria-hidden /> : sendLabel === "Retry" ? <RotateCcw size={13} aria-hidden /> : <Send size={13} aria-hidden />} {sendLabel}
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => void send()} aria-haspopup="dialog">
+          {sendLabel === "Retry" ? <RotateCcw size={13} aria-hidden /> : <Send size={13} aria-hidden />} {sendLabel}
         </button>
       )}
     </li>
@@ -116,9 +119,12 @@ function ReplyRow({ request, auto, testMode }: { request: MeetingRequest; auto: 
 
 /** Requests waiting for the user, then what was answered automatically and by the user. */
 export function MeetingRequests({ requests, dryRun }: { requests: MeetingRequest[]; dryRun: boolean }) {
-  const pending = requests.filter((r) => r.status === "pending");
-  const auto = requests.filter((r) => r.status === "auto-declined" && r.email);
-  const yours = requests.filter((r) => r.decidedBy === "user" && (r.status === "confirmed" || r.status === "declined"));
+  const pending: MeetingRequest[] = [], auto: MeetingRequest[] = [], yours: MeetingRequest[] = [];
+  for (const r of requests) {
+    if (r.status === "pending") pending.push(r);
+    else if (r.status === "auto-declined" && r.email) auto.push(r);
+    else if (r.decidedBy === "user" && (r.status === "confirmed" || r.status === "declined")) yours.push(r);
+  }
   return (
     <div className="req-panel">
       {dryRun && (

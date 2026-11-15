@@ -1,11 +1,15 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  AlertTriangle, ArrowRight, Scaling, BarChart3, Bot, CheckCircle2, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, Table2, Trash2, Undo2, X,
+  AlertTriangle, ArrowRight, Scaling, BarChart3, CheckCircle2, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Send, ShieldCheck, Table2, Trash2, Undo2, X,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type AddedWidget, type AssistantReply, type Board, type InvoiceDraft, type InvoiceProposal, type ResizedWidget, type Status } from "../lib/api";
 import { useHighlight } from "../lib/store";
 import { useStatus } from "../lib/queries";
+import { errorMessage } from "../lib/errors";
+import { confirm } from "../components/ConfirmDialog";
+import { toast } from "../components/Toaster";
+import { AgentAvatar, LAYLA, useAgents } from "../agents/agents";
 
 type ChatMessage = {
   id: string;
@@ -26,7 +30,7 @@ const SUGGESTIONS = [
   "How did sales go this month compared with last month?",
   "Which items need reordering?",
   "I'm repainting a 12 by 12 ft bedroom. What do I need?",
-  "Show me monthly sales of the cordless drill",
+  "Show me monthly sales of the 5 kWh battery",
   "Create an invoice for a trade customer",
 ];
 
@@ -131,21 +135,23 @@ const addedTo = (board: Board, name?: string) => (board.startsWith("page-") ? `A
 /** A widget the dashboard builder added: what it shows, where it went, and a way to open or undo it. */
 function WidgetCard({ widget }: { widget: AddedWidget }) {
   const qc = useQueryClient();
-  const [state, setState] = useState<"added" | "removing" | "removed">("added");
-  const [error, setError] = useState<string | null>(null);
+  const [removed, setRemoved] = useState(false);
   const Icon = (widget.chart && CHART_ICON[widget.chart]) || BarChart3;
   const href = boardHref(widget.board);
+  const state = removed ? "removed" : "added";
   const remove = async () => {
-    setState("removing");
-    setError(null);
-    try {
-      await api.removeWidget(widget.board, widget.id);
-      setState("removed");
-      void qc.invalidateQueries({ queryKey: ["dashboard-spec", widget.board] });
-    } catch (err) {
-      setState("added");
-      setError((err as Error).message);
-    }
+    const ok = await confirm({
+      title: `Remove "${widget.title}"?`,
+      message: `It comes off ${boardLabel(widget.board, widget.boardName)} dashboard. You can ask me to add it again.`,
+      confirmLabel: "Remove widget",
+      tone: "danger",
+      icon: <Trash2 size={18} />,
+      action: () => api.removeWidget(widget.board, widget.id),
+    });
+    if (!ok) return;
+    setRemoved(true);
+    toast.success("Widget removed", widget.title);
+    void qc.invalidateQueries({ queryKey: ["dashboard-spec", widget.board] });
   };
   return (
     <section className="widget-card" role="region" aria-label={`Widget ${widget.title}`} data-state={state}>
@@ -160,12 +166,11 @@ function WidgetCard({ widget }: { widget: AddedWidget }) {
       {state !== "removed" && (
         <div className="widget-card-actions">
           <a className="btn btn-secondary btn-sm" href={href} onClick={() => useHighlight.getState().set(widget.id)}>Open <ArrowRight size={13} aria-hidden /></a>
-          <button type="button" className="icon-btn icon-btn-sm" onClick={remove} disabled={state === "removing"} aria-label={`Remove ${widget.title}`} title="Remove from the dashboard">
-            {state === "removing" ? <Loader2 size={14} className="spin" aria-hidden /> : <Trash2 size={14} aria-hidden />}
+          <button type="button" className="icon-btn icon-btn-sm" onClick={() => void remove()} aria-haspopup="dialog" aria-label={`Remove ${widget.title}`} title="Remove from the dashboard">
+            <Trash2 size={14} aria-hidden />
           </button>
         </div>
       )}
-      {error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {error}</p>}
     </section>
   );
 }
@@ -194,7 +199,7 @@ function useBoardUndo(item: { board: Board; id: string; version: number }, redo:
       void qc.invalidateQueries({ queryKey: ["dashboard-spec", item.board] });
     } catch (err) {
       setState("done");
-      setError((err as Error).message);
+      setError(errorMessage(err));
     }
   };
   return { state, error, undo };
@@ -264,23 +269,24 @@ function InvoiceCard({ initial, status }: { initial: InvoiceDraft; status: Statu
   const [reviewing, setReviewing] = useState(false);
   const [subject, setSubject] = useState(`Invoice ${initial.invoiceNumber}`);
   const [body, setBody] = useState(`Hello ${initial.customer.name},\n\nPlease find invoice ${initial.invoiceNumber} attached.\n\nThank you for your business.`);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const gmail = status?.gmail;
   const canSend = gmail?.mode === "live" && gmail.canSend;
   const sent = invoice.status === "sent";
 
   const deliver = async () => {
-    setSending(true);
-    setError(null);
-    try {
-      setInvoice(await api.sendInvoice(invoice.id, { subject: subject.trim(), body: body.trim() }));
-      setReviewing(false);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSending(false);
-    }
+    let result: InvoiceDraft | undefined;
+    const ok = await confirm({
+      title: `Send invoice ${invoice.invoiceNumber}?`,
+      message: <>It goes to <strong>{invoice.customer.email}</strong> from your Gmail, with the PDF attached ({formatMoney(invoice.totalMinor, invoice.currency)}).</>,
+      details: <div className="ui-modal-details"><strong>{subject.trim()}</strong>{"\n\n"}{body.trim()}</div>,
+      confirmLabel: "Send invoice",
+      icon: <Send size={18} />,
+      action: async () => { result = await api.sendInvoice(invoice.id, { subject: subject.trim(), body: body.trim() }); },
+    });
+    if (!ok || !result) return;
+    setInvoice(result);
+    setReviewing(false);
+    toast.success("Invoice sent", `To ${invoice.customer.email}.`);
   };
 
   return (
@@ -320,22 +326,23 @@ function InvoiceCard({ initial, status }: { initial: InvoiceDraft; status: Statu
             <span className="field-label">Message</span>
             <textarea className="input textarea invoice-message" rows={5} value={body} onChange={(event) => setBody(event.target.value)} />
           </label>
-          <p className="invoice-delivery-note"><ShieldCheck size={13} aria-hidden /> Nothing is sent until you click Send invoice.</p>
+          <p className="invoice-delivery-note"><ShieldCheck size={13} aria-hidden /> Nothing is sent until you confirm.</p>
           <div className="invoice-review-actions">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReviewing(false)} disabled={sending}>Back</button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={deliver} disabled={sending || !subject.trim() || !body.trim()}>
-              {sending ? <Loader2 size={14} className="spin" aria-hidden /> : <Send size={14} aria-hidden />} Send invoice
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReviewing(false)}>Back</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void deliver()} disabled={!subject.trim() || !body.trim()} aria-haspopup="dialog">
+              <Send size={14} aria-hidden /> Send invoice
             </button>
           </div>
         </div>
       )}
-      {error && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {error}</p>}
     </section>
   );
 }
 
 export function AgentAssistant() {
   const { data: status } = useStatus();
+  const team = useAgents();
+  const layla = team.list.length ? team.get("layla") : LAYLA;
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [threadId, setThreadId] = useState(newThread);
@@ -348,7 +355,7 @@ export function AgentAssistant() {
   useEffect(() => {
     if (!open) return;
     inputRef.current?.focus();
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !document.querySelector("dialog[open]")) setOpen(false); };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [open]);
@@ -371,7 +378,7 @@ export function AgentAssistant() {
     }]);
   };
   const addError = (err: unknown) =>
-    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: (err as Error).message, error: true }]);
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: errorMessage(err), error: true }]);
 
   const run = async (call: () => Promise<AssistantReply>) => {
     setWorking(true);
@@ -394,7 +401,8 @@ export function AgentAssistant() {
     if (!approve) inputRef.current?.focus();
   };
 
-  const restart = () => {
+  const restart = async () => {
+    if (messages.length && !(await confirm({ title: "Start a new chat?", message: "This conversation is cleared. Widgets, pages and invoices it made stay where they are.", confirmLabel: "Start new chat", cancelLabel: "Keep chatting" }))) return;
     setThreadId(newThread());
     setMessages([]);
     setDraft("");
@@ -413,12 +421,12 @@ export function AgentAssistant() {
       {open && (
         <aside className="agent-panel" role="dialog" aria-modal="false" aria-label="Assistant">
           <header className="agent-head">
-            <span className="agent-avatar"><Bot size={18} aria-hidden /></span>
+            <AgentAvatar agent={layla} size={38} />
             <div>
-              <h2>Assistant</h2>
-              <p>Answers from your sales database</p>
+              <h2>{layla.name}</h2>
+              <p>{layla.role} · answers from your sales database</p>
             </div>
-            <button type="button" className="icon-btn" aria-label="New chat" title="New chat" onClick={restart} disabled={working}>
+            <button type="button" className="icon-btn" aria-label="New chat" title="New chat" onClick={() => void restart()} disabled={working}>
               <RotateCcw size={16} aria-hidden />
             </button>
             <button type="button" className="icon-btn" aria-label="Close assistant" onClick={() => setOpen(false)}>
@@ -430,7 +438,7 @@ export function AgentAssistant() {
             {messages.length === 0 && (
               <div className="agent-empty">
                 <span className="agent-empty-icon"><MessageCircle size={20} aria-hidden /></span>
-                <h3>What would you like to know?</h3>
+                <h3>Hi, I'm {layla.name}. What would you like to know?</h3>
                 <p>Ask about sales, stock and customers, describe a job to get product picks, or ask for an invoice.</p>
                 <div className="agent-prompts">
                   {SUGGESTIONS.map((suggestion) => (
@@ -479,7 +487,7 @@ export function AgentAssistant() {
               {working ? <Loader2 size={17} className="spin" aria-hidden /> : <Send size={17} aria-hidden />}
             </button>
           </form>
-          <p className="agent-footnote">AI can make mistakes. Figures come from the store's sales database (demo data).</p>
+          <p className="agent-footnote">AI can make mistakes. Figures come from your sales database.</p>
         </aside>
       )}
     </div>

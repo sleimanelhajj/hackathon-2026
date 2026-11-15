@@ -5,8 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api, type Payment, type StockChange } from "../src/lib/api";
 import { PaymentsWidget } from "../src/widgets/PaymentsWidget";
 import { StockChangesWidget } from "../src/widgets/StockChangesWidget";
+import { ConfirmHost, dismissConfirm } from "../src/components/ConfirmDialog";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { dismissConfirm(); cleanup(); vi.restoreAllMocks(); });
 const wrap = (ui: React.ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
 
 const pay = (extra: Partial<Payment>): Payment => ({
@@ -50,7 +51,7 @@ const change = (extra: Partial<StockChange>): StockChange => ({
 test("stock changes: what each invoice moved, what it couldn't match, and Undo after a confirm", async () => {
   vi.spyOn(api, "stockChanges").mockResolvedValue({ configured: true, changes: [change({}), change({ key: "sale:INV-9", kind: "sale", number: "INV-9", counterparty: "Frem Electric", lines: [{ sku: "CH-0001", name: "Solar panel 450W", change: -2 }], unmatched: [], undoneAt: "2026-11-15T11:00:00Z" })] });
   const undo = vi.spyOn(api, "undoStockChange").mockResolvedValue({ key: "purchase:northstar:NS-1", undone: true });
-  wrap(<StockChangesWidget widget={{ id: "s", type: "stock-changes", title: "Stock changes" }} />);
+  wrap(<><StockChangesWidget widget={{ id: "s", type: "stock-changes", title: "Stock changes" }} /><ConfirmHost /></>);
   const row = await screen.findByRole("listitem", { name: /Northstar Trade Co\./ });
   expect(row.textContent).toMatch(/Solar panel 450W \+10/);
   expect(row.textContent).toMatch(/1 line not matched: Delivery/);
@@ -60,7 +61,8 @@ test("stock changes: what each invoice moved, what it couldn't match, and Undo a
   expect(within(sold).queryByRole("button", { name: "Undo" })).toBeNull();
   fireEvent.click(within(row).getByRole("button", { name: "Undo" }));
   expect(undo).not.toHaveBeenCalled();
-  fireEvent.click(within(row).getByRole("button", { name: "Undo stock change" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Undo this purchase?" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Undo stock change" }));
   await waitFor(() => expect(undo).toHaveBeenCalledWith("purchase:northstar:NS-1"));
 });
 

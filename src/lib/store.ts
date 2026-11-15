@@ -42,7 +42,7 @@ export const useUi = create<UiState>()(
   )
 );
 
-export type Route = "dashboard" | "email" | "integrations" | "data" | "sales" | "calendar" | "files";
+export type Route = "dashboard" | "email" | "integrations" | "data" | "sales" | "calendar" | "files" | "telegram" | "logs";
 
 function readRoute(): Route {
   const h = window.location.hash;
@@ -52,6 +52,8 @@ function readRoute(): Route {
   if (h.startsWith("#/email")) return "email";
   if (h.startsWith("#/sales")) return "sales";
   if (h.startsWith("#/calendar")) return "calendar";
+  if (h.startsWith("#/telegram")) return "telegram";
+  if (h.startsWith("#/logs")) return "logs";
   return "dashboard";
 }
 

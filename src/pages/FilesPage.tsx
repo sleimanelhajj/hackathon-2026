@@ -7,6 +7,7 @@ import { api, type DocFile, type DocFolder } from "../lib/api";
 import { Callout } from "../components/ui";
 import { PageSkeleton } from "../components/Skeletons";
 import { useViewer } from "../components/EmailViewer";
+import { errorMessage } from "../lib/errors";
 
 const TYPE_LABEL: Record<string, string> = {
   invoice: "Invoice", quote: "Quote", "purchase-order": "Purchase order", receipt: "Receipt", statement: "Statement", "delivery-note": "Delivery note",
@@ -84,7 +85,7 @@ export default function FilesPage() {
   const open = folders.find((f) => f.key === openKey) ?? null;
 
   if (isLoading) return <PageSkeleton kind="data" />;
-  if (error) return <div className="page"><Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load your files" text={(error as Error).message} /></div>;
+  if (error) return <div className="page"><Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load your files" text={errorMessage(error)} /></div>;
   const total = (data?.folders ?? []).reduce((n, f) => n + f.count, 0);
 
   return (

@@ -29,6 +29,7 @@
 | `react-big-calendar` + `dayjs` | **In use:** the Schedule page (`src/pages/SchedulePage.tsx`), restyled with our tokens; only the dayjs adapter is imported |
 | `pdf-lib` | **In use:** deterministic invoice PDFs on the server; the model never writes PDF code or HTML. Also builds dashboard PDF reports in the browser (#61) |
 | `html-to-image` | **In use:** draws a dashboard as a PNG for Export (#61), in the browser; nothing is uploaded |
+| `telegram` (GramJS) | **In use:** Telegram sign-in, reading the followed chats and sending confirmed messages over MTProto (web connection), on the server only (#64) |
 | `@langchain/langgraph` (+ `@langchain/core`) | **In use:** the assistant's agent graph (`server/agent/sales-agent.js`): model → tools → human confirmation via `interrupt()`, per-thread checkpoints. Gemini is still called through `llm.js`, not a LangChain model wrapper |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
@@ -95,6 +96,18 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 
 | Method | Path | Does |
 |---|---|---|
+| GET | `/api/agents` | The AI team: names, roles, avatars, who is above whom (#67) |
+| GET | `/api/logs/usage?days=` | Gemini calls, tokens and cost for 1–90 days: totals, by agent, by model, by day, latest 100 calls, price list (#67) |
+| GET | `/api/logs/runs?days=&limit=` | Latest top-level agent runs with their steps and sub-agent runs nested (#67) |
+| GET | `/api/health` | 200 when MongoDB answers, 503 when not (uptime checks) |
+| GET | `/api/integrations/telegram` | Telegram status: configured, connected, account (masked phone), last read, sign-in step (#64) |
+| POST | `/api/integrations/telegram/code` · `/verify` · `/password` · `/cancel` | Sign-in steps: phone → code → two-step password. Never stores the code or password |
+| POST | `/api/integrations/telegram/sync` | Reads recent chats (bounded) |
+| DELETE | `/api/integrations/telegram` | Signs out of Telegram and deletes its chats here |
+| PUT | `/api/integrations/telegram/people` | Who to follow: `{ people: string[] }` (names, max 30); reads chats again in the background (#65) |
+| GET · POST | `/api/telegram/chats/:id/insight` | AI insight for one followed chat: saved one (GET, made if out of date) or a new one (POST) (#65) |
+| POST | `/api/telegram/chats/:id/send` | Sends one message the user confirmed (`{ text, confirmed: true }`), followed chats only (#65) |
+| GET | `/api/telegram/chats` · `/api/telegram/chats/:id/messages` | Chat list (no text) · one chat's messages (decrypted) |
 | GET | `/api/status` | DB health, whether Google OAuth and Gemini are configured, Gmail connection + AI analysis state |
 | GET | `/api/auth/google/start` | Redirects to Google consent |
 | GET | `/api/auth/google/callback` | Stores encrypted tokens, starts first sync |
@@ -145,6 +158,9 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 |---|---|
 | `connections` | One doc per provider (tokens encrypted). `analysis` sub-doc: status, progress, counts, last run, error |
 | `messages` | Synced Gmail metadata (unique on `gmailId`) |
+| `agent_runs` | One document per agent run: agent, task label, trigger, parent/root run, tokens, cost, steps (model calls, tools, hand-overs). TTL 90 days. No message content (#67) |
+| `telegram_chats` | Followed Telegram chats: title, kind, unread, last message time, count. No message text; `insight` holds the AI insight encrypted (`enc`) with the message id it was based on (#64, #65) |
+| `telegram_messages` | Telegram messages (unique on chatId + id): date, out, sender name, hasMedia, `textEnc` (encrypted) |
 | `sent_replies` | Metadata of replies sent from the app (threadId, Gmail id, recipients, subject, time). No text |
 | `attachment_text` | Text extracted from attachments for the AI, one doc per `gmailId:partId`: status (`ok`/`empty`/`failed`), `textEnc` (encrypted), kind (`pdf`, `docx`, `xlsx`, `pptx`, `image`, `calendar`, `zip`, `html`, `text`), chars, `reader` (version; older entries without text are read again). Temporary Gemini failures and images read without a key aren't cached. Deleted on disconnect |
 | `extractions` | AI labels, one doc per thread (`_id` = threadId): category, priority, needsReply, summary, reason, suggestedAction, certainty (`inferred` or `derived`), model, promptVersion, lastMessageId |

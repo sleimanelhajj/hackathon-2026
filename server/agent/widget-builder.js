@@ -1,4 +1,4 @@
-// The widget-builder sub-agent: turns a plain request ("monthly sales of the cordless drill") into a custom sales
+// The widget-builder sub-agent: turns a plain request ("monthly sales of the 5 kWh battery") into a custom sales
 // widget. It's its own small LangGraph graph with its own prompt and tools, called by the main assistant through
 // the add_dashboard_widget tool:
 //
@@ -11,6 +11,7 @@
 // once before the widget is accepted, so a broken or empty widget never reaches the board.
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { CustomQuery, CustomChart, CustomGroupBy, CustomMetric, Widget, customWidgetProblems } from "../../shared/spec.js";
+import { noteTool } from "./trace.js";
 
 export const WIDGET_TOOL_DECLARATIONS = [
   { name: "find_products", description: "Search the catalogue by name or need to get exact product SKUs for a filter.",
@@ -19,7 +20,7 @@ export const WIDGET_TOOL_DECLARATIONS = [
     parameters: { type: "OBJECT", properties: { query: { type: "STRING" } }, required: ["query"] } },
   { name: "create_widget", description: "Create the widget. Call once you know every filter value exactly. The system checks it and runs it; if something is wrong you'll get the reason back to fix.",
     parameters: { type: "OBJECT", properties: {
-      title: { type: "STRING", description: "Short, plain title, max 60 characters, e.g. 'Cordless drill sales by month'" },
+      title: { type: "STRING", description: "Short, plain title, max 60 characters, e.g. '5 kWh battery sales by month'" },
       chart: { type: "STRING", enum: CustomChart.options, description: "number = one total; line = over time; bar = compare groups or periods; table = ranked list" },
       metric: { type: "STRING", enum: CustomMetric.options },
       groupBy: { type: "STRING", enum: CustomGroupBy.options },
@@ -36,7 +37,7 @@ export const WIDGET_TOOL_DECLARATIONS = [
 ];
 
 function systemPrompt(v) {
-  return `You are the widget builder for the Sales dashboard of Cedar Hardware & Supply (a hardware store in Lebanon). You receive one request for a chart or number and turn it into a widget by calling create_widget.
+  return `You are the widget builder for the Sales dashboard of Cedar Solar Supply (a small solar shop in Lebanon). You receive one request for a chart or number and turn it into a widget by calling create_widget.
 
 Pick:
 - metric: revenue (USD after discounts), orders, units (units sold), aov (average order value), marginPct (gross margin %), customers (distinct customers), cost (cost of the goods sold: quantity x unit cost, USD), profit (gross profit: revenue minus cost, USD), purchases (what supplier invoices cost us, USD).
@@ -49,7 +50,7 @@ Pick:
   branches: ${v.branches.join(", ")}
   customer types (segments): ${v.segments.join(", ")}
   channels: ${v.channels.join(", ")}
-- title: short and plain, naming what's shown (e.g. "Cordless drill sales by month").
+- title: short and plain, naming what's shown (e.g. "5 kWh battery sales by month").
 
 Defaults when the request doesn't say: "sales" means revenue; a single product or customer over time means a line by month for 12 months; "top" or "best" means a table or bar grouped by product (or what's named), limit 10.
 Call create_widget once you know every filter value. If it comes back with a problem, fix it and call create_widget again. Don't write any other text.`;
@@ -125,6 +126,7 @@ export function createWidgetBuilder({ generate, tools, values, runQuery, maxStep
           } else {
             response = { error: `Unknown tool ${name}.` };
           }
+          noteTool({ name, args, result: response, ok: !response?.error, error: response?.error }); // Logs (#67)
           parts.push({ functionResponse: { ...(id ? { id } : {}), name, response } });
         }
         return { contents: [{ role: "user", parts }], ...(result ? { result } : {}) };
@@ -142,7 +144,7 @@ export function createWidgetBuilder({ generate, tools, values, runQuery, maxStep
       if (!text) throw new Error("Say what the widget should show.");
       const v = await values();
       const final = await graphFor(v).invoke({ contents: [{ role: "user", parts: [{ text }] }] }, { recursionLimit: maxSteps * 2 + 4 });
-      if (!final.result) throw new Error("I couldn't build that widget. Try naming the measure, the period and what to compare, for example \"revenue by month for the cordless drill, last 6 months\".");
+      if (!final.result) throw new Error("I couldn't build that widget. Try naming the measure, the period and what to compare, for example \"revenue by month for the 5 kWh battery, last 6 months\".");
       return final.result;
     },
   };

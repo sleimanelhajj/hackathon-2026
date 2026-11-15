@@ -1,6 +1,6 @@
 {
  "format": "ai-workspace-os/mongo-safe@1",
- "exportedAt": "2026-11-14T19:48:13.388Z",
+ "exportedAt": "2026-11-15T10:15:01.600Z",
  "collections": {
   "dashboards": [
    {
@@ -546,7 +546,7 @@
      {
       "id": "ai-cordless-drill-driver-20-prqa",
       "type": "sales-custom",
-      "title": "Cordless drill/driver 20V kit sales by month",
+      "title": "5 kWh battery sales",
       "chart": "line",
       "query": {
        "metric": "revenue",
@@ -555,33 +555,11 @@
        "limit": 10,
        "filters": {
         "products": [
-         "CH-0010"
+         "CH-0004"
         ],
         "categories": [],
         "branches": [],
         "segments": [],
-        "channels": [],
-        "customers": []
-       }
-      }
-     },
-     {
-      "id": "ai-top-5-retail-customer-or-ekgk",
-      "type": "sales-custom",
-      "title": "Top 5 retail customer orders by revenue",
-      "chart": "table",
-      "query": {
-       "metric": "revenue",
-       "groupBy": "customer",
-       "months": 12,
-       "limit": 5,
-       "filters": {
-        "products": [],
-        "categories": [],
-        "branches": [],
-        "segments": [
-         "Retail customer"
-        ],
         "channels": [],
         "customers": []
        }
@@ -693,16 +671,9 @@
       "y": 42,
       "w": 12,
       "h": 9
-     },
-     {
-      "i": "ai-top-5-retail-customer-or-ekgk",
-      "x": 0,
-      "y": 51,
-      "w": 6,
-      "h": 10
      }
     ],
-    "version": 33,
+    "version": 34,
     "previous": {
      "title": "Sales overview",
      "widgets": [
@@ -790,7 +761,7 @@
       {
        "id": "ai-cordless-drill-driver-20-prqa",
        "type": "sales-custom",
-       "title": "Cordless drill/driver 20V kit sales by month",
+       "title": "5 kWh battery sales",
        "chart": "line",
        "query": {
         "metric": "revenue",
@@ -799,11 +770,33 @@
         "limit": 10,
         "filters": {
          "products": [
-          "CH-0010"
+          "CH-0004"
          ],
          "categories": [],
          "branches": [],
          "segments": [],
+         "channels": [],
+         "customers": []
+        }
+       }
+      },
+      {
+       "id": "ai-top-5-retail-customer-or-ekgk",
+       "type": "sales-custom",
+       "title": "Top 5 retail customer orders by revenue",
+       "chart": "table",
+       "query": {
+        "metric": "revenue",
+        "groupBy": "customer",
+        "months": 12,
+        "limit": 5,
+        "filters": {
+         "products": [],
+         "categories": [],
+         "branches": [],
+         "segments": [
+          "Retail customer"
+         ],
          "channels": [],
          "customers": []
         }
@@ -915,10 +908,131 @@
        "y": 42,
        "w": 12,
        "h": 9
+      },
+      {
+       "i": "ai-top-5-retail-customer-or-ekgk",
+       "x": 0,
+       "y": 51,
+       "w": 6,
+       "h": 10
       }
      ]
     },
-    "updatedAt": "2026-11-14T18:59:40.435Z"
+    "updatedAt": {}
+   },
+   {
+    "_id": "main",
+    "title": "Overview",
+    "widgets": [
+     {
+      "id": "kpi-revenue",
+      "type": "sales-kpi",
+      "title": "Revenue",
+      "metric": "revenue"
+     },
+     {
+      "id": "kpi-orders",
+      "type": "sales-kpi",
+      "title": "Orders",
+      "metric": "orders"
+     },
+     {
+      "id": "stat-awaiting-you",
+      "type": "stat",
+      "title": "Waiting on you",
+      "metric": "awaitingYou"
+     },
+     {
+      "id": "kpi-purchases",
+      "type": "sales-kpi",
+      "title": "Purchases",
+      "metric": "purchases"
+     },
+     {
+      "id": "payments",
+      "type": "payments",
+      "title": "Payments",
+      "show": "all"
+     },
+     {
+      "id": "ai-attention",
+      "type": "insight-list",
+      "title": "Needs your attention",
+      "focus": "high-priority"
+     },
+     {
+      "id": "revenue-trend",
+      "type": "sales-trend",
+      "title": "Revenue by month"
+     },
+     {
+      "id": "list-awaiting-you",
+      "type": "thread-list",
+      "title": "Waiting on your reply",
+      "list": "awaitingYou"
+     }
+    ],
+    "layout": [
+     {
+      "i": "kpi-revenue",
+      "x": 0,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "kpi-orders",
+      "x": 3,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "stat-awaiting-you",
+      "x": 6,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "kpi-purchases",
+      "x": 9,
+      "y": 0,
+      "w": 3,
+      "h": 3
+     },
+     {
+      "i": "payments",
+      "x": 0,
+      "y": 3,
+      "w": 6,
+      "h": 10
+     },
+     {
+      "i": "ai-attention",
+      "x": 6,
+      "y": 3,
+      "w": 6,
+      "h": 10
+     },
+     {
+      "i": "revenue-trend",
+      "x": 0,
+      "y": 13,
+      "w": 8,
+      "h": 10
+     },
+     {
+      "i": "list-awaiting-you",
+      "x": 8,
+      "y": 13,
+      "w": 4,
+      "h": 10
+     }
+    ],
+    "version": 1,
+    "previous": null,
+    "updatedAt": "2026-11-15T01:27:28.290Z"
    }
   ],
   "invoices": [

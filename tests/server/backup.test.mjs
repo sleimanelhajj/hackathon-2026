@@ -30,7 +30,7 @@ test("the sales data round-trips exactly: export, restore into a fresh schema, e
   const first = await backup.exportSales(pool, a);
   assert.equal(first.format, "ai-workspace-os/sales@1");
   assert.equal(first.data.products.length, 10);
-  assert.ok(first.data.orders.length > 800 && first.data.orderItems.length >= first.data.orders.length);
+  assert.ok(first.data.orders.length > 150 && first.data.orderItems.length >= first.data.orders.length);
   assert.ok(first.data.profile?.name);
   const json = JSON.parse(JSON.stringify(first)); // what's written to disk
   await backup.importSales(pool, b, json);

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_SPEC } from '../shared/spec.js';
 import { api, type Dashboard, type SavedDashboard } from '../src/lib/api';
 import { DashboardPage } from '../src/pages/DashboardPage';
+import { ConfirmHost, dismissConfirm } from '../src/components/ConfirmDialog';
 
 vi.mock('../src/widgets/registry', async (importOriginal) => ({
   ...await importOriginal<typeof import('../src/widgets/registry')>(),
@@ -32,13 +33,18 @@ beforeEach(() => {
   resets = vi.spyOn(api, 'resetSpec');
   const slot = document.createElement('aside'); slot.id = 'side-panel'; document.body.append(slot);
 });
-afterEach(() => { cleanup(); document.body.innerHTML = ''; vi.unstubAllGlobals(); });
+afterEach(() => { act(() => dismissConfirm()); cleanup(); document.body.innerHTML = ''; vi.unstubAllGlobals(); });
 
 async function open() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><DashboardPage /><ConfirmHost /></QueryClientProvider>);
   fireEvent.click(await screen.findByRole('button', { name: 'Edit layout', exact: true }));
   await waitFor(() => expect(document.querySelector('#widget-stat-awaiting-you')).not.toBeNull());
+}
+/** Cancel with unsaved changes asks first (a confirmation); answer it when it appears. */
+async function discardIfAsked() {
+  const ask = await screen.findByRole('alertdialog', { name: 'Discard your layout changes?' }).catch(() => null);
+  if (ask) fireEvent.click(within(ask).getByRole('button', { name: 'Discard changes' }));
 }
 function tile() { return document.querySelector<HTMLElement>('#widget-stat-awaiting-you')!; }
 /** Grid position GridStack holds for the tile, as "x,y". */
@@ -49,7 +55,7 @@ function pos() {
 function move() { fireEvent.keyDown(screen.getByRole('button', { name: 'Move Waiting on you', exact: true }), { key: 'ArrowRight' }); }
 async function resetPreview() {
   fireEvent.click(screen.getByRole('button', { name: 'Reset', exact: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Reset layout', exact: true }));
+  fireEvent.click(within(await screen.findByRole('alertdialog', { name: 'Reset this layout to the default?' })).getByRole('button', { name: 'Reset preview' }));
   await waitFor(() => expect(pos()).toBe('0,0'));
 }
 
@@ -62,6 +68,7 @@ describe('dashboard edit transactions with the real grid', () => {
     await waitFor(() => expect(pos()).not.toBe(original));
     const oldGrid = document.querySelector('.dashboard-layout');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+    await discardIfAsked();
     await screen.findByRole('button', { name: 'Edit layout', exact: true });
     expect(saves).not.toHaveBeenCalled(); expect(resets).not.toHaveBeenCalled();
     expect(document.querySelector('.dashboard-layout')).not.toBe(oldGrid);
@@ -73,6 +80,7 @@ describe('dashboard edit transactions with the real grid', () => {
   test('Reset works after Cancel and changes only the draft until Save', async () => {
     await open(); move();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+    await discardIfAsked();
     fireEvent.click(await screen.findByRole('button', { name: 'Edit layout', exact: true }));
     await resetPreview();
     expect(saved.layout[0].y).toBe(45);
@@ -86,6 +94,7 @@ describe('dashboard edit transactions with the real grid', () => {
   test('Cancel also discards a Reset preview', async () => {
     await open(); await resetPreview();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
+    await discardIfAsked();
     fireEvent.click(await screen.findByRole('button', { name: 'Edit layout', exact: true }));
     await waitFor(() => expect(pos()).toBe('0,45'));
     expect(saves).not.toHaveBeenCalled(); expect(resets).not.toHaveBeenCalled();

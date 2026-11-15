@@ -1,9 +1,11 @@
 // The reply dialog: AI drafts, the user edits, and nothing is sent without two explicit clicks (AGENTS.md rule 4).
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api, type ReplyDraft, type Status } from '../src/lib/api';
 import { ReplyModal, useReply } from '../src/components/ReplyModal';
+import { ConfirmHost, dismissConfirm } from '../src/components/ConfirmDialog';
+import { Toaster, toast } from '../src/components/Toaster';
 
 const draft: ReplyDraft = {
   threadId: 't1',
@@ -34,13 +36,13 @@ beforeEach(() => {
   send = vi.spyOn(api, 'sendReply').mockResolvedValue({ ok: true, id: 'sent-1' });
 });
 afterEach(() => {
-  act(() => useReply.getState().close());
+  act(() => { useReply.getState().close(); toast.clear(); dismissConfirm(); });
   cleanup();
 });
 
 function open(s: Status) {
   vi.spyOn(api, 'status').mockResolvedValue(s);
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReplyModal /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ReplyModal /><ConfirmHost /><Toaster /></QueryClientProvider>);
   act(() => useReply.getState().open('t1', 'Lena Ortiz'));
 }
 
@@ -58,15 +60,13 @@ test('shows the AI draft as editable fields, with the files it read and what to 
 test('the title, close button and Send stay in view; only the fields between them scroll', async () => {
   open(status({}));
   await screen.findByDisplayValue(/The price is/);
-  const dialog = document.querySelector('dialog.modal')!;
-  expect(dialog.classList.contains('modal-reply')).toBe(true);
-  const scroll = dialog.querySelector('.modal-scroll')!;
-  expect(scroll).toBeTruthy();
-  expect(scroll.contains(screen.getByDisplayValue('lena@ortiz.example'))).toBe(true);
-  expect(scroll.contains(screen.getByText(/Confirm the price\./))).toBe(true);
-  expect(scroll.contains(screen.getByRole('heading', { name: /Reply to Lena Ortiz/ }))).toBe(false);
-  expect(scroll.contains(screen.getByRole('button', { name: 'Close' }))).toBe(false);
-  expect(scroll.contains(screen.getByRole('button', { name: /Send reply/ }))).toBe(false);
+  const dialog = screen.getByRole('dialog', { name: /Reply to Lena Ortiz/ });
+  const body = dialog.querySelector('.ui-modal-body')!;
+  expect(body.contains(screen.getByDisplayValue('lena@ortiz.example'))).toBe(true);
+  expect(body.contains(screen.getByText(/Confirm the price./))).toBe(true);
+  expect(body.contains(screen.getByRole('heading', { name: /Reply to Lena Ortiz/ }))).toBe(false);
+  expect(body.contains(screen.getByRole('button', { name: 'Close' }))).toBe(false);
+  expect(body.contains(screen.getByRole('button', { name: /Send reply/ }))).toBe(false);
 });
 
 test('the "check before sending" note is a warning in amber and the AI tag uses the brand blue', async () => {
@@ -76,32 +76,50 @@ test('the "check before sending" note is a warning in amber and the AI tag uses 
   expect(document.querySelector('.field-label-row .tag')!.getAttribute('data-tone')).toBe('accent');
 });
 
-test('sends only after Send reply AND the confirm button, with the edited text', async () => {
+test('sends only after Send reply AND confirming who it goes to, with the edited text', async () => {
   open(status({}));
   const body = await screen.findByDisplayValue(/The price is/);
   fireEvent.change(body, { target: { value: 'Edited reply' } });
   fireEvent.click(screen.getByRole('button', { name: /Send reply/ }));
-  expect(send).not.toHaveBeenCalled(); // first click only asks to confirm
-  fireEvent.click(screen.getByRole('button', { name: /Send to lena@ortiz\.example/ }));
+  const ask = await screen.findByRole('alertdialog', { name: 'Send this reply?' });
+  expect(ask.textContent).toMatch(/lena@ortiz.example/);
+  expect(send).not.toHaveBeenCalled(); // Send only asks
+  fireEvent.click(within(ask).getByRole('button', { name: 'Send reply' }));
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   expect(send.mock.calls[0][0]).toEqual({ threadId: 't1', to: [{ name: '', email: 'lena@ortiz.example' }], subject: 'Re: Pricing', body: 'Edited reply' });
   expect(await screen.findByText('Reply sent')).toBeTruthy();
+  await waitFor(() => expect(useReply.getState().threadId).toBeNull());
 });
 
-test('Back cancels the confirm step without sending', async () => {
+test('Cancel in the confirmation keeps the reply open and unsent', async () => {
   open(status({}));
   await screen.findByDisplayValue(/The price is/);
   fireEvent.click(screen.getByRole('button', { name: /Send reply/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   expect(send).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: /Send reply/ })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: /Reply to Lena Ortiz/ })).toBeTruthy();
 });
 
-test('cannot send sample data', async () => {
-  open(status({ mode: 'sample' }));
+test('a failed send stays in the confirmation with the reason, and nothing is lost', async () => {
+  send.mockRejectedValueOnce(new Error('Gmail refused the message.'));
+  open(status({}));
   await screen.findByDisplayValue(/The price is/);
-  expect(screen.getByText(/sample data, so replies can't be sent/)).toBeTruthy();
-  expect((screen.getByRole('button', { name: /Send reply/ }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: /Send reply/ }));
+  const ask = await screen.findByRole('alertdialog');
+  fireEvent.click(within(ask).getByRole('button', { name: 'Send reply' }));
+  expect(await within(ask).findByText(/Gmail refused the message/)).toBeTruthy();
+  expect(screen.getByDisplayValue(/The price is/)).toBeTruthy();
+});
+
+test('closing with unsent edits asks before throwing them away', async () => {
+  open(status({}));
+  fireEvent.change(await screen.findByDisplayValue(/The price is/), { target: { value: 'My careful edit' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  const ask = await screen.findByRole('alertdialog', { name: 'Discard this reply?' });
+  fireEvent.click(within(ask).getByRole('button', { name: 'Keep editing' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  expect(screen.getByDisplayValue('My careful edit')).toBeTruthy();
 });
 
 test('cannot send until Gmail has granted the send permission', async () => {

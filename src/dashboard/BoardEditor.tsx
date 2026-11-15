@@ -10,6 +10,8 @@ import { WidgetFrame } from "./WidgetFrame";
 import { WidgetLibrary, type Catalog } from "./WidgetLibrary";
 import { cleanLayout, findSpace, nextId, normalizeLayout, settleLayout, type Size } from "./layout";
 import { BoardSkeleton } from "../components/Skeletons";
+import { confirm } from "../components/ConfirmDialog";
+import { errorMessage } from "../lib/errors";
 
 // A customisable dashboard ("board"): the saved layout, edit mode with the widget panel, save, undo and reset.
 // The email dashboard and the Sales page both use it; each page supplies its own data, header and banners.
@@ -33,7 +35,7 @@ type Props = {
   subtitle: ReactNode;
   /** Extra buttons before "Edit layout" (e.g. Sync now, a period picker). */
   actions?: ReactNode;
-  /** A tag shown while editing (e.g. "Sample data"). */
+  /** A tag shown next to the title while editing. */
   editTag?: ReactNode;
   /** Messages above the grid when not editing. */
   banners?: (tools: BoardTools) => ReactNode;
@@ -59,7 +61,6 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
   const sessionRef = useRef(0);
   const baselineRef = useRef<{ draft: Draft; version: number; title: string } | null>(null);
   const [notice, setNotice] = useState<"saved" | "reset" | "removed" | null>(null);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [addingType, setAddingType] = useState<WidgetType | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
@@ -126,7 +127,6 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
     ++sessionRef.current; // Ignore callbacks from a discarded grid gesture.
     baselineRef.current = null;
     setDraft(null);
-    setConfirmReset(false);
     setAddingType(null);
     restoreSidebar();
   };
@@ -203,11 +203,23 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
     );
   };
 
+  const askReset = async () => {
+    const ok = await confirm({
+      title: "Reset this layout to the default?",
+      message: "The preview goes back to the default widgets. Nothing is saved until you click Save; Discard keeps your current layout.",
+      confirmLabel: "Reset preview",
+      tone: "danger",
+    });
+    if (ok) resetLayout();
+  };
+  const askDiscard = async () => {
+    if (dirty && !(await confirm({ title: "Discard your layout changes?", message: "The changes you made while editing are lost; the saved layout stays as it was.", confirmLabel: "Discard changes", cancelLabel: "Keep editing", tone: "danger" }))) return;
+    stopEditing();
+  };
   const resetLayout = () => {
     if (!draft || save.isPending) return;
     setDraft(fromSpec(defaultSpec.widgets as Widget[], defaultSpec.layout));
     setEditSession(++sessionRef.current);
-    setConfirmReset(false);
     setAddingType(null);
     setAnnouncement("Preview reset to the default. Save layout to keep it, or Cancel to discard it.");
   };
@@ -234,7 +246,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
   }, [highlight, hasHighlight, openWidget]);
 
   if (specQuery.isLoading) return <BoardSkeleton kind={board === "sales" ? "sales" : "dashboard"} label="Loading your layout" />;
-  if (specQuery.error) return <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load the dashboard layout" text={(specQuery.error as Error).message} />;
+  if (specQuery.error) return <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load the dashboard layout" text={errorMessage(specQuery.error)} />;
 
   const canEditHere = unknownTypes.length === 0;
   const mutationError = save.error || undo.error || removeSavedMutation.error || pageError;
@@ -253,7 +265,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
             <>
               {editTag}
               {dirty && <span className="tag" data-tone="accent">Unsaved changes</span>}
-              <button className="btn btn-secondary" onClick={stopEditing} disabled={save.isPending}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={() => void askDiscard()} disabled={save.isPending}>Cancel</button>
               <button className="btn btn-primary" onClick={saveDraft} disabled={!dirty || save.isPending}>
                 {save.isPending ? <Loader2 size={15} className="spin" /> : <Check size={15} />} Save layout
               </button>
@@ -286,7 +298,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
         />
       )}
 
-      {mutationError ? <Callout tone="danger" icon={<AlertTriangle size={18} />} title="That didn't work" text={(mutationError as Error).message} /> : null}
+      {mutationError ? <Callout tone="danger" icon={<AlertTriangle size={18} />} title="That didn't work" text={errorMessage(mutationError)} /> : null}
 
       {notice && !editing && (
         <Callout
@@ -312,24 +324,14 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
           full={widgets.length >= 24}
           busy={save.isPending}
           footer={
-            confirmReset ? (
-              <>
-                <p className="side-panel-confirm">Reset this preview to the default? Save layout to keep it, or Cancel to discard it.</p>
-                <div className="side-panel-actions">
-                  <button className="btn btn-ghost" onClick={() => setConfirmReset(false)}>Keep mine</button>
-                  <button className="btn btn-danger" onClick={resetLayout} disabled={save.isPending}>Reset layout</button>
-                </div>
-              </>
-            ) : (
-              <div className="side-panel-actions">
-                <button className="btn btn-ghost" onClick={() => setConfirmReset(true)} disabled={save.isPending}><RotateCcw size={15} /> Reset</button>
-                <span className="spacer" />
-                <button className="btn btn-secondary" onClick={stopEditing} disabled={save.isPending}>Discard</button>
-                <button className="btn btn-primary" onClick={saveDraft} disabled={!dirty || save.isPending}>
-                  {save.isPending ? <Loader2 size={15} className="spin" /> : <Check size={15} />} Save
-                </button>
-              </div>
-            )
+            <div className="side-panel-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => void askReset()} disabled={save.isPending} aria-haspopup="dialog"><RotateCcw size={15} aria-hidden /> Reset</button>
+              <span className="spacer" />
+              <button type="button" className="btn btn-secondary" onClick={() => void askDiscard()} disabled={save.isPending}>Discard</button>
+              <button type="button" className="btn btn-primary" onClick={saveDraft} disabled={!dirty || save.isPending}>
+                {save.isPending ? <Loader2 size={15} className="spin" aria-hidden /> : <Check size={15} aria-hidden />} Save
+              </button>
+            </div>
           }
         />
       )}

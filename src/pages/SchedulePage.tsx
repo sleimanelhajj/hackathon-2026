@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, Views, dayjsLocalizer, type EventProps, type View } from "react-big-calendar";
 import dayjs from "dayjs";
 import "dayjs/locale/en-gb"; // weeks start on Monday
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import {
-  AlertTriangle, ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, CheckCircle2, CircleHelp, Clock, ExternalLink, Info, Loader2, Mail, MapPin, RefreshCw, Reply, ShieldCheck, SlidersHorizontal, Users, X,
+  AlertTriangle, ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, CheckCircle2, CircleHelp, Clock, ExternalLink, Info, Mail, MapPin, RefreshCw, Reply, ShieldCheck, SlidersHorizontal, Users, X,
 } from "lucide-react";
 import { api, type MeetingRequest, type ScheduleItem, type ScheduleSyncResult } from "../lib/api";
 import { Callout, Panel } from "../components/ui";
@@ -15,6 +15,9 @@ import { isOff, rangesOn } from "../schedule/availability";
 import { PageSkeleton } from "../components/Skeletons";
 import { useViewer } from "../components/EmailViewer";
 import { useReply } from "../components/ReplyModal";
+import { confirm } from "../components/ConfirmDialog";
+import { toast } from "../components/Toaster";
+import { errorMessage } from "../lib/errors";
 
 dayjs.locale("en-gb");
 const localizer = dayjsLocalizer(dayjs);
@@ -91,45 +94,31 @@ function Details({ item, request, onClose }: { item: ScheduleItem; request?: Mee
   );
 }
 
-/** Asks before anything is written to Google, and says exactly what will happen. */
-function SyncConfirm({ count, calendarName, busy, onConfirm, onCancel }: { count: number; calendarName: string; busy: boolean; onConfirm: () => void; onCancel: () => void }) {
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    confirmRef.current?.focus();
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [onCancel]);
-  return (
-    <div className="cal-confirm surface" role="alertdialog" aria-label="Sync to Google Calendar?" aria-describedby="cal-confirm-text">
-      <strong>Sync to Google Calendar?</strong>
-      <p id="cal-confirm-text" className="muted">
-        This adds or updates {count} events in a separate calendar called "{calendarName}" in your Google Calendar. Your other calendars aren't touched.
-        Items that left this schedule are removed from that calendar. You can hide or delete it in Google Calendar any time.
-      </p>
-      <div className="cal-confirm-actions">
-        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button ref={confirmRef} type="button" className="btn btn-primary" onClick={onConfirm} disabled={busy}>
-          {busy ? <Loader2 size={15} className="spin" aria-hidden /> : <RefreshCw size={15} aria-hidden />} Sync now
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function SchedulePage() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["schedule", TZ], queryFn: () => api.schedule(TZ), refetchInterval: 60_000 });
   const [view, setView] = useState<View>(() => (window.matchMedia?.("(max-width: 760px)").matches ? Views.AGENDA : Views.WEEK));
   const [date, setDate] = useState(() => new Date());
   const [selected, setSelected] = useState<ScheduleItem | null>(null);
-  const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<ScheduleSyncResult | null>(null);
   const [editing, setEditing] = useState(false);
-  const sync = useMutation({
-    mutationFn: () => api.syncSchedule(TZ),
-    onSuccess: (r) => { setResult(r); setConfirming(false); void qc.invalidateQueries({ queryKey: ["schedule"] }); },
-  });
+  // Writing to Google leaves the app, so it asks first and says exactly what will happen (AGENTS.md rule 4).
+  const startSync = async (count: number, calendarName: string) => {
+    let synced: ScheduleSyncResult | null = null;
+    const ok = await confirm({
+      title: "Sync to Google Calendar?",
+      message: `This adds or updates ${count} events in a separate calendar called "${calendarName}". Your other calendars aren't touched.`,
+      details: <p className="ui-modal-details">Items that left this schedule are removed from that calendar. You can hide or delete it in Google Calendar any time.</p>,
+      confirmLabel: "Sync now",
+      icon: <RefreshCw size={18} />,
+      action: async () => { synced = await api.syncSchedule(TZ); },
+    });
+    if (!ok || !synced) return;
+    const r: ScheduleSyncResult = synced;
+    setResult(r);
+    toast.success(`Synced to "${r.calendarName}"`, `${r.created} added, ${r.updated} updated, ${r.removed} removed.`);
+    void qc.invalidateQueries({ queryKey: ["schedule"] });
+  };
 
   const events = useMemo<CalEvent[]>(() => (data?.items ?? []).map((item) => ({ id: item.id, title: item.title, start: new Date(item.start), end: endOf(item), allDay: item.allDay, item })), [data]);
   const meetings = data?.meetings;
@@ -137,12 +126,14 @@ export default function SchedulePage() {
   const pending = requests.filter((r) => r.status === "pending").length;
   const stats = useMemo(() => {
     const now = new Date();
-    const items = data?.items ?? [];
-    return {
-      today: items.filter((i) => sameDay(new Date(i.start), now)).length,
-      overdue: items.filter((i) => i.overdue).length,
-      meetings: items.filter((i) => i.kind === "meeting" && i.request?.status !== "pending" && new Date(i.start) >= now).length,
-    };
+    const out = { today: 0, overdue: 0, meetings: 0 };
+    for (const i of data?.items ?? []) {
+      const start = new Date(i.start);
+      if (sameDay(start, now)) out.today++;
+      if (i.overdue) out.overdue++;
+      if (i.kind === "meeting" && i.request?.status !== "pending" && start >= now) out.meetings++;
+    }
+    return out;
   }, [data]);
   const eventProps = useCallback((e: CalEvent) => ({
     className: `cal-event cal-${e.item.kind}${e.item.priority ? ` cal-p-${e.item.priority}` : ""}${e.item.overdue ? " cal-overdue" : ""}${e.item.request?.status === "pending" ? " cal-request" : ""}`,
@@ -156,7 +147,7 @@ export default function SchedulePage() {
   const onSelect = useCallback((e: CalEvent) => setSelected(e.item), []);
 
   if (isLoading) return <PageSkeleton kind="data" />;
-  if (error) return <div className="page"><Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load your schedule" text={(error as Error).message} /></div>;
+  if (error) return <div className="page"><Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load your schedule" text={errorMessage(error)} /></div>;
   if (!data?.connected)
     return (
       <div className="page">
@@ -183,8 +174,8 @@ export default function SchedulePage() {
             <button type="button" className="btn btn-secondary" onClick={() => setEditing(true)}><SlidersHorizontal size={15} aria-hidden /> Availability</button>
           )}
           {cal?.canSync ? (
-            <button type="button" className="btn btn-primary" onClick={() => { setResult(null); setConfirming(true); }} disabled={data.sample || !data.items.length || sync.isPending}
-              title={data.sample ? "Sample data can't be synced" : undefined}>
+            <button type="button" className="btn btn-primary" onClick={() => { setResult(null); void startSync(data.items.length, cal.name); }} disabled={!data.items.length}
+              aria-haspopup="dialog" title={data.items.length ? undefined : "Nothing to sync yet"}>
               <RefreshCw size={15} aria-hidden /> Sync to Google Calendar
             </button>
           ) : (
@@ -201,14 +192,11 @@ export default function SchedulePage() {
           text="Then meeting requests are answered for you: a time that has passed or clashes gets an automatic reply with your free times, and a time outside your hours waits here for you to accept or decline."
           action={<button type="button" className="btn btn-primary btn-sm" onClick={() => setEditing(true)}><CalendarClock size={14} aria-hidden /> Set availability</button>} />
       )}
-      {confirming && cal && <SyncConfirm count={data.items.length} calendarName={cal.name} busy={sync.isPending} onConfirm={() => sync.mutate()} onCancel={() => setConfirming(false)} />}
-      {sync.error && <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Couldn't sync" text={(sync.error as Error).message} />}
       {result && (
         <Callout tone="ok" icon={<CheckCircle2 size={18} />} title={`Synced to "${result.calendarName}"`}
           text={`${result.created} added, ${result.updated} updated, ${result.removed} removed, ${result.unchanged} unchanged${result.failed ? `, ${result.failed} failed` : ""}.`} />
       )}
-      {data.sample && <Callout icon={<Info size={18} />} title="This is sample data" text="The schedule shows how it works, but sample data can't be synced to Google Calendar. Connect your Gmail to sync." />}
-      {!data.sample && !cal?.canSync && (
+      {!cal?.canSync && (
         <p className="cal-note"><ShieldCheck size={14} aria-hidden /> Calendar access lets the app create one calendar of its own, "{cal?.name}". It can't see or change your other calendars.</p>
       )}
       {cal?.lastSyncAt && !result && <p className="cal-note"><CheckCircle2 size={14} aria-hidden /> Last synced {new Date(cal.lastSyncAt).toLocaleString()} · {cal.syncedCount} events in "{cal.name}"</p>}

@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { Sparkles } from "lucide-react";
 import { EMAIL_METRIC_LABELS } from "../../shared/spec.js";
 import { api, type Widget } from "../lib/api";
+import { errorMessage } from "../lib/errors";
 
 // A custom email chart the assistant made (decision #60). Like the sales one, it stores a typed query, not data, and
 // loads its numbers from the synced mail (POST /api/email/custom), saying what it counts and over which days.
@@ -30,7 +31,7 @@ function caption(q: Props["widget"]["query"]) {
 export const EmailCustomWidget = memo(function EmailCustomWidget({ widget }: Props) {
   const { data, isLoading, error } = useQuery({ queryKey: ["email-custom", widget.query], queryFn: () => api.emailCustom(widget.query), staleTime: 60_000 });
   if (isLoading) return <div className="custom-loading" aria-busy="true"><span className="bone" style={{ width: "40%", height: 22 }} /><span className="bone" style={{ flex: 1, height: "auto", minHeight: 60 }} /></div>;
-  if (error || !data) return <div className="widget-empty"><p>Couldn't load this widget.</p><p className="widget-empty-rule">{(error as Error)?.message}</p></div>;
+  if (error || !data) return <div className="widget-empty"><p>Couldn't load this widget.</p><p className="widget-empty-rule">{errorMessage(error)}</p></div>;
 
   const time = widget.query.groupBy === "day" || widget.query.groupBy === "week";
   const series = data.rows.map((r) => ({ label: time ? day(r.key) : r.key, value: r.value }));

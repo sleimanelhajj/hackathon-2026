@@ -16,6 +16,7 @@ import { getDb } from "../db.js";
 import { AUTOMATED } from "../dashboard.js";
 import { Category, Priority } from "../../shared/spec.js";
 import { generateJson, geminiConfigured, geminiModel } from "./llm.js";
+import { asAgent } from "./trace.js";
 import { READER_VERSION, attachmentsText, messageBody } from "./content.js";
 import { summariseAttachments } from "../documents.js";
 
@@ -382,8 +383,11 @@ async function runAnalysis(conn, runId, force) {
   const runBatch = async (batch) => {
     if (aborted) return;
     try {
-      await Promise.all(batch.map((t) => addContent(t.list)));
-      const { labels, model } = await classifyThreads(batch, selfDomain, now);
+      // Nadia's task (decision #67); Lina reads any scanned attachment inside it.
+      const { labels, model } = await asAgent({ agent: "nadia", task: `Sort ${batch.length} email thread${batch.length === 1 ? "" : "s"}`, trigger: "app" }, async () => {
+        await Promise.all(batch.map((t) => addContent(t.list)));
+        return classifyThreads(batch, selfDomain, now);
+      });
       const ops = labels.map(({ thread, fields }) => saveOp(thread.threadId, thread.last, fields, "inferred", model));
       if (!(await stillCurrent())) throw new Superseded();
       if (ops.length) await db.collection("extractions").bulkWrite(ops, { ordered: false });

@@ -1,7 +1,10 @@
-import { memo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, PackageMinus, PackagePlus, Undo2 } from "lucide-react";
+import { memo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PackageMinus, PackagePlus, Undo2 } from "lucide-react";
 import { api, type StockChange, type Widget } from "../lib/api";
+import { confirm } from "../components/ConfirmDialog";
+import { toast } from "../components/Toaster";
+import { errorMessage } from "../lib/errors";
 
 const money = (n: number | null, currency: string | null) => {
   if (n === null) return null;
@@ -12,14 +15,21 @@ const signed = (n: number) => (n > 0 ? `+${n}` : `−${Math.abs(n)}`);
 
 function Row({ c }: { c: StockChange }) {
   const qc = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
-  const undo = useMutation({
-    mutationFn: () => api.undoStockChange(c.key),
-    onSuccess: () => {
-      setConfirming(false);
-      for (const key of [["stock-changes"], ["sales"], ["payments"]]) void qc.invalidateQueries({ queryKey: key });
-    },
-  });
+  // Undo changes stock and Sales, so it asks first; the dialog shows progress and any error.
+  const askUndo = async () => {
+    const what = c.kind === "sale" ? "sale" : "purchase";
+    const ok = await confirm({
+      title: `Undo this ${what}?`,
+      message: `The stock goes back to what it was and the ${what} ${c.number ?? ""} from ${c.counterparty ?? "this invoice"} is removed from Sales.`.replace(/\s+/g, " "),
+      confirmLabel: "Undo stock change",
+      tone: "danger",
+      icon: <Undo2 size={18} />,
+      action: () => api.undoStockChange(c.key),
+    });
+    if (!ok) return;
+    toast.success("Stock change undone");
+    for (const key of [["stock-changes"], ["sales"], ["payments"]]) void qc.invalidateQueries({ queryKey: key });
+  };
   const who = c.counterparty ?? "Unknown";
   const Icon = c.kind === "sale" ? PackageMinus : PackagePlus;
   return (
@@ -34,19 +44,9 @@ function Row({ c }: { c: StockChange }) {
         {c.unmatched.length > 0 && (
           <span className="small stock-unmatched">{c.unmatched.length} line{c.unmatched.length === 1 ? "" : "s"} not matched: {c.unmatched.map((u) => u.description).join(", ")}</span>
         )}
-        {confirming && (
-          <span className="stock-confirm">
-            <span className="small">Put the stock back and remove this {c.kind === "sale" ? "sale" : "purchase"} from Sales?</span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(false)} disabled={undo.isPending}>Cancel</button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => undo.mutate()} disabled={undo.isPending} aria-label="Undo stock change">
-              {undo.isPending ? <Loader2 size={13} className="spin" aria-hidden /> : <Undo2 size={13} aria-hidden />} Undo it
-            </button>
-          </span>
-        )}
-        {undo.error && <span className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {(undo.error as Error).message}</span>}
       </div>
-      {c.undoneAt ? <span className="tag tag-sm">Undone</span> : !confirming && (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirming(true)}><Undo2 size={13} aria-hidden /> Undo</button>
+      {c.undoneAt ? <span className="tag tag-sm">Undone</span> : (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void askUndo()} aria-haspopup="dialog"><Undo2 size={13} aria-hidden /> Undo</button>
       )}
     </li>
   );
@@ -56,8 +56,8 @@ function Row({ c }: { c: StockChange }) {
 export const StockChangesWidget = memo(function StockChangesWidget(_: { widget: Extract<Widget, { type: "stock-changes" }> }) {
   const { data, isLoading, error } = useQuery({ queryKey: ["stock-changes"], queryFn: api.stockChanges, refetchInterval: 60_000 });
   if (isLoading) return <div className="skeleton widget-skeleton" />;
-  if (error) return <p className="widget-empty">{(error as Error).message}</p>;
-  if (!data?.configured) return <p className="widget-empty">Stock needs the sales database. Add POSTGRES_URL to .env and load the demo data.</p>;
+  if (error) return <p className="widget-empty" role="alert">Couldn't load stock changes. {errorMessage(error)}</p>;
+  if (!data?.configured) return <p className="widget-empty">Stock needs the sales database. Set POSTGRES_URL on the server.</p>;
   return data.changes.length ? (
     <ul className="stock-list">{data.changes.map((c) => <Row key={c.key} c={c} />)}</ul>
   ) : (

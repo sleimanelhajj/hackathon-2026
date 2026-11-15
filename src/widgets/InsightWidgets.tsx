@@ -5,6 +5,7 @@ import { timeAgo, type InsightRow, type Insights, type Widget } from "../lib/api
 import { useRunAnalysis } from "../lib/queries";
 import { useDashboardData } from "../dashboard/DataContext";
 import { ConversationRow } from "./ConversationRow";
+import { errorMessage } from "../lib/errors";
 
 // Labels on these widgets come from the AI analysis (server/agent/classify.js). Rows stay clean (who, what, when);
 // the footer says once that the sorting is done by AI and can be wrong, and the full-email viewer shows the reasoning.
@@ -21,7 +22,7 @@ function RunButton({ label, force }: { label: string; force?: boolean }) {
       <button className="btn btn-secondary btn-sm" onClick={() => run.mutate(force)} disabled={run.isPending}>
         {run.isPending ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} {label}
       </button>
-      {run.error && <p role="alert" className="insight-error">{(run.error as Error).message}</p>}
+      {run.error && <p role="alert" className="insight-error">{errorMessage(run.error)}</p>}
     </>
   );
 }

@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { getDb } from "../db.js";
 import { getPool, postgresConfigured } from "../sales/db.js";
 import { generateContent, geminiConfigured, geminiModel } from "./llm.js";
+import { asAgent } from "./trace.js";
 import { prepareInvoice, publicInvoice } from "./invoice.js";
 import { createSalesTools } from "./sales-tools.js";
 import { createSalesAgent } from "./sales-agent.js";
@@ -35,7 +36,7 @@ export async function saveConfirmedInvoice(draft, { db = getDb(), now = new Date
 let agent = null;
 export function getAssistant() {
   if (!geminiConfigured()) throw new Error("The assistant needs Gemini. Add GEMINI_API_KEY to .env and restart the server.");
-  if (!postgresConfigured()) throw new Error("The assistant reads the sales database. Add POSTGRES_URL to .env and load the demo data on the Sales page.");
+  if (!postgresConfigured()) throw new Error("The assistant reads the sales database. Set POSTGRES_URL on the server, then load the sales records on the Sales page.");
   if (!agent) {
     const tools = createSalesTools({ pool: getPool() });
     // The dashboard builder sub-agent: its own Gemini prompt and tools; the widget it makes goes on the Sales board.
@@ -56,7 +57,7 @@ export function getAssistant() {
     };
     const addWidget = async (request, board = "sales") => {
       await known(board);
-      const built = await builder.build(request);
+      const built = await asAgent({ agent: "sami", task: request }, () => builder.build(request)); // Layla hands the chart to Sami
       const { widget } = await addWidgetToBoard(board, built.widget);
       return added(board, widget, { preview: built.preview });
     };
@@ -112,7 +113,7 @@ export function getAssistant() {
 export function assistantError(err) {
   const code = err?.code;
   if (code === "ECONNREFUSED") return "I can't reach the sales database. Is Postgres running?";
-  if (code === "42P01") return "The sales tables don't exist yet. Load the demo data on the Sales page first.";
+  if (code === "42P01") return "The sales tables don't exist yet. Load the sales records on the Sales page first.";
   if (code === "28P01") return "Postgres refused the username or password in POSTGRES_URL.";
   return String(err?.message || err).replace(/postgres(ql)?:\/\/[^\s]+/gi, "[connection string]").slice(0, 300);
 }

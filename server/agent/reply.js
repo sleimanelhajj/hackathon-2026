@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { getDb } from "../db.js";
 import { generateJson } from "./llm.js";
+import { asAgent } from "./trace.js";
 import { attachmentsText, messageBody } from "./content.js";
 import { inventoryFor } from "./reply-inventory.js";
 
@@ -88,7 +89,11 @@ export async function loadThread(threadId) {
 }
 
 /** Everything the reply modal needs, with a Gemini draft. Throws if Gemini fails; the caller shows the error. */
-export async function draftReply(threadId) {
+export function draftReply(threadId) {
+  return asAgent({ agent: "rayan", task: "Draft a reply to an email", trigger: "you" }, () => draft(threadId));
+}
+
+async function draft(threadId) {
   const db = getDb();
   const conn = await db.collection("connections").findOne({ provider: "gmail" });
   if (!conn) throw new Error("Gmail isn't connected.");

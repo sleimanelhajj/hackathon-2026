@@ -130,7 +130,7 @@ export async function applyInvoice(inv, opts) {
     if (inv.kind === "sale" && matched.length) {
       const customer = await customerFor(c, s, inv);
       const { rows: [rep] } = await c.query(`SELECT id FROM ${s}.reps ORDER BY (region = $1) DESC, id LIMIT 1`, [customer.region]);
-      if (!rep) throw new Error("The sales data has no staff to record the order under. Load the demo data on the Sales page.");
+      if (!rep) throw new Error("The sales data has no staff to record the order under. Load the sales records on the Sales page.");
       await c.query(`LOCK TABLE ${s}.orders IN EXCLUSIVE MODE`);
       const { rows: [{ next }] } = await c.query(`SELECT coalesce(max(id), 0) + 1 AS next FROM ${s}.orders`);
       const base = String(inv.number ?? `EMAIL-${next}`).slice(0, 60);

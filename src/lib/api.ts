@@ -1,3 +1,4 @@
+import { ApiError, messageForStatus } from "./errors";
 import type { z } from "zod";
 import type {
   BreakdownRule as BreakdownRuleSchema,
@@ -317,15 +318,16 @@ export type DashboardPageInfo = { id: Board; name: string };
 export type EmailCustomResult = { rows: { key: string; value: number }[]; total: number; unit: "emails" | "conversations" | "people"; period: { from: string; to: string; days: number } };
 export type SavedDashboard =DashboardSpecInput & { id: string; version: number; canUndo: boolean; updatedAt: string };
 
+/** Every API call. Failures become an ApiError with a plain-language message (the server's own, when it sent one). */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, init);
   } catch {
-    throw new Error("Can't reach the server. Is `npm run dev` running?");
+    throw new ApiError(messageForStatus(0), 0);
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  if (!res.ok) throw new ApiError(typeof body?.error === "string" && body.error.trim() ? body.error : messageForStatus(res.status), res.status);
   return body as T;
 }
 
@@ -460,7 +462,94 @@ export type MessageFilters = {
 export type StoredMessageDetail = StoredMessage & { headers: { name: string; value: string }[]; bodyText: string | null };
 export type MessagePage = { total: number; all: number; page: number; limit: number; messages: StoredMessage[] };
 
+/** Telegram (decision #64): the account the user signed in with, and what was read. Read-only. */
+export type TelegramStatus = {
+  configured: boolean;
+  connected: boolean;
+  account: { id: string; name: string; username: string | null; phone: string | null } | null;
+  status: "connected" | "syncing" | "error" | null;
+  error: string | null;
+  lastSyncAt: string | null;
+  lastSyncCount: number | null;
+  chatCount: number;
+  /** A sign-in in progress: waiting for the code, or for the two-step password. */
+  pending: "code" | "password" | null;
+  /** The people the user follows, by name. Empty: the most recent chats. */
+  people: string[];
+  /** Whether the server can make AI insights (Gemini is set up). */
+  insightsAvailable: boolean;
+};
+export type TelegramChat = { id: string; title: string; kind: "user" | "group" | "channel"; unread: number; lastMessageAt: string; messageCount: number };
+export type TelegramMessage = { id: number; chatId: string; date: string; out: boolean; from: string | null; hasMedia: boolean; text: string };
+/** One of the workspace's AI agents (server/agent/team.js, decision #67). */
+export type Agent = {
+  id: string; name: string; role: string; parent: string | null; relation: "sub-agent" | "team" | null;
+  icon: string; hue: string; runs: string; does: string; reads: string[]; alsoFor?: string[];
+};
+/** Calls, tokens and cost of a group of Gemini calls. Output tokens include thinking. */
+export type UsageTotals = { calls: number; inputTokens: number; outputTokens: number; thinkingTokens: number; costUsd: number; failed: number; unpriced: number };
+export type LogCall = {
+  at: string; agent: string; model: string; inputTokens: number; outputTokens: number; thinkingTokens: number; costUsd: number;
+  priced: boolean; ok: boolean; error: string | null; fellBack: boolean; durationMs: number; runId: string; task: string;
+};
+export type LogUsage = {
+  period: { days: number; from: string; to: string };
+  totals: UsageTotals;
+  byAgent: (UsageTotals & { agent: string })[];
+  byModel: (UsageTotals & { model: string })[];
+  byDay: (UsageTotals & { day: string })[];
+  calls: LogCall[];
+  prices: { source: string; checked: string; models: { model: string; from: string | null; until: string | null; inputPerMillion: number; outputPerMillion: number; note: string }[] };
+};
+export type RunStep = {
+  seq: number; at: string; kind: "model" | "tool" | "agent"; name: string; ok: boolean; durationMs?: number; error?: string;
+  model?: string; inputTokens?: number; outputTokens?: number; costUsd?: number; priced?: boolean; fellBack?: boolean;
+  args?: string; detail?: string; task?: string; childRunId?: string;
+};
+/** One agent's task, with the runs of the agents it handed work to. */
+export type AgentRun = {
+  id: string; agent: string; task: string; trigger: "you" | "app" | "agent"; parentRunId: string | null; startedAt: string; endedAt: string;
+  durationMs: number; ok: boolean; error: string | null; calls: number; inputTokens: number; outputTokens: number; costUsd: number;
+  steps: RunStep[]; children: AgentRun[]; tree: { calls: number; inputTokens: number; outputTokens: number; costUsd: number; steps: number }; truncated?: boolean;
+};
+
+/** An AI guess about one chat; every promise and follow-up points at the message it comes from. */
+export type TelegramInsight = {
+  summary: string;
+  topics: string[];
+  waitingOn: "you" | "them" | "nobody";
+  nextStep: string;
+  promises: { by: "you" | "them"; what: string; due: string | null; messageId: number }[];
+  followUps: { what: string; messageId: number }[];
+  suggestedMessage: string;
+  basedOn: number;
+  generatedAt: string;
+  model: string | null;
+};
+
+const postJson = <T,>(path: string, body: unknown) =>
+  request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
 export const api = {
+  agents: () => request<{ agents: Agent[]; other: Agent }>("/api/agents"),
+  logUsage: (days: number) => request<LogUsage>(`/api/logs/usage?days=${days}`),
+  logRuns: (days: number, limit = 30) => request<{ runs: AgentRun[] }>(`/api/logs/runs?days=${days}&limit=${limit}`),
+  telegramStatus: () => request<TelegramStatus>("/api/integrations/telegram"),
+  telegramSendCode: (phone: string) => postJson<{ sent: true; viaApp: boolean }>("/api/integrations/telegram/code", { phone }),
+  telegramVerifyCode: (code: string) => postJson<{ connected?: true; needsPassword?: true }>("/api/integrations/telegram/verify", { code }),
+  telegramVerifyPassword: (password: string) => postJson<{ connected: true }>("/api/integrations/telegram/password", { password }),
+  telegramCancel: () => postJson<{ cancelled: true }>("/api/integrations/telegram/cancel", {}),
+  telegramSync: () => postJson<{ chats: number; messages: number }>("/api/integrations/telegram/sync", {}),
+  telegramDisconnect: () => request<{ disconnected: true }>("/api/integrations/telegram", { method: "DELETE" }),
+  telegramChats: () => request<{ chats: TelegramChat[] }>("/api/telegram/chats"),
+  telegramMessages: (chatId: string) => request<{ messages: TelegramMessage[] }>(`/api/telegram/chats/${encodeURIComponent(chatId)}/messages`),
+  telegramSetPeople: (people: string[]) =>
+    request<{ people: string[] }>("/api/integrations/telegram/people", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ people }) }),
+  telegramInsight: (chatId: string) => request<TelegramInsight>(`/api/telegram/chats/${encodeURIComponent(chatId)}/insight`),
+  telegramRefreshInsight: (chatId: string) => postJson<TelegramInsight>(`/api/telegram/chats/${encodeURIComponent(chatId)}/insight`, {}),
+  /** Only after the user confirmed this exact text in the app's dialog. */
+  telegramSend: (chatId: string, text: string) =>
+    postJson<{ message: TelegramMessage }>(`/api/telegram/chats/${encodeURIComponent(chatId)}/send`, { text, confirmed: true }),
   messages: (p: MessageFilters) => {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(p)) if (v !== undefined && v !== "" && v !== 0) qs.set(k, String(v));

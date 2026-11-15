@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, FlaskConical, Loader2, Mail, MailCheck, RefreshCw, Reply } from "lucide-react";
+import { AlertTriangle, ArrowRight, Loader2, Mail, MailCheck, RefreshCw, Reply } from "lucide-react";
 import { timeAgo } from "../lib/api";
 import { useDashboard, useSync } from "../lib/queries";
 import { Callout } from "../components/ui";
@@ -7,6 +7,7 @@ import { BoardEditor } from "../dashboard/BoardEditor";
 import { waitingLabel } from "../widgets/ThreadListWidget";
 import { PageSkeleton } from "../components/Skeletons";
 import { ExportButton } from "../dashboard/ExportButton";
+import { errorMessage } from "../lib/errors";
 
 /** The email dashboard: Gmail data on a customisable board (see BoardEditor). */
 export function DashboardPage() {
@@ -17,7 +18,7 @@ export function DashboardPage() {
   if (data.error)
     return (
       <div className="page">
-        <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load the dashboard" text={(data.error as Error).message} />
+        <Callout tone="danger" icon={<AlertTriangle size={18} />} title="Can't load the dashboard" text={errorMessage(data.error)} />
       </div>
     );
 
@@ -64,20 +65,10 @@ export function DashboardPage() {
             <ExportButton title="Email dashboard" />
           </>
         }
-        editTag={d.mode === "sample" && <span className="tag" data-tone="warn">Sample data</span>}
         banners={({ widgets, openWidget }) => {
           const awaitingListId = widgets.find((w) => w.type === "thread-list" && w.list === "awaitingYou")?.id;
           return (
             <>
-              {d.mode === "sample" && (
-                <Callout
-                  tone="warn"
-                  icon={<FlaskConical size={18} />}
-                  title="You're looking at sample data"
-                  text="These people and emails are fictional. Connect Gmail to see your own."
-                  action={<a className="btn btn-secondary" href="#/integrations">Connect Gmail</a>}
-                />
-              )}
               {d.status === "error" && (
                 <Callout tone="danger" icon={<AlertTriangle size={18} />} title="The last sync failed" text={d.error ?? undefined} action={<a className="btn btn-secondary" href="#/integrations">Fix in Integrations</a>} />
               )}

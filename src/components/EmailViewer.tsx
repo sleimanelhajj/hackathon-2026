@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { create } from "zustand";
-import { AlertTriangle, ArrowRight, Download, ExternalLink, Paperclip, Reply, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Download, ExternalLink, Paperclip, Reply } from "lucide-react";
 import { categoryInfo } from "../../shared/spec.js";
 import { api, type ThreadView } from "../lib/api";
 import { useReply } from "./ReplyModal";
 import { reflowEmail, splitQuoted } from "../lib/emailText";
+import { errorMessage } from "../lib/errors";
+import { Modal } from "./Modal";
 
 // Read a whole conversation without leaving the app. Any widget opens it with useViewer.getState().open(threadId).
 
@@ -24,87 +25,70 @@ const initials = (name: string) => name.split(/[\s@._-]+/).filter(Boolean).slice
 export function EmailViewer() {
   const threadId = useViewer((s) => s.threadId);
   const close = useViewer((s) => s.close);
-  const ref = useRef<HTMLDialogElement>(null);
+  const { data, isLoading, error } = useQuery({ queryKey: ["thread", threadId], queryFn: () => api.thread(threadId!), enabled: Boolean(threadId) });
 
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (threadId && !d.open) d.showModal();
-    if (!threadId && d.open) d.close();
-  }, [threadId]);
-
-  return (
-    <dialog ref={ref} className="modal modal-wide modal-viewer" aria-labelledby="viewer-title" onClose={close} onCancel={close}>
-      {threadId && <Conversation threadId={threadId} onClose={close} />}
-    </dialog>
-  );
-}
-
-function Conversation({ threadId, onClose }: { threadId: string; onClose: () => void }) {
-  const { data, isLoading, error } = useQuery({ queryKey: ["thread", threadId], queryFn: () => api.thread(threadId) });
   const reply = () => {
+    if (!threadId) return;
     const lastIn = data && [...data.messages].reverse().find((m) => m.direction === "in");
-    onClose();
+    close();
     useReply.getState().open(threadId, lastIn ? who(lastIn.from) : "");
   };
 
   return (
-    <div className="viewer">
-      <header className="viewer-head">
-        <h2 id="viewer-title" className="modal-title viewer-title">{data?.subject ?? "Conversation"}</h2>
-        <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
-      </header>
-
-      <div className="viewer-scroll">
-        {isLoading && <div className="skeleton" style={{ height: 240 }} />}
-        {error && <p className="reply-alert" role="alert"><AlertTriangle size={14} aria-hidden /><span>Couldn't open this conversation: {(error as Error).message}</span></p>}
-        {data?.ai && <Summary ai={data.ai} />}
-        {data && (
-          <ol className="viewer-messages">
-            {data.messages.map((m) => (
-              <li key={m.gmailId} className="viewer-message" data-direction={m.direction}>
-                <div className="viewer-message-head">
-                  <span className="viewer-avatar" aria-hidden>{initials(m.direction === "out" ? "You" : who(m.from))}</span>
-                  <span className="viewer-people">
-                    <span className="viewer-from">{m.direction === "out" ? "You" : who(m.from)}</span>
-                    <span className="viewer-to">to {m.to.map(who).join(", ") || "—"}{m.cc.length ? `, cc ${m.cc.map(who).join(", ")}` : ""}</span>
-                  </span>
-                  <span className="viewer-date" title={new Date(m.date).toLocaleString()}>{when(m.date)}</span>
-                </div>
-                <MessageBody text={m.body} />
-                {m.attachments.length > 0 && (
-                  <ul className="viewer-files" aria-label="Attachments">
-                    {m.attachments.map((a) => (
-                      <li key={`${a.filename}-${a.attachmentId}`}>
-                        {a.downloadable && a.attachmentId ? (
-                          <a className="viewer-file" href={api.attachmentUrl(a.gmailId, a.attachmentId)} download={a.filename}>
-                            <Paperclip size={14} aria-hidden /> <span className="viewer-file-name">{a.filename}</span>
-                            <span className="muted small">{size(a.size)}</span> <Download size={14} aria-hidden />
-                          </a>
-                        ) : (
-                          <span className="viewer-file"><Paperclip size={14} aria-hidden /> <span className="viewer-file-name">{a.filename}</span> <span className="muted small">{size(a.size)}</span></span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-
-      {data && (
-        <footer className="viewer-foot">
-          {data.link ? (
-            <a className="btn btn-ghost" href={data.link} target="_blank" rel="noreferrer">Open in Gmail <ExternalLink size={14} /></a>
-          ) : (
-            <span className="muted small">Sample conversation (not in Gmail)</span>
-          )}
-          <button type="button" className="btn btn-primary" onClick={reply}><Reply size={15} /> Reply</button>
-        </footer>
-      )}
-    </div>
+    <Modal
+      open={Boolean(threadId)}
+      onClose={close}
+      size="lg"
+      className="viewer-modal"
+      title={data?.subject ?? (isLoading ? "Opening conversation…" : "Conversation")}
+      footer={
+        data ? (
+          <>
+            {data.link ? (
+              <a className="btn btn-ghost" href={data.link} target="_blank" rel="noreferrer">Open in Gmail <ExternalLink size={14} aria-hidden /></a>
+            ) : null}
+            <button type="button" className="btn btn-primary" onClick={reply}><Reply size={15} aria-hidden /> Reply</button>
+          </>
+        ) : undefined
+      }
+    >
+      {isLoading ? <div className="skeleton" style={{ height: 240 }} aria-label="Loading the conversation" /> : null}
+      {error ? <p className="ui-modal-error" role="alert"><AlertTriangle size={15} aria-hidden /><span>Couldn't open this conversation. {errorMessage(error)}</span></p> : null}
+      {data?.ai ? <Summary ai={data.ai} /> : null}
+      {data ? (
+        <ol className="viewer-messages">
+          {data.messages.map((m) => (
+            <li key={m.gmailId} className="viewer-message" data-direction={m.direction}>
+              <div className="viewer-message-head">
+                <span className="viewer-avatar" aria-hidden>{initials(m.direction === "out" ? "You" : who(m.from))}</span>
+                <span className="viewer-people">
+                  <span className="viewer-from">{m.direction === "out" ? "You" : who(m.from)}</span>
+                  <span className="viewer-to">to {m.to.map(who).join(", ") || "—"}{m.cc.length ? `, cc ${m.cc.map(who).join(", ")}` : ""}</span>
+                </span>
+                <time className="viewer-date" dateTime={m.date} title={new Date(m.date).toLocaleString()}>{when(m.date)}</time>
+              </div>
+              <MessageBody text={m.body} />
+              {m.attachments.length > 0 ? (
+                <ul className="viewer-files" aria-label="Attachments">
+                  {m.attachments.map((a) => (
+                    <li key={`${a.filename}-${a.attachmentId}`}>
+                      {a.downloadable && a.attachmentId ? (
+                        <a className="viewer-file" href={api.attachmentUrl(a.gmailId, a.attachmentId)} download={a.filename}>
+                          <Paperclip size={14} aria-hidden /> <span className="viewer-file-name">{a.filename}</span>
+                          <span className="muted small">{size(a.size)}</span> <Download size={14} aria-hidden />
+                        </a>
+                      ) : (
+                        <span className="viewer-file"><Paperclip size={14} aria-hidden /> <span className="viewer-file-name">{a.filename}</span> <span className="muted small">{size(a.size)}</span></span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </Modal>
   );
 }
 

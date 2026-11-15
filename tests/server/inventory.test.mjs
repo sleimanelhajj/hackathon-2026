@@ -2,6 +2,7 @@
 // sales order; a supplier's invoice we receive raises stock and records a purchase. Each invoice counts once (by its
 // number), automatically, and every change can be undone. The database part runs on a throwaway Postgres schema
 // (needs POSTGRES_URL, like sales-metrics.test.mjs); the rules run anywhere.
+import "dotenv/config";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { invoiceKind, invoiceKey, resolveLines } from "../../server/inventory.js";

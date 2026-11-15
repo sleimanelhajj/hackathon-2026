@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api, type Availability, type MeetingRequest, type Schedule, type ScheduleItem } from "../src/lib/api";
 import SchedulePage from "../src/pages/SchedulePage";
+import { ConfirmHost, dismissConfirm } from "../src/components/ConfirmDialog";
+import { Toaster, toast } from "../src/components/Toaster";
 import { useViewer } from "../src/components/EmailViewer";
 import { useReply } from "../src/components/ReplyModal";
 
@@ -14,7 +16,7 @@ beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get: () => 600 });
   Object.defineProperty(HTMLElement.prototype, "offsetWidth", { configurable: true, get: () => 900 });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); act(() => { useViewer.getState().close(); useReply.getState().close(); }); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); act(() => { useViewer.getState().close(); useReply.getState().close(); dismissConfirm(); toast.clear(); }); });
 
 const today = (h: number, m = 0) => { const d = new Date(); d.setHours(h, m, 0, 0); return d.toISOString(); };
 const item = (extra: Partial<ScheduleItem>): ScheduleItem => ({
@@ -36,7 +38,7 @@ const schedule = (extra: Partial<Schedule> = {}): Schedule => ({
 });
 function show(data: Schedule = schedule()) {
   vi.spyOn(api, "schedule").mockResolvedValue(data);
-  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SchedulePage /></QueryClientProvider>);
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><SchedulePage /><ConfirmHost /><Toaster /></QueryClientProvider>);
 }
 
 test("shows what's on today and how much is overdue, then the calendar", async () => {
@@ -82,14 +84,22 @@ test("syncing asks first, says exactly what it will do, and only then writes", a
   expect(sync).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole("button", { name: "Sync now" }));
   await waitFor(() => expect(sync).toHaveBeenCalledWith(Intl.DateTimeFormat().resolvedOptions().timeZone));
-  expect(await screen.findByText(/3 added/)).toBeTruthy();
+  expect((await screen.findAllByText(/3 added/)).length).toBeGreaterThan(0); // the result line and the toast
 });
 
-test("sample data can't be synced, and says so", async () => {
-  show(schedule({ sample: true }));
+test("a failed sync keeps the confirmation open with the reason, so it can be retried", async () => {
+  vi.spyOn(api, "syncSchedule").mockRejectedValue(new Error("Google Calendar refused access."));
+  show();
+  fireEvent.click(await screen.findByRole("button", { name: /Sync to Google Calendar/ }));
+  const dialog = await screen.findByRole("alertdialog", { name: /Sync to Google Calendar/ });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Sync now" }));
+  expect(await within(dialog).findByText(/Google Calendar refused access/)).toBeTruthy();
+});
+
+test("with nothing on the schedule, there's nothing to sync", async () => {
+  show(schedule({ items: [] }));
   const btn = await screen.findByRole("button", { name: /Sync to Google Calendar/ });
   expect((btn as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText("This is sample data")).toBeTruthy();
 });
 
 test("nothing connected: one clear next step", async () => {
@@ -126,6 +136,10 @@ test("before availability is set there's one clear next step; saving sends weekl
   fireEvent.click(within(dialog).getByRole("button", { name: /Add a date/ }));
   fireEvent.change(within(dialog).getByLabelText("Date 1"), { target: { value: "2026-11-20" } });
   fireEvent.click(within(dialog).getByRole("button", { name: "Save availability" }));
+  // The first save switches on automatic replies (real email), so it asks first.
+  const ask = await screen.findByRole("alertdialog", { name: "Turn on automatic meeting replies?" });
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(within(ask).getByRole("button", { name: "Save and turn on" }));
   await waitFor(() => expect(save).toHaveBeenCalledWith({
     weekly: { ...avail.weekly, Mon: [["09:00", "13:00"]], Sat: [["09:00", "17:00"]] },
     dates: { "2026-11-20": [] },
@@ -150,10 +164,11 @@ test("a request outside your hours waits for you: Accept asks first, then emails
   const card = await screen.findByRole("region", { name: "Request from Rania Khoury: Pilot review" });
   expect(card.textContent).toMatch(/outside your available hours/i);
   fireEvent.click(within(card).getByRole("button", { name: "Accept" }));
-  expect(card.textContent).toMatch(/email Rania Khoury/);
-  expect(card.textContent).toMatch(/works for you/);
+  const ask = await screen.findByRole("alertdialog", { name: /Accept "Pilot review"/ });
+  expect(ask.textContent).toMatch(/email Rania Khoury/);
+  expect(ask.textContent).toMatch(/works for you/);
   expect(answer).not.toHaveBeenCalled();
-  fireEvent.click(within(card).getByRole("button", { name: "Send and accept" }));
+  fireEvent.click(within(ask).getByRole("button", { name: "Send and accept" }));
   await waitFor(() => expect(answer).toHaveBeenCalledWith("mr-t9-1", true));
 });
 
@@ -162,9 +177,10 @@ test("declining sends 'not available' with your free times", async () => {
   show(schedule({ meetings: meetings({ requests: [req()] }) }));
   const card = await screen.findByRole("region", { name: "Request from Rania Khoury: Pilot review" });
   fireEvent.click(within(card).getByRole("button", { name: "Decline" }));
-  expect(card.textContent).toMatch(/not available/);
-  expect(card.textContent).toMatch(/free times/);
-  fireEvent.click(within(card).getByRole("button", { name: "Send and decline" }));
+  const ask = await screen.findByRole("alertdialog", { name: /Decline "Pilot review"/ });
+  expect(ask.textContent).toMatch(/not available/);
+  expect(ask.textContent).toMatch(/free times/);
+  fireEvent.click(within(ask).getByRole("button", { name: "Send and decline" }));
   await waitFor(() => expect(answer).toHaveBeenCalledWith("mr-t9-1", false));
 });
 
@@ -180,6 +196,9 @@ test("automatic replies are listed with the reason and the email; a failed one c
   expect(list.textContent).toContain("Couldn't send: Gmail couldn't send the reply (500).");
   expect(within(list).getAllByText(/the time you suggested has already passed/).length).toBe(1);
   fireEvent.click(within(list).getByRole("button", { name: "Retry" }));
+  const ask = await screen.findByRole("alertdialog", { name: "Try sending this email again?" });
+  expect(retry).not.toHaveBeenCalled();
+  fireEvent.click(within(ask).getByRole("button", { name: "Send again" }));
   await waitFor(() => expect(retry).toHaveBeenCalledWith("mr-b-2"));
 });
 
@@ -205,6 +224,7 @@ test("an answer written in test mode can be sent once test mode is off", async (
   const list = await screen.findByRole("region", { name: "Your answers" });
   expect(list.textContent).toMatch(/Written in test mode, not sent yet/);
   fireEvent.click(within(list).getByRole("button", { name: "Send now" }));
+  fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Send this email now?" })).getByRole("button", { name: "Send now" }));
   await waitFor(() => expect(send).toHaveBeenCalledWith("mr-k-1"));
 });
 
