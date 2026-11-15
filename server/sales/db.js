@@ -88,6 +88,22 @@ export async function createSchema(pool, schema = DEFAULT_SCHEMA) {
     CREATE TABLE IF NOT EXISTS ${s}.store_profile (
       id integer PRIMARY KEY CHECK (id = 1), name text NOT NULL, email text NOT NULL, phone text, address text,
       currency text NOT NULL, tax_rate_bps integer NOT NULL, payment_terms_days integer NOT NULL);
+    -- Invoices move stock and Sales (decision #58, server/inventory.js): one row per invoice applied, the stock it moved,
+    -- and supplier purchases. Undo marks the change and reverses it.
+    CREATE TABLE IF NOT EXISTS ${s}.invoice_changes (
+      id serial PRIMARY KEY, key text NOT NULL UNIQUE, kind text NOT NULL CHECK (kind IN ('sale', 'purchase')), number text, counterparty text,
+      total numeric(12,2), currency text, invoice_date timestamptz, source text, source_id text, unmatched jsonb NOT NULL DEFAULT '[]',
+      order_id integer, purchase_id integer, applied_at timestamptz NOT NULL DEFAULT now(), undone_at timestamptz);
+    CREATE TABLE IF NOT EXISTS ${s}.stock_movements (
+      id serial PRIMARY KEY, change_key text NOT NULL REFERENCES ${s}.invoice_changes(key), product_id integer NOT NULL REFERENCES ${s}.products(id),
+      quantity_change integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), undone_at timestamptz);
+    CREATE TABLE IF NOT EXISTS ${s}.purchases (
+      id serial PRIMARY KEY, number text, supplier text NOT NULL, purchased_at timestamptz NOT NULL, total numeric(12,2) NOT NULL,
+      currency text NOT NULL DEFAULT 'USD', change_key text UNIQUE);
+    CREATE TABLE IF NOT EXISTS ${s}.purchase_items (
+      purchase_id integer NOT NULL REFERENCES ${s}.purchases(id) ON DELETE CASCADE, product_id integer NOT NULL REFERENCES ${s}.products(id),
+      quantity integer NOT NULL CHECK (quantity > 0), unit_cost numeric(12,2), PRIMARY KEY (purchase_id, product_id));
+    CREATE TABLE IF NOT EXISTS ${s}.inventory_settings (id integer PRIMARY KEY CHECK (id = 1), email_invoices_since timestamptz NOT NULL);
   `);
 }
 
@@ -109,7 +125,7 @@ export async function loadData(pool, schema, data) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`TRUNCATE ${s}.order_items, ${s}.orders, ${s}.deals, ${s}.customers, ${s}.products, ${s}.reps, ${s}.store_profile`);
+    await client.query(`TRUNCATE ${s}.stock_movements, ${s}.invoice_changes, ${s}.purchase_items, ${s}.purchases, ${s}.order_items, ${s}.orders, ${s}.deals, ${s}.customers, ${s}.products, ${s}.reps, ${s}.store_profile`);
     if (data.profile) {
       const p = data.profile;
       await client.query(`INSERT INTO ${s}.store_profile (id, name, email, phone, address, currency, tax_rate_bps, payment_terms_days) VALUES (1, $1, $2, $3, $4, $5, $6, $7)`,

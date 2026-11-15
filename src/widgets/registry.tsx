@@ -1,13 +1,16 @@
 import { lazy, Suspense, type ComponentType } from "react";
-import { BarChart3, Filter, FolderOpen, Hash, LineChart, ListTodo, Paperclip, PieChart, Sparkles, Table2, Tags, Target, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Filter, FolderOpen, Hash, LineChart, ListTodo, Paperclip, PieChart, Receipt, Sparkles, Table2, Tags, Target, Users, type LucideIcon } from "lucide-react";
 import { ContactsWidget } from "./ContactsWidget";
 import { AttachmentsWidget } from "./AttachmentsWidget";
-import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, SALES_BREAKDOWN_LABELS, SALES_METRIC_LABELS, SALES_TABLE_LABELS, STAT_LABELS } from "../../shared/spec.js";
+import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, PAYMENTS_SHOW_LABELS, SALES_BREAKDOWN_LABELS, SALES_METRIC_LABELS, SALES_TABLE_LABELS, STAT_LABELS } from "../../shared/spec.js";
 import { SalesBreakdownWidget, SalesKpiWidget, SalesPipelineWidget, SalesRepsWidget, SalesTableWidget, SalesTrendWidget } from "./SalesWidgets";
 import type { InsightFocus, Widget, WidgetType } from "../lib/api";
 import { CategoryBreakdownWidget, InsightListWidget } from "./InsightWidgets";
 import { CustomSalesWidget } from "./CustomSalesWidget";
+import { EmailCustomWidget } from "./EmailCustomWidget";
 import { StatWidget } from "./StatWidget";
+import { PaymentsWidget } from "./PaymentsWidget";
+import { StockChangesWidget } from "./StockChangesWidget";
 import { ThreadListWidget } from "./ThreadListWidget";
 import { TopPeopleWidget } from "./TopPeopleWidget";
 import { RuleListWidget } from "./RuleListWidget";
@@ -178,6 +181,20 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
   },
   // Made by the assistant's dashboard builder; no manual setting (ask the assistant for a different chart).
   "sales-custom": { icon: Sparkles, component: CustomSalesWidget as AnyWidgetComponent, collapsible: true },
+  payments: {
+    icon: Receipt,
+    component: PaymentsWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: Object.entries(PAYMENTS_SHOW_LABELS).map(([value, label]) => ({ value, label })),
+      get: (w) => (w.type === "payments" ? w.show : ""),
+      set: (w, v) => (w.type === "payments" ? { ...w, show: v as typeof w.show, title: PAYMENTS_SHOW_LABELS[v as typeof w.show] } : w),
+    },
+  },
+  "stock-changes": { icon: Boxes, component: StockChangesWidget as AnyWidgetComponent, collapsible: true },
+  // Made by the assistant (decision #60); ask it for a different chart.
+  "email-custom": { icon: Sparkles, component: EmailCustomWidget as AnyWidgetComponent, collapsible: true },
 };
 
 export function WidgetBody({ widget }: { widget: Widget }) {

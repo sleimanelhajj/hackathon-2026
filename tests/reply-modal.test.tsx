@@ -124,3 +124,14 @@ test('if the AI draft fails, the user can still write the reply', async () => {
   expect(await screen.findByText(/Couldn't write a draft: Gemini is overloaded/)).toBeTruthy();
   expect(screen.getByPlaceholderText('Write your reply')).toBeTruthy();
 });
+
+test('a draft that used live stock says which figures it used (decision #57)', async () => {
+  vi.spyOn(api, 'draftReply').mockResolvedValue({ ...structuredClone(draft), inventory: [
+    { sku: 'CH-0001', name: 'Solar panel 450W', inStock: 9, unit: 'panel', listPriceUSD: 189, status: 'low' },
+    { sku: 'CH-0002', name: 'Inverter battery 200Ah', inStock: 0, unit: 'battery', listPriceUSD: 1450, status: 'out of stock' },
+  ] });
+  open(status({}));
+  const note = await screen.findByRole('note', { name: 'Stock used in this draft' });
+  expect(note.textContent).toMatch(/Solar panel 450W: 9 in stock/);
+  expect(note.textContent).toMatch(/Inverter battery 200Ah: out of stock/);
+});

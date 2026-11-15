@@ -1,13 +1,13 @@
 import { getDb } from "./db.js";
-import { BOARDS, DashboardSpec, Widget } from "../shared/spec.js";
+import { DashboardSpec, Widget, boardDef } from "../shared/spec.js";
 
 // One saved layout per dashboard ("board"): "default" is the email dashboard, "sales" the Sales page.
 // Each board only holds widgets from its own catalogue. Feature 6 (RBAC) adds per-person copies.
 
 /** Throws unless `board` exists and every widget in `spec` belongs on it. */
 export function checkBoard(board, spec) {
-  const def = BOARDS[board];
-  if (!def) throw new Error(`Unknown dashboard "${board}".`);
+  const def = boardDef(board);
+  if (!def) throw new Error(`Unknown dashboard "${String(board).slice(0, 40)}".`);
   const foreign = (spec?.widgets ?? []).map((w) => w.type).filter((type) => !(type in def.catalog));
   if (foreign.length) throw new Error(`These widgets can't go on this dashboard: ${[...new Set(foreign)].join(", ")}.`);
   return def;
@@ -94,12 +94,11 @@ const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g
  * board's last row, so it lands at the bottom and small widgets made one after another sit side by side.
  * Pure; returns a new spec.
  */
-export function placeWidget(spec, widget) {
+export function placeWidget(spec, widget, size = CUSTOM_SIZES[widget.chart] ?? { w: 6, h: 9 }) {
   if (spec.widgets.length >= MAX_WIDGETS) throw new Error(`This dashboard is full (${MAX_WIDGETS} widgets). Remove one, then ask again.`);
   const ids = new Set(spec.widgets.map((w) => w.id));
   let id;
   do id = `ai-${slug(widget.title)}-${Math.random().toString(36).slice(2, 6)}`; while (ids.has(id));
-  const size = CUSTOM_SIZES[widget.chart] ?? { w: 6, h: 9 };
   const start = spec.layout.length ? Math.max(...spec.layout.map((l) => l.y)) : 0;
   let slot = null;
   for (let y = start; !slot; y++) {
@@ -112,9 +111,9 @@ export function placeWidget(spec, widget) {
 }
 
 /** Adds an assistant-made widget to a board and saves it as a new version (so Undo removes it). */
-export async function addWidgetToBoard(board, widget) {
+export async function addWidgetToBoard(board, widget, size) {
   const current = await getDashboard(board);
-  const next = placeWidget(current, widget);
+  const next = placeWidget(current, widget, size);
   const saved = await saveDashboard({ title: current.title, widgets: next.widgets, layout: next.layout, version: current.version }, board);
   return { widget: next.widgets.at(-1), spec: saved };
 }
@@ -163,7 +162,7 @@ export async function removeWidgetFromBoard(board, id) {
 const MAX_H = 30; // LayoutItem allows h up to 30 rows
 /** The sizes a widget type can take on a board, from its catalogue entry (12 columns wide; rows are ~40px). */
 export function widgetLimits(board, type) {
-  const size = BOARDS[board]?.catalog?.[type]?.size ?? {};
+  const size = boardDef(board)?.catalog?.[type]?.size ?? {};
   return { minW: size.minW ?? 1, maxW: COLS, minH: Math.max(size.minH ?? 2, 2), maxH: Math.min(size.maxH ?? MAX_H, MAX_H) };
 }
 

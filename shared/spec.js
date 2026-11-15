@@ -53,12 +53,12 @@ export const INSIGHT_FOCUS_LABELS = {
 };
 
 // Sales board widgets
-export const SalesMetric = z.enum(["revenue", "orders", "aov", "marginPct", "newCustomers", "winRate", "openPipeline"]);
+export const SalesMetric = z.enum(["revenue", "orders", "aov", "marginPct", "newCustomers", "winRate", "openPipeline", "purchases"]);
 export const SalesBreakdownBy = z.enum(["category", "region"]);
 export const SalesTable = z.enum(["topProducts", "topCustomers", "recentOrders"]);
 export const SALES_METRIC_LABELS = {
   revenue: "Revenue", orders: "Orders", aov: "Average order", marginPct: "Gross margin",
-  newCustomers: "New customers", winRate: "Win rate", openPipeline: "Open pipeline",
+  newCustomers: "New customers", winRate: "Win rate", openPipeline: "Open pipeline", purchases: "Purchases",
 };
 export const SALES_BREAKDOWN_LABELS = { category: "Revenue by category", region: "Revenue by region" };
 export const SALES_TABLE_LABELS = { topProducts: "Top products", topCustomers: "Top customers", recentOrders: "Recent orders" };
@@ -102,6 +102,32 @@ export function customWidgetProblems(widget) {
   return problems;
 }
 
+// Custom email widgets the assistant builds (decision #60): a typed query over the synced mail, never code.
+export const EmailCustomQuery = z.object({
+  metric: z.enum(["emails", "conversations", "people"]),
+  groupBy: z.enum(["none", "sender", "company", "category", "priority", "direction", "day", "week"]),
+  days: z.number().int().min(1).max(30).default(30),
+  limit: z.number().int().min(3).max(20).default(10),
+  filters: z.object({
+    direction: z.enum(["any", "in", "out"]).default("any"),
+    categories: z.array(Category).max(10).default([]),
+    priorities: z.array(Priority).max(3).default([]),
+    needsReply: z.boolean().nullable().default(null),
+    from: z.string().trim().max(80).default(""),
+    withAttachments: z.boolean().default(false),
+  }).default(() => ({ direction: "any", categories: [], priorities: [], needsReply: null, from: "", withAttachments: false })),
+});
+export const EMAIL_METRIC_LABELS = { emails: "Emails", conversations: "Conversations", people: "People" };
+/** Why a chart doesn't suit an email query, in plain words; [] when it does. */
+export function emailChartProblems(chart, query) {
+  const time = query.groupBy === "day" || query.groupBy === "week";
+  const problems = [];
+  if (chart === "number" && query.groupBy !== "none") problems.push("A number chart shows a single total; use groupBy none, or a bar or table for groups.");
+  if (chart === "line" && !time) problems.push("A line chart shows change over time; group by day or week.");
+  if ((chart === "bar" || chart === "table") && query.groupBy === "none") problems.push("Bars and tables need a group (sender, company, category…); use a number chart for a single total.");
+  return problems;
+}
+
 export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("stat"), title, metric: StatMetric }),
   z.object({ id, type: z.literal("thread-list"), title, list: ThreadList }),
@@ -113,6 +139,9 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("category-breakdown"), title }),
   z.object({ id, type: z.literal("contacts"), title, show: z.enum(["all", "new"]) }),
   z.object({ id, type: z.literal("attachments"), title }),
+  z.object({ id, type: z.literal("email-custom"), title, chart: CustomChart, query: EmailCustomQuery, note: z.string().trim().max(160).optional() }),
+  // Invoices to pay and to collect, from email attachments and the app's invoices (decision #59)
+  z.object({ id, type: z.literal("payments"), title, show: z.enum(["all", "to-pay", "to-collect"]) }),
   // Sales board (Postgres, decision #36)
   z.object({ id, type: z.literal("sales-kpi"), title, metric: SalesMetric }),
   z.object({ id, type: z.literal("sales-trend"), title }),
@@ -121,7 +150,10 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("sales-reps"), title }),
   z.object({ id, type: z.literal("sales-table"), title, table: SalesTable }),
   z.object({ id, type: z.literal("sales-custom"), title, chart: CustomChart, query: CustomQuery, note: z.string().trim().max(160).optional() }),
+  // Every invoice that moved stock, with Undo (decision #58)
+  z.object({ id, type: z.literal("stock-changes"), title }),
 ]);
+export const PAYMENTS_SHOW_LABELS = { all: "Payments", "to-pay": "Invoices to pay", "to-collect": "Invoices to collect" };
 
 // ---------------------------------------------------------------------------
 // Default business rules. Computed on the server in server/dashboard.js.
@@ -234,6 +266,20 @@ export const CATALOG = {
     size: { w: 6, h: 9, minW: 4, minH: 5 },
     create: () => ({ type: "attachments", title: "Attachments" }),
   },
+  // Made by the assistant from a plain-language request (decision #60), so it isn't offered in "Add widgets".
+  "email-custom": {
+    label: "Custom email chart",
+    description: "Made by the assistant from your question",
+    size: { w: 6, h: 9, minW: 3, minH: 3 },
+    hidden: true,
+    create: () => ({ type: "email-custom", title: "Emails by sender", chart: "bar", query: { metric: "emails", groupBy: "sender", days: 30, limit: 10, filters: {} } }),
+  },
+  payments: {
+    label: "Payments",
+    description: "Invoices to pay and to collect, by due date and priority",
+    size: { w: 6, h: 10, minW: 4, minH: 6 },
+    create: () => ({ type: "payments", title: "Payments", show: "all" }),
+  },
 };
 
 /** format: "count" (default) or "hours" (shown as a duration). */
@@ -330,6 +376,12 @@ export const SALES_CATALOG = {
     size: { w: 6, h: 9, minW: 4, minH: 5 },
     create: () => ({ type: "sales-table", title: "Top products", table: "topProducts" }),
   },
+  "stock-changes": {
+    label: "Stock from invoices",
+    description: "Every invoice that changed stock (sent or received), with Undo",
+    size: { w: 6, h: 10, minW: 4, minH: 6 },
+    create: () => ({ type: "stock-changes", title: "Stock changes from invoices" }),
+  },
   // Made by the assistant from a plain-language request, so it isn't offered in the manual "Add widgets" panel.
   "sales-custom": {
     label: "Custom chart",
@@ -357,6 +409,7 @@ export const DEFAULT_SALES_SPEC = {
     { id: "top-customers", type: "sales-table", title: "Top customers", table: "topCustomers" },
     { id: "by-region", type: "sales-breakdown", title: "Revenue by region", by: "region" },
     { id: "recent-orders", type: "sales-table", title: "Recent orders", table: "recentOrders" },
+    { id: "stock-changes", type: "stock-changes", title: "Stock changes from invoices" },
   ],
   layout: [
     { i: "kpi-revenue", x: 0, y: 0, w: 2, h: 3 },
@@ -373,14 +426,52 @@ export const DEFAULT_SALES_SPEC = {
     { i: "top-customers", x: 6, y: 23, w: 6, h: 10 },
     { i: "by-region", x: 0, y: 33, w: 5, h: 9 },
     { i: "recent-orders", x: 5, y: 33, w: 7, h: 9 },
+    { i: "stock-changes", x: 0, y: 42, w: 12, h: 10 },
   ],
 };
 
 /** Every dashboard ("board"): its widget catalogue and its default layout. */
+/** The main board and extra pages take any widget, email or sales (decision #60). */
+export const MAIN_CATALOG = { ...CATALOG, ...SALES_CATALOG };
+
+export const DEFAULT_MAIN_SPEC = {
+  title: "Overview",
+  widgets: [
+    { id: "kpi-revenue", type: "sales-kpi", title: "Revenue", metric: "revenue" },
+    { id: "kpi-orders", type: "sales-kpi", title: "Orders", metric: "orders" },
+    { id: "stat-awaiting-you", type: "stat", title: "Waiting on you", metric: "awaitingYou" },
+    { id: "kpi-purchases", type: "sales-kpi", title: "Purchases", metric: "purchases" },
+    { id: "payments", type: "payments", title: "Payments", show: "all" },
+    { id: "ai-attention", type: "insight-list", title: "Needs your attention", focus: "high-priority" },
+    { id: "revenue-trend", type: "sales-trend", title: "Revenue by month" },
+    { id: "list-awaiting-you", type: "thread-list", title: "Waiting on your reply", list: "awaitingYou" },
+  ],
+  layout: [
+    { i: "kpi-revenue", x: 0, y: 0, w: 3, h: 3 },
+    { i: "kpi-orders", x: 3, y: 0, w: 3, h: 3 },
+    { i: "stat-awaiting-you", x: 6, y: 0, w: 3, h: 3 },
+    { i: "kpi-purchases", x: 9, y: 0, w: 3, h: 3 },
+    { i: "payments", x: 0, y: 3, w: 6, h: 10 },
+    { i: "ai-attention", x: 6, y: 3, w: 6, h: 10 },
+    { i: "revenue-trend", x: 0, y: 13, w: 8, h: 10 },
+    { i: "list-awaiting-you", x: 8, y: 13, w: 4, h: 10 },
+  ],
+};
+
 export const BOARDS = {
   default: { catalog: CATALOG, spec: DEFAULT_SPEC },
   sales: { catalog: SALES_CATALOG, spec: DEFAULT_SALES_SPEC },
+  main: { catalog: MAIN_CATALOG, spec: DEFAULT_MAIN_SPEC },
 };
+
+/** Extra dashboard pages: "page-" and six lowercase letters or digits (server/pages.js). */
+export const PAGE_ID = /^page-[a-z0-9]{6}$/;
+/** A board's catalogue and default layout; extra pages are main boards. null for anything else. */
+export function boardDef(board) {
+  const key = String(board ?? "");
+  if (Object.hasOwn(BOARDS, key)) return BOARDS[key];
+  return PAGE_ID.test(key) ? BOARDS.main : null;
+}
 
 /** Every widget type on any board, for size lookups that only need the type. */
 export const WIDGET_CATALOG = { ...CATALOG, ...SALES_CATALOG };

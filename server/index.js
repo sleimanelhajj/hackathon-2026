@@ -16,6 +16,11 @@ import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgr
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
 import { runCustomQuery } from "./sales/custom.js";
+import { listFolders, onDocumentSaved, summariseAttachments } from "./documents.js";
+import { loadPayments } from "./payments.js";
+import { createPage, deletePage, listPages, renamePage } from "./pages.js";
+import { runEmailQuery } from "./email-custom.js";
+import { applyAppInvoice, applyEmailInvoice, emailInvoicesSince, listInvoiceChanges, undoInvoice } from "./inventory.js";
 import { DEFAULT_TIME_ZONE, answerMeetingRequest, loadSchedule, processMeetingRequests, retryMeetingEmail, safeTimeZone, saveAvailability, syncSchedule } from "./schedule-data.js";
 import { chat } from "./agent/chat.js";
 import { publicInvoice, renderInvoicePdf } from "./agent/invoice.js";
@@ -217,6 +222,10 @@ app.post("/api/invoices/:id/send", async (req, res) => {
     await db.collection("audit_events").insertOne({
       at: sentAt, actor: "user", action: "invoice_sent", invoiceId: id, approved: true, ok: true,
     }).catch((err) => console.error("Invoice send audit could not be saved:", err.message));
+    // Sent: stock goes down and the sale shows on the Sales page (decision #58). Never fails the send.
+    if (postgresConfigured()) {
+      await applyAppInvoice({ ...invoice, sentAt }).catch((err) => console.error("Stock update for a sent invoice failed:", err.message));
+    }
     res.json(publicInvoice({ ...invoice, status: "sent", sentAt, updatedAt: sentAt }));
   } catch (err) {
     if (claimed && id) {
@@ -429,6 +438,52 @@ app.post("/api/schedule/sync", async (req, res) => {
   }
 });
 
+// Dashboard pages (decision #60): the main board is the first page; more can be added, renamed and deleted.
+app.get("/api/dashboard-pages", wrap(async (_req, res) => res.json({ pages: await listPages() })));
+app.post("/api/dashboard-pages", async (req, res) => {
+  try { res.json(await createPage(req.body?.name)); } catch (err) { res.status(400).json({ error: err?.issues?.[0]?.message ?? String(err?.message ?? err) }); }
+});
+app.patch("/api/dashboard-pages/:id", async (req, res) => {
+  try { res.json(await renamePage(req.params.id, req.body?.name)); } catch (err) { res.status(400).json({ error: err?.issues?.[0]?.message ?? String(err?.message ?? err) }); }
+});
+app.delete("/api/dashboard-pages/:id", async (req, res) => {
+  try { res.json(await deletePage(req.params.id)); } catch (err) { res.status(400).json({ error: String(err?.message ?? err) }); }
+});
+// Data for a custom email widget (made by the assistant): its typed query, run over the synced mail.
+app.post("/api/email/custom", async (req, res) => {
+  try { res.json(await runEmailQuery(req.body?.query)); } catch (err) { res.status(400).json({ error: err?.issues ? "That email chart isn't valid." : String(err?.message ?? err) }); }
+});
+
+// Invoices to pay and to collect, with due dates and priority (decision #59).
+app.get("/api/payments", wrap(async (_req, res) => res.json(await loadPayments())));
+
+// Invoices moving stock and Sales (decision #58): the log, and Undo for one change.
+app.get("/api/inventory/changes", wrap(async (_req, res) => {
+  res.json({ configured: postgresConfigured(), changes: postgresConfigured() ? await listInvoiceChanges() : [] });
+}));
+app.post("/api/inventory/changes/:key/undo", async (req, res) => {
+  try {
+    if (req.body?.approved !== true) return res.status(400).json({ error: "Confirm the undo first." });
+    const key = z.string().min(3).max(300).regex(/^(sale|purchase):/).parse(req.params.key);
+    const out = await undoInvoice(key);
+    await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "user", action: "invoice_change_undone", key, approved: true, ok: true }).catch(() => {});
+    res.json(out);
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "That isn't a stock change." : String(err?.message ?? err).slice(0, 300) });
+  }
+});
+
+// The attachment library (decision #56): folders per contact with an AI summary of each file. Files not read yet
+// are read in the background (a bounded run), so the page fills in as they're done.
+app.get("/api/files", wrap(async (_req, res) => {
+  const out = await listFolders();
+  if (out.pending && !out.reading && out.aiConfigured) {
+    summariseAttachments().catch((err) => console.error("Attachment summaries:", err.message));
+    out.reading = true;
+  }
+  res.json(out);
+}));
+
 // Meeting requests (decision #55). Availability: weekly hours plus date changes; the first save switches requests on.
 app.put("/api/meetings/availability", async (req, res) => {
   try {
@@ -487,9 +542,28 @@ app.put("/api/integrations/gmail/auto-sync", wrap(async (req, res) => {
 
 // API_PORT (not PORT): dev tools often set PORT for the web server.
 const port = Number(process.env.API_PORT || 8787);
+/** Sales tables are upgraded in place, and invoices the AI reads from email start moving stock (decision #58). */
+async function startInventory() {
+  if (!postgresConfigured()) return;
+  try {
+    await createSchema(getPool());
+    const since = await emailInvoicesSince();
+    let storeName = null;
+    onDocumentSaved(async (doc) => {
+      if (doc.docType !== "invoice") return;
+      storeName ??= (await getPool().query(`SELECT name FROM "${DEFAULT_SCHEMA}".store_profile WHERE id = 1`)).rows[0]?.name ?? "";
+      const out = await applyEmailInvoice(doc, { storeName, since });
+      if (out.applied) await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "invoice_applied", key: out.key, source: "email", ok: true }).catch(() => {});
+    });
+  } catch (err) {
+    console.error("Inventory updates are off:", err.message);
+  }
+}
+
 connectDb()
   .then(resetStaleAnalysis)
   .then(resetStaleSync)
+  .then(startInventory)
   .then(() => app.listen(port, () => {
     console.log(`API ready on http://localhost:${port} (MongoDB connected)`);
     // New mail: a cheap check every POLL_SECONDS, a full sync and AI sorting only when the mailbox changed.

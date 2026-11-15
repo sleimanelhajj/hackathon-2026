@@ -6,6 +6,7 @@ import { DashboardDataProvider } from "../dashboard/DataContext";
 import { BoardEditor } from "../dashboard/BoardEditor";
 import { waitingLabel } from "../widgets/ThreadListWidget";
 import { PageSkeleton } from "../components/Skeletons";
+import { ExportButton } from "../dashboard/ExportButton";
 
 /** The email dashboard: Gmail data on a customisable board (see BoardEditor). */
 export function DashboardPage() {
@@ -24,7 +25,7 @@ export function DashboardPage() {
   if (!d || !d.connected)
     return (
       <div className="page">
-        <header className="page-head"><div><h1 className="page-title">Dashboard</h1></div></header>
+        <header className="page-head"><div><h1 className="page-title">Email dashboard</h1></div></header>
         <div className="surface empty">
           <div className="empty-icon"><Mail size={24} /></div>
           <h2 className="empty-title">Connect Gmail to see your dashboard</h2>
@@ -54,11 +55,14 @@ export function DashboardPage() {
           </>
         }
         actions={
-          d.mode === "live" && (
-            <button className="btn btn-ghost" onClick={() => sync.mutate()} disabled={syncing}>
-              {syncing ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />} Sync now
-            </button>
-          )
+          <>
+            {d.mode === "live" && (
+              <button className="btn btn-ghost" onClick={() => sync.mutate()} disabled={syncing}>
+                {syncing ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />} Sync now
+              </button>
+            )}
+            <ExportButton title="Email dashboard" />
+          </>
         }
         editTag={d.mode === "sample" && <span className="tag" data-tone="warn">Sample data</span>}
         banners={({ widgets, openWidget }) => {

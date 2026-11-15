@@ -94,8 +94,8 @@ export type InvoiceProposal = {
   warnings?: string[];
 };
 
-/** A widget the assistant's dashboard builder added to a board. */
-export type AddedWidget = { board: Board; id: string; title: string; chart: "number" | "line" | "bar" | "table"; summary: string };
+/** A widget the assistant added to a board (a custom chart, or a ready-made widget without a chart or summary). */
+export type AddedWidget = { board: Board; boardName?: string; id: string; title: string; chart: "number" | "line" | "bar" | "table" | null; summary: string | null };
 
 /** One turn of the assistant (POST /api/assistant/message or /confirm). */
 export type AssistantReply = {
@@ -134,6 +134,33 @@ export type ScheduleItem = {
   location?: string | null;
   /** Set for a meeting someone asked for (decision #55). */
   request?: { id: string; status: MeetingRequest["status"]; reason: MeetingRequest["reason"] };
+};
+
+/** One attachment with its AI summary and the figures it states (decision #56). */
+export type DocFile = {
+  _id: string; gmailId: string; threadId: string; attachmentId: string; partId: string; filename: string; mimeType: string | null; size: number | null;
+  direction: "in" | "out"; sentAt: string; subject: string | null; status: "ok" | "no-text" | "failed";
+  docType: string; title: string; summary: string | null; number: string | null; issueDate: string | null; dueDate: string | null;
+  currency: string | null; total: number | null; issuer: string | null; billedTo: string | null;
+  lines: { description: string; sku: string | null; quantity: number | null; unitPrice: number | null; total: number | null }[];
+  contact: { key: string; name: string; kind: "company" | "person"; email: string; domain: string };
+};
+export type DocFolder = { key: string; name: string; kind: "company" | "person"; emails: string[]; count: number; lastAt: string | null; types: Record<string, number>; docs: DocFile[] };
+export type FilesResponse = { folders: DocFolder[]; pending: number; reading: boolean; aiConfigured: boolean };
+
+/** An invoice to pay or collect (decision #59). */
+export type Payment = {
+  id: string; source: "app" | "email"; direction: "to-pay" | "to-collect"; counterparty: string | null; number: string | null; total: number | null;
+  currency: string | null; issueDate: string | null; dueDate: string | null; threadId: string | null; filename: string | null; ai: boolean;
+  status: "overdue" | "due-soon" | "due" | "no-due-date" | "paid"; priority: "high" | "medium" | "low";
+};
+export type PaymentsResponse = { items: Payment[]; totals: { toPay: number; toCollect: number; overdue: number; currency: string }; generatedAt: string };
+
+/** One invoice that moved stock (decision #58). */
+export type StockChange = {
+  key: string; kind: "sale" | "purchase"; number: string | null; counterparty: string | null; total: number | null; currency: string | null;
+  invoiceDate: string | null; source: "app" | "email" | null; appliedAt: string; undoneAt: string | null;
+  lines: { sku: string; name: string; change: number }[]; unmatched: { description: string; reason: string }[];
 };
 
 /** Wall-clock time slots ["09:00", "12:00"] per weekday, plus changes for dates ("2026-11-20": [] is a day off). */
@@ -284,7 +311,10 @@ export type WidgetType = Widget["type"];
 export type GridItem = z.infer<typeof LayoutItemSchema>;
 export type DashboardSpecInput = z.infer<typeof DashboardSpec>;
 /** A dashboard with its own saved layout and widget catalogue (shared/spec.js BOARDS). */
-export type Board = "default" | "sales";
+/** "default" = Email dashboard, "sales" = Sales, "main" and "page-…" = the main Dashboard's pages (decision #60). */
+export type Board = "default" | "sales" | "main" | `page-${string}`;
+export type DashboardPageInfo = { id: Board; name: string };
+export type EmailCustomResult = { rows: { key: string; value: number }[]; total: number; unit: "emails" | "conversations" | "people"; period: { from: string; to: string; days: number } };
 export type SavedDashboard =DashboardSpecInput & { id: string; version: number; canUndo: boolean; updatedAt: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -365,6 +395,8 @@ export type ReplyDraft = {
   model: string;
   /** Attachments whose text the draft was based on. */
   filesRead: string[];
+  /** Live stock and list prices the draft was given (decision #57). */
+  inventory?: { sku: string; name: string; inStock: number | null; unit: string | null; listPriceUSD: number; status: string }[];
   replyingTo: { from: string; date: string; snippet: string };
 };
 
@@ -402,6 +434,8 @@ export type SalesDashboard = {
     revenue: number; revenuePrev: number; orders: number; ordersPrev: number; aov: number; aovPrev: number;
     marginPct: number; marginPctPrev: number; newCustomers: number; newCustomersPrev: number;
     winRate: number; winRatePrev: number; openPipeline: number; openDeals: number;
+    /** Supplier invoices in the period (decision #58). */
+    purchases?: number; purchasesPrev?: number; purchaseCount?: number;
   };
   monthly: { month: string; revenue: number; revenueLastYear: number; orders: number }[];
   byCategory: { key: string; revenue: number; share: number }[];
@@ -494,6 +528,22 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approved: true, tz }),
+    }),
+  files: () => request<FilesResponse>("/api/files"),
+  pages: () => request<{ pages: DashboardPageInfo[] }>("/api/dashboard-pages"),
+  createPage: (name: string) => request<DashboardPageInfo>("/api/dashboard-pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
+  renamePage: (id: Board, name: string) => request<DashboardPageInfo>(`/api/dashboard-pages/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }),
+  deletePage: (id: Board) => request<{ id: Board; deleted: true }>(`/api/dashboard-pages/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  emailCustom: (query: Extract<Widget, { type: "email-custom" }>["query"]) =>
+    request<EmailCustomResult>("/api/email/custom", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) }),
+  payments: () => request<PaymentsResponse>("/api/payments"),
+  stockChanges: () => request<{ configured: boolean; changes: StockChange[] }>("/api/inventory/changes"),
+  /** Reverses one invoice's stock change; only from the widget's confirm step. */
+  undoStockChange: (key: string) =>
+    request<{ key: string; undone: true }>(`/api/inventory/changes/${encodeURIComponent(key)}/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved: true }),
     }),
   saveAvailability: (availability: Availability, tz: string) =>
     request<{ ok: true }>("/api/meetings/availability", {

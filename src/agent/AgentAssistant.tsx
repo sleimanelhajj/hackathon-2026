@@ -35,7 +35,8 @@ const TOOL_LABELS: Record<string, string> = {
   sales_summary: "sales summary", sales_breakdown: "sales breakdown", find_products: "product catalogue",
   find_customers: "customer list", customer_history: "customer history", low_stock: "stock levels", lapsed_customers: "customer activity", sales_figures: "sales data",
   store_profile: "store profile", staff_performance: "staff targets", quote_pipeline: "trade quotes", propose_invoice: "invoice draft",
-  add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets", resize_dashboard_widget: "dashboard widgets",
+  add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets", resize_dashboard_widget: "dashboard widgets", create_dashboard_page: "dashboard pages", add_ready_widget: "dashboard widgets",
+  add_email_widget: "email data", search_documents: "email files",
 };
 
 const newThread = () => crypto.randomUUID();
@@ -120,15 +121,20 @@ function ProposalCard({ proposal, state, busy, onConfirm, onChange }: {
 }
 
 const CHART_ICON = { number: Hash, line: LineChart, bar: BarChart3, table: Table2 } as const;
-const BOARD_NAME = { sales: "Sales", default: "email" } as const;
+/** "Sales", "email", "main", or a page's name: how a board is named in the chat cards. */
+const BOARD_NAME: Record<string, string> = { sales: "Sales", default: "email", main: "main" };
+const boardLabel = (board: Board, name?: string): string => BOARD_NAME[board] ?? name ?? "your";
+/** Where a board lives (decision #60): Sales, the Email dashboard, or the main Dashboard and its pages. */
+const boardHref = (board: Board) => (board === "sales" ? "#/sales" : board === "default" ? "#/email" : board === "main" ? "#/dashboard" : `#/dashboard/${board}`);
+const addedTo = (board: Board, name?: string) => (board.startsWith("page-") ? `Added to the ${name ?? "new"} page` : `Added to ${boardLabel(board, name)} dashboard`);
 
 /** A widget the dashboard builder added: what it shows, where it went, and a way to open or undo it. */
 function WidgetCard({ widget }: { widget: AddedWidget }) {
   const qc = useQueryClient();
   const [state, setState] = useState<"added" | "removing" | "removed">("added");
   const [error, setError] = useState<string | null>(null);
-  const Icon = CHART_ICON[widget.chart] ?? BarChart3;
-  const href = widget.board === "sales" ? "#/sales" : "#/dashboard";
+  const Icon = (widget.chart && CHART_ICON[widget.chart]) || BarChart3;
+  const href = boardHref(widget.board);
   const remove = async () => {
     setState("removing");
     setError(null);
@@ -146,9 +152,9 @@ function WidgetCard({ widget }: { widget: AddedWidget }) {
       <span className="widget-card-icon"><Icon size={18} aria-hidden /></span>
       <div className="widget-card-text">
         <strong>{widget.title}</strong>
-        <span>{widget.summary}</span>
+        {widget.summary && <span>{widget.summary}</span>}
         <span className="widget-card-status">
-          {state === "removed" ? "Removed from the dashboard" : <><CheckCircle2 size={12} aria-hidden /> {`Added to ${BOARD_NAME[widget.board]} dashboard`}</>}
+          {state === "removed" ? "Removed from the dashboard" : <><CheckCircle2 size={12} aria-hidden /> {addedTo(widget.board, widget.boardName)}</>}
         </span>
       </div>
       {state !== "removed" && (
@@ -179,7 +185,7 @@ function useBoardUndo(item: { board: Board; id: string; version: number }, redo:
       const current = await api.spec(item.board);
       if (current.version !== item.version) {
         setState("done");
-        setError(`The ${BOARD_NAME[item.board]} dashboard changed after this, so Undo here would undo that instead. ${redo}`);
+        setError(`The ${boardLabel(item.board)} dashboard changed after this, so Undo here would undo that instead. ${redo}`);
         return;
       }
       await api.undoSpec(item.board);
@@ -197,7 +203,7 @@ function useBoardUndo(item: { board: Board; id: string; version: number }, redo:
 /** A widget the assistant removed, with Undo. */
 function RemovedCard({ item }: { item: AssistantReply["removed"][number] }) {
   const { state, error, undo } = useBoardUndo(item, "Ask me to add it again.");
-  const board = BOARD_NAME[item.board];
+  const board = boardLabel(item.board);
   return (
     <section className="widget-card" role="region" aria-label={`Removed ${item.title}`} data-state={state === "restored" ? "added" : "removed-card"}>
       <span className="widget-card-icon" data-tone={state === "restored" ? undefined : "muted"}>{state === "restored" ? <CheckCircle2 size={18} aria-hidden /> : <Trash2 size={18} aria-hidden />}</span>
@@ -237,7 +243,7 @@ function ResizedCard({ item }: { item: ResizedWidget }) {
       <div className="widget-card-text">
         <strong>{item.title}</strong>
         <span className="widget-card-status">
-          {restored ? "Back to its old size" : `Now ${describeResize(item)} on ${BOARD_NAME[item.board]} dashboard`}
+          {restored ? "Back to its old size" : `Now ${describeResize(item)} on ${boardLabel(item.board)} dashboard`}
         </span>
         {!restored && item.limited && <span className="widget-card-status" data-tone="muted">That's as far as this widget goes.</span>}
       </div>
@@ -356,6 +362,8 @@ export function AgentAssistant() {
   const addReply = (result: AssistantReply) => {
     // A widget was added: refresh that board and highlight the newest one when it opens.
     for (const board of new Set([...(result.widgets ?? []), ...(result.removed ?? []), ...(result.resized ?? [])].map((w) => w.board))) void qc.invalidateQueries({ queryKey: ["dashboard-spec", board] });
+    // A page the assistant created shows up as a tab right away (decision #60).
+    if (result.toolsUsed?.includes("create_dashboard_page")) void qc.invalidateQueries({ queryKey: ["dashboard-pages"] });
     if (result.widgets?.length) useHighlight.getState().set(result.widgets.at(-1)!.id);
     setMessages((current) => [...current, {
       id: crypto.randomUUID(), role: "assistant", text: result.reply, toolsUsed: result.toolsUsed,

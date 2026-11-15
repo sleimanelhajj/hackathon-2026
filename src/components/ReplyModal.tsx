@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
-import { AlertTriangle, CheckCircle2, Info, Loader2, Paperclip, RefreshCw, Send, Sparkles, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Paperclip, RefreshCw, Send, Sparkles, X } from "lucide-react";
 import { api, type ReplyDraft } from "../lib/api";
 import { useSendReply, useStatus } from "../lib/queries";
 
@@ -161,6 +161,12 @@ function ReplyForm({ threadId, label, onClose }: { threadId: string; label: stri
       )}
       {draft && !drafting && draft.filesRead?.length > 0 && (
         <p className="muted small reply-files"><Paperclip size={13} aria-hidden /><span>Draft based on: {draft.filesRead.join(", ")}</span></p>
+      )}
+      {draft && !drafting && (draft.inventory?.length ?? 0) > 0 && (
+        <p className="muted small reply-files" role="note" aria-label="Stock used in this draft">
+          <Package size={13} aria-hidden />
+          <span>Live stock used: {draft.inventory!.map((p) => `${p.name}: ${p.inStock === null ? "stock unknown" : p.inStock <= 0 ? "out of stock" : `${p.inStock} in stock`}`).join(" · ")}</span>
+        </p>
       )}
       {draft?.note && !drafting && (
         <p className="reply-note"><Info size={14} aria-hidden /><span>Check before sending: {draft.note} Fill in anything in [brackets].</span></p>

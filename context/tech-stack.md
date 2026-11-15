@@ -27,7 +27,8 @@
 | `@radix-ui/react-select` | **In use:** every dropdown, through `src/components/Select.tsx` (keyboard and screen-reader support, styleable menu) |
 | `pg` | **In use:** Postgres connector for the Sales page (`server/sales/db.js`); `POSTGRES_URL` in `.env` |
 | `react-big-calendar` + `dayjs` | **In use:** the Schedule page (`src/pages/SchedulePage.tsx`), restyled with our tokens; only the dayjs adapter is imported |
-| `pdf-lib` | **In use:** deterministic invoice PDFs on the server; the model never writes PDF code or HTML |
+| `pdf-lib` | **In use:** deterministic invoice PDFs on the server; the model never writes PDF code or HTML. Also builds dashboard PDF reports in the browser (#61) |
+| `html-to-image` | **In use:** draws a dashboard as a PNG for Export (#61), in the browser; nothing is uploaded |
 | `@langchain/langgraph` (+ `@langchain/core`) | **In use:** the assistant's agent graph (`server/agent/sales-agent.js`): model → tools → human confirmation via `interrupt()`, per-thread checkpoints. Gemini is still called through `llm.js`, not a LangChain model wrapper |
 | `@assistant-ui/react` | Installed for later: agent chat panel (roadmap #2) |
 | `@xyflow/react` | Installed for later: automation graph (roadmap #9) |
@@ -122,6 +123,13 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | DELETE | `/api/dashboards/:board/widgets/:id` | Removes one widget (the chat's Remove button for an assistant-made widget) |
 | (script) | `npm run db:backup` / `npm run db:restore -- --yes` | Back up / restore the demo sales data and dashboard layouts (`backups/`); never email data |
 | PUT | `/api/integrations/gmail/auto-sync` | `{ enabled }` → turns the every-minute new-mail check on or off |
+| GET | `/api/files` | The attachment library: folders per contact with each file's AI summary and figures; starts reading files not read yet (#56) |
+| GET | `/api/payments` | Invoices to pay and to collect with due dates, status and priority (#59) |
+| GET | `/api/inventory/changes` | Invoices that moved stock, newest first, with the lines matched and not matched (#58) |
+| POST | `/api/inventory/changes/:key/undo` | `{ approved: true }` → reverses one invoice's stock change and removes its order or purchase |
+| GET/POST | `/api/dashboard-pages` | The main Dashboard's pages; POST `{ name }` adds one (#60) |
+| PATCH/DELETE | `/api/dashboard-pages/:id` | Rename (`{ name }`) or delete a page (not the first) |
+| POST | `/api/email/custom` | `{ query }` → data for a custom email chart (a typed query over the synced mail, #60) |
 | GET | `/api/schedule?tz=` | The email schedule: reply tasks, follow-ups, meetings and deadlines built from Gmail data, each with `why` and a Gmail link, plus calendar sync status |
 | POST | `/api/schedule/sync` | `{ approved: true, tz }` → writes the schedule to the app's own Google calendar ("AI Workspace OS"); needs the `calendar.app.created` scope |
 | PUT | `/api/meetings/availability` | `{ availability: { weekly, dates }, tz }` → saves the user's availability; the first save switches meeting requests on (#55) |
@@ -143,6 +151,10 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | `dashboards` | Saved dashboard spec (`_id: "default"`), versioned, previous version kept for undo |
 | `invoices` | App-owned invoice drafts, computed totals, delivery status and source ids. This is not the company database |
 | `audit_events` | Content-free agent/tool and approved-action audit metadata |
+| `attachment_docs` | One doc per attachment (`gmailId:partId`): contact folder, file meta, AI summary, type and figures (number, dates, total, issuer, billed to, lines), status, model, version (#56) |
+| `dashboard_pages` | The main Dashboard's pages: `_id` (`main` or `page-xxxxxx`), name, order; each page's layout is a board in `dashboards` (#60) |
+
+Postgres (sales schema) also has, since #58: `invoice_changes` (one row per invoice applied: key, kind sale/purchase, number, counterparty, total, order or purchase id, unmatched lines, applied/undone), `stock_movements`, `purchases` + `purchase_items`, and `inventory_settings` (when email-read invoices started to count). Created in place at server start; cleared by `db:restore` and Reload demo data.
 | `meeting_settings` | `_id: "gmail"`: the user's availability (weekly hours + date changes), time zone, `activatedAt` (first save; only later requests are answered) |
 | `meeting_requests` | One decision per meeting request (`_id` from conversation + time): status (`accepted`, `pending`, `auto-declined`, `confirmed`, `declined`, `superseded`), reason, and the email sent about it (text, sent time, error, dry run) |
 

@@ -7,6 +7,7 @@ import { Select } from "../components/Select";
 import { BoardEditor } from "../dashboard/BoardEditor";
 import { SalesDataProvider, monthLabel } from "../widgets/SalesWidgets";
 import { BoardSkeleton } from "../components/Skeletons";
+import { ExportButton } from "../dashboard/ExportButton";
 
 // The Sales page: a customisable board (like the email dashboard) over Postgres sales data (server/sales).
 // For now it runs on demo data, and says so above the board.
@@ -80,7 +81,7 @@ export default function SalesPage() {
         board="sales"
         pageError={seed.error}
         subtitle={<span>{monthLabel(d.monthly[0].month, true)} to today, {vsLabel}{dash.isFetching ? " · updating…" : ""}</span>}
-        actions={<Select label="Period" value={String(months)} onChange={(v) => setMonths(Number(v))} options={PERIODS} />}
+        actions={<><Select label="Period" value={String(months)} onChange={(v) => setMonths(Number(v))} options={PERIODS} /><ExportButton title="Sales" /></>}
         editTag={d.sample && <span className="tag" data-tone="warn">Demo data</span>}
         banners={() =>
           d.sample && (

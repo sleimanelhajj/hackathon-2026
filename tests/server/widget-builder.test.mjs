@@ -185,3 +185,97 @@ test("a resize that changes nothing gets no Undo card, and errors go back to the
   assert.match(out.reply, /no longer on the dashboard/);
   assert.deepEqual(out.resized, []);
 });
+
+test("the assistant finds an attachment you ask about: who, what kind, which date (decision #56)", async () => {
+  const model = fakeModel([
+    call("search_documents", { contact: "Haddad", type: "invoice", from: "2026-11-12", to: "2026-11-12" }),
+    (contents) => {
+      const r = contents.at(-1).parts[0].functionResponse.response;
+      assert.equal(r.files[0].number, "1042");
+      return say(`Haddad Plumbing's invoice ${r.files[0].number} on 12 November was ${r.files[0].total} USD.`);
+    },
+  ]);
+  const asked = [];
+  const agent = createSalesAgent({
+    generate: model, tools: { run: async () => ({}), draftInvoice: async () => ({}) }, saveInvoice: async () => ({}),
+    searchDocuments: async (q) => { asked.push(q); return [{ filename: "Invoice-1042.pdf", contact: "Haddad Plumbing", type: "invoice", number: "1042", total: 2450.5, issueDate: "2026-11-12" }]; },
+  });
+  const out = await agent.send({ threadId: "d1", message: "what was the invoice from Haddad on 12 November?" });
+  assert.deepEqual(asked, [{ contact: "Haddad", type: "invoice", from: "2026-11-12", to: "2026-11-12" }]);
+  assert.match(out.reply, /1042/);
+  assert.ok(out.toolsUsed.includes("search_documents"));
+  const decl = model.seen[0].tools.find((t) => t.name === "search_documents");
+  assert.ok(decl, "offered to the model");
+  assert.ok(decl.parameters.properties.type.enum.includes("invoice"));
+  assert.match(JSON.stringify(model.seen[0]), /search_documents/);
+});
+
+// ---- dashboard pages, ready-made and email widgets (decision #60) ----
+const noTools = { run: async () => ({}), draftInvoice: async () => ({}) };
+
+test("the assistant makes a new page and fills it with ready-made email and sales widgets", async () => {
+  const model = fakeModel([
+    call("create_dashboard_page", { name: "Money" }),
+    (contents) => {
+      const page = contents.at(-1).parts[0].functionResponse.response;
+      assert.equal(page.board, "page-abc123");
+      return { role: "model", parts: [
+        { functionCall: { name: "add_ready_widget", args: { board: page.board, kind: "payments:to-pay" } } },
+        { functionCall: { name: "add_ready_widget", args: { board: page.board, kind: "sales-kpi:revenue" } } },
+      ] };
+    },
+    say("I made a **Money** page with your invoices to pay and revenue."),
+  ]);
+  const added = [];
+  const agent = createSalesAgent({
+    generate: model, tools: noTools, saveInvoice: async () => ({}),
+    createPage: async (name) => ({ board: "page-abc123", name }),
+    addReadyWidget: async (board, kind) => { added.push([board, kind]); return { board, boardName: "Money", widget: { id: `ai-${added.length}`, type: "payments", title: kind } }; },
+  });
+  const out = await agent.send({ threadId: "p1", message: "make a money page with what I owe and revenue" });
+  assert.deepEqual(added, [["page-abc123", "payments:to-pay"], ["page-abc123", "sales-kpi:revenue"]]);
+  assert.equal(out.widgets.length, 2);
+  assert.equal(out.widgets[0].boardName, "Money");
+  const names = model.seen[0].tools.map((t) => t.name);
+  assert.ok(names.includes("create_dashboard_page") && names.includes("add_ready_widget"));
+  const kinds = model.seen[0].tools.find((t) => t.name === "add_ready_widget").parameters.properties.kind.enum;
+  assert.ok(kinds.includes("payments:to-pay") && kinds.includes("stat:awaitingYou"));
+});
+
+test("the assistant builds a custom email chart: a typed query, checked, previewed, then added", async () => {
+  const model = fakeModel([
+    call("add_email_widget", { board: "default", title: "Emails by company", chart: "bar", metric: "emails", groupBy: "company", days: 30 }),
+    (contents) => {
+      const r = contents.at(-1).parts[0].functionResponse.response;
+      assert.equal(r.added, true);
+      assert.match(r.shows, /haddad-plumbing\.example 12/);
+      return say(`Added **${r.title}** to your Email dashboard.`);
+    },
+  ]);
+  const specs = [];
+  const agent = createSalesAgent({
+    generate: model, tools: noTools, saveInvoice: async () => ({}),
+    addEmailWidget: async (board, spec) => {
+      specs.push([board, spec]);
+      return { board, boardName: "Email dashboard", widget: { id: "ai-emails", type: "email-custom", title: spec.title, chart: spec.chart }, preview: { rows: [{ key: "haddad-plumbing.example", value: 12 }], total: 30, unit: "emails" } };
+    },
+  });
+  const out = await agent.send({ threadId: "e1", message: "chart my emails by company" });
+  assert.equal(specs[0][0], "default");
+  assert.deepEqual(specs[0][1].query, { metric: "emails", groupBy: "company", days: 30, filters: {} });
+  assert.equal(out.widgets[0].title, "Emails by company");
+});
+
+test("a sales chart can go on the main dashboard or a page, not only Sales", async () => {
+  const model = fakeModel([
+    call("add_dashboard_widget", { request: "drill sales by month", board: "main" }),
+    say("Added."),
+  ]);
+  const boards = [];
+  const agent = createSalesAgent({
+    generate: model, tools: noTools, saveInvoice: async () => ({}),
+    addWidget: async (request, board) => { boards.push(board); return { board, widget: { id: "ai-drill", title: "Drill sales", chart: "line" }, preview: { rows: [], total: 0, previousTotal: 0, unit: "USD", period: {}, filters: [] } }; },
+  });
+  await agent.send({ threadId: "s1", message: "put drill sales on my main dashboard" });
+  assert.deepEqual(boards, ["main"]);
+});

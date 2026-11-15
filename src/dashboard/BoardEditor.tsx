@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Check, LayoutGrid, Loader2, RotateCcw, Undo2 } from "lucide-react";
-import { BOARDS } from "../../shared/spec.js";
+import { boardDef } from "../../shared/spec.js";
 import type { Board, GridItem, Widget, WidgetType } from "../lib/api";
 import { useDashboardSpec, useRemoveWidget, useSaveSpec, useUndoSpec } from "../lib/queries";
 import { useHighlight, useUi } from "../lib/store";
@@ -44,7 +44,7 @@ type Props = {
 };
 
 export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, pageError }: Props) {
-  const { catalog, spec: defaultSpec } = BOARDS[board] as { catalog: Catalog & Record<string, { create: () => object; size: Size }>; spec: { widgets: unknown[]; layout: GridItem[] } };
+  const { catalog, spec: defaultSpec } = boardDef(board) as { catalog: Catalog & Record<string, { create: () => object; size: Size }>; spec: { widgets: unknown[]; layout: GridItem[] } };
   const specQuery = useDashboardSpec(board);
   const save = useSaveSpec(board);
   const undo = useUndoSpec(board);
@@ -248,7 +248,7 @@ export function BoardEditor({ board, subtitle, actions, editTag, banners, wrap, 
             {editing ? <span>Drag cards anywhere on the grid. Pull the bottom-right corner to resize.</span> : subtitle}
           </p>
         </div>
-        <div className="head-actions">
+        <div className="head-actions" data-export-hide="">
           {editing ? (
             <>
               {editTag}

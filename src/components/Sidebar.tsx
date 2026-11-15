@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, Inbox, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles, TrendingUp } from "lucide-react";
+import { CalendarDays, FolderOpen, Inbox, Mail, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plug, Sparkles, TrendingUp } from "lucide-react";
 import { useUi, type Route } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { timeAgo } from "../lib/api";
 
 const NAV: { route: Route; label: string; icon: typeof Plug }[] = [
   { route: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { route: "email", label: "Email dashboard", icon: Mail },
   { route: "data", label: "All email", icon: Inbox },
   { route: "calendar", label: "Schedule", icon: CalendarDays },
+  { route: "files", label: "Files", icon: FolderOpen },
   { route: "sales", label: "Sales", icon: TrendingUp },
   { route: "integrations", label: "Integrations", icon: Plug },
 ];

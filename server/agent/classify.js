@@ -17,6 +17,7 @@ import { AUTOMATED } from "../dashboard.js";
 import { Category, Priority } from "../../shared/spec.js";
 import { generateJson, geminiConfigured, geminiModel } from "./llm.js";
 import { READER_VERSION, attachmentsText, messageBody } from "./content.js";
+import { summariseAttachments } from "../documents.js";
 
 // 3 = reads bodies and attachment text. (2 was used by another branch writing to the shared database.)
 export const PROMPT_VERSION = 5; // 4: dates the email mentions (`when`), for the schedule; 5: meeting requests (`when.request`)
@@ -417,4 +418,6 @@ async function runAnalysis(conn, runId, force) {
     lastRunAt: new Date(),
     counts: { analysed, derived: derivedOps.length, unchanged, failed },
   });
+  // Then file the attachments: summaries and figures per contact (decision #56). In the background, bounded.
+  summariseAttachments().catch((err) => console.error("Attachment summaries:", err.message));
 }

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { getDb } from "../db.js";
 import { generateJson } from "./llm.js";
 import { attachmentsText, messageBody } from "./content.js";
+import { inventoryFor } from "./reply-inventory.js";
 
 const MESSAGES = 6;
 const SNIPPET_CHARS = 400;
@@ -37,6 +38,14 @@ Write the reply:
 - Never invent facts: prices, dates, times, amounts, names, attachments, decisions or promises that aren't in the
   thread. Where the owner must supply something, write a placeholder in square brackets, e.g. [confirm the date].
 - End with "Best regards," on its own line and nothing after it (the owner adds their name).
+
+INVENTORY: when the thread has an "inventory" list, it is live data from the store's own database for the products
+the email mentions (stock now, unit, list price in USD before VAT). Use it:
+- If they ask for a quantity, compare it with inStock. Never promise more than inStock: say how many are available now
+  and offer the rest later, e.g. "we have 9 of the 10 in stock; the last one arrives [confirm the date]".
+- Out of stock: say so and offer to order it [confirm the lead time]. Low stock: suggest confirming soon.
+- You may quote the list price; customer discounts aren't included, so write "list price" when quoting it.
+- If several products could match (e.g. two sizes), ask which one. Mention only products in the list.
 Also return "note": one short sentence telling the owner what to check before sending (max 120 characters).`;
 
 const RESPONSE_SCHEMA = {
@@ -106,6 +115,11 @@ export async function draftReply(threadId) {
       })
     ),
   };
+  // Live stock and prices for the products the latest message (and its files) mentions (decision #57).
+  const answering = thread.messages.findLast((m) => m.from !== "the owner");
+  const askText = [thread.subject, answering?.text, ...(answering?.attachments ?? []).map((a) => a.text)].join(" ");
+  const inventory = await inventoryFor(askText).catch((err) => { console.error("Inventory for reply:", err.message); return []; });
+  if (inventory.length) thread.inventory = inventory;
   const filesRead = thread.messages.flatMap((m) => (m.attachments ?? []).map((a) => a.name));
   const data = JSON.stringify(thread).replace(/</g, "\\u003c");
   const { data: raw, model } = await generateJson({
@@ -125,6 +139,7 @@ export async function draftReply(threadId) {
     note: answer.note || null,
     model,
     filesRead, // shown in the dialog so the user knows which attachments the draft is based on
+    inventory, // the stock and prices the draft was given, shown in the dialog
     replyingTo: {
       from: replyingTo.direction === "in" ? replyingTo.from?.name || replyingTo.from?.email : "you",
       date: replyingTo.date,

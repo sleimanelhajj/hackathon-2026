@@ -9,8 +9,8 @@ const { checkBoard } = await import("../../server/dashboards.js");
 
 const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
-test("there are two boards, email and sales, each with its own catalogue and default", () => {
-  assert.deepEqual(Object.keys(BOARDS).sort(), ["default", "sales"]);
+test("the email and sales boards each have their own catalogue and default; the main board has both (decision #60)", () => {
+  assert.deepEqual(Object.keys(BOARDS).sort(), ["default", "main", "sales"]);
   assert.equal(BOARDS.default.catalog, CATALOG);
   assert.equal(BOARDS.sales.catalog, SALES_CATALOG);
   assert.equal(BOARDS.sales.spec, DEFAULT_SALES_SPEC);

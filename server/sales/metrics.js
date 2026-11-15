@@ -77,8 +77,16 @@ export async function salesDashboard(pool, { schema = DEFAULT_SCHEMA, months = 1
        FROM ${s}.orders o JOIN ${s}.order_items li ON li.order_id = o.id JOIN ${s}.customers c ON c.id = o.customer_id
       GROUP BY o.id, c.name ORDER BY o.ordered_at DESC LIMIT 10`);
 
-  const [orders, customers, deals, category, region, products, topCustomers, reps, pipeline, recent] = await Promise.all([
-    ordersQ, customersQ, dealsQ, categoryQ, regionQ, productsQ, topCustomersQ, repsQ, pipelineQ, recentQ,
+  // Supplier invoices (decision #58): what was bought in each period.
+  const purchasesQ = pool.query(
+    `SELECT coalesce(sum(total) FILTER (WHERE purchased_at >= $1 AND purchased_at <= $2), 0)::float AS cur,
+            coalesce(sum(total) FILTER (WHERE purchased_at >= $3 AND purchased_at < $4), 0)::float AS prev,
+            count(*) FILTER (WHERE purchased_at >= $1 AND purchased_at <= $2)::int AS n FROM ${s}.purchases`,
+    [from, to, prevFrom, prevTo]
+  );
+
+  const [orders, customers, deals, category, region, products, topCustomers, reps, pipeline, recent, purchases] = await Promise.all([
+    ordersQ, customersQ, dealsQ, categoryQ, regionQ, productsQ, topCustomersQ, repsQ, pipelineQ, recentQ, purchasesQ,
   ]);
 
   // ---- KPIs ----
@@ -115,6 +123,7 @@ export async function salesDashboard(pool, { schema = DEFAULT_SCHEMA, months = 1
       newCustomers: customers.rows[0].cur, newCustomersPrev: customers.rows[0].prev,
       winRate: pct(d.won, d.won + d.lost) ?? 0, winRatePrev: pct(d.won_prev, d.won_prev + d.lost_prev) ?? 0,
       openPipeline: d.open_value, openDeals: d.open_count,
+      purchases: purchases.rows[0].cur, purchasesPrev: purchases.rows[0].prev, purchaseCount: purchases.rows[0].n,
     },
     monthly: monthly.map(({ month, revenue, revenueLastYear, orders }) => ({ month, revenue, revenueLastYear, orders })),
     byCategory: share(category.rows),

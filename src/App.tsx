@@ -12,9 +12,11 @@ import { PageSkeleton } from "./components/Skeletons";
 
 // The dashboard pulls in the grid and chart libraries; load it only when it's opened.
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const MainDashboardPage = lazy(() => import("./pages/MainDashboardPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const SalesPage = lazy(() => import("./pages/SalesPage"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
+const FilesPage = lazy(() => import("./pages/FilesPage"));
 
 export default function App() {
   const route = useRoute();
@@ -37,7 +39,7 @@ export default function App() {
   }, [busy]);
 
   useEffect(() => {
-    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : route === "sales" ? "Sales" : route === "calendar" ? "Schedule" : "Dashboard"} · AI Workspace OS`;
+    document.title = `${route === "integrations" ? "Integrations" : route === "data" ? "All email" : route === "sales" ? "Sales" : route === "calendar" ? "Schedule" : route === "files" ? "Files" : route === "email" ? "Email dashboard" : "Dashboard"} · AI Workspace OS`;
   }, [route]);
 
   return (
@@ -49,7 +51,7 @@ export default function App() {
           <IntegrationsPage />
         ) : (
           <Suspense fallback={<PageSkeleton kind={route === "data" ? "data" : route === "sales" ? "sales" : "dashboard"} />}>
-            {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : route === "calendar" ? <SchedulePage /> : <DashboardPage />}
+            {route === "data" ? <DataPage /> : route === "sales" ? <SalesPage /> : route === "calendar" ? <SchedulePage /> : route === "files" ? <FilesPage /> : route === "email" ? <DashboardPage /> : <MainDashboardPage />}
           </Suspense>
         )}
         </PageErrorBoundary>

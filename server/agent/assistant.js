@@ -9,7 +9,12 @@ import { createSalesTools } from "./sales-tools.js";
 import { createSalesAgent } from "./sales-agent.js";
 import { createWidgetBuilder } from "./widget-builder.js";
 import { filterValues, runCustomQuery } from "../sales/custom.js";
-import { addWidgetToBoard, getDashboard, removeWidgetFromBoard, resizeWidgetOnBoard } from "../dashboards.js";
+import { loadDocuments, searchDocs } from "../documents.js";
+import { boardDef, EmailCustomQuery, emailChartProblems } from "../../shared/spec.js";
+import { createPage as createDashboardPage, listPages } from "../pages.js";
+import { widgetFromKind } from "../widget-kinds.js";
+import { runEmailQuery } from "../email-custom.js";
+import { CUSTOM_SIZES, addWidgetToBoard, getDashboard, removeWidgetFromBoard, resizeWidgetOnBoard } from "../dashboards.js";
 
 const invoiceNumber = (date = new Date()) =>
   `INV-${date.toISOString().slice(0, 10).replaceAll("-", "")}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
@@ -39,21 +44,50 @@ export function getAssistant() {
       values: () => filterValues(getPool()),
       runQuery: (query) => runCustomQuery(getPool(), query),
     });
-    const addWidget = async (request) => {
-      const built = await builder.build(request);
-      const { widget } = await addWidgetToBoard("sales", built.widget);
-      await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_added", board: "sales", widgetId: widget.id, ok: true }).catch(() => {});
-      return { board: "sales", widget, preview: built.preview };
+    // Every board the assistant can work on (decision #60): Email dashboard, Sales, and the main Dashboard's pages.
+    const boardList = async () => [{ board: "default", name: "Email dashboard" }, { board: "sales", name: "Sales" }, ...(await listPages()).map((p) => ({ board: p.id, name: p.name }))];
+    const boardName = async (board) => (await boardList()).find((b) => b.board === board)?.name ?? board;
+    const known = async (board) => {
+      if (!boardDef(board) || !(await boardList()).some((b) => b.board === board)) throw new Error(`Unknown dashboard "${String(board).slice(0, 40)}". List the widgets to see the boards.`);
     };
-    // Removing a widget the user names: list both boards so the model can match the title, then remove (gap closes).
-    const BOARD_NAMES = { sales: "Sales", default: "Email dashboard" };
-    const listWidgets = async () => Promise.all(Object.entries(BOARD_NAMES).map(async ([board, name]) => {
+    const added = async (board, widget, extra = {}) => {
+      await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_added", board, widgetId: widget.id, ok: true }).catch(() => {});
+      return { board, boardName: await boardName(board), widget, ...extra };
+    };
+    const addWidget = async (request, board = "sales") => {
+      await known(board);
+      const built = await builder.build(request);
+      const { widget } = await addWidgetToBoard(board, built.widget);
+      return added(board, widget, { preview: built.preview });
+    };
+    const addReadyWidget = async (board, kind) => {
+      await known(board);
+      const { widget, size } = widgetFromKind(kind);
+      const out = await addWidgetToBoard(board, widget, size);
+      return added(board, out.widget);
+    };
+    const addEmailWidget = async (board, spec) => {
+      await known(board);
+      const query = EmailCustomQuery.parse(spec.query);
+      const problems = emailChartProblems(spec.chart, query);
+      if (problems.length) throw new Error(problems.join(" "));
+      const preview = await runEmailQuery(query);
+      const out = await addWidgetToBoard(board, { type: "email-custom", title: spec.title, chart: spec.chart, query }, CUSTOM_SIZES[spec.chart]);
+      return added(board, out.widget, { preview });
+    };
+    const createPage = async (name) => {
+      const page = await createDashboardPage(name);
+      await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "page_created", board: page.id, ok: true }).catch(() => {});
+      return { board: page.id, name: page.name };
+    };
+    // Removing or resizing a widget the user names: list every board so the model can match the title.
+    const listWidgets = async () => Promise.all((await boardList()).map(async ({ board, name }) => {
       const spec = await getDashboard(board);
       const size = new Map(spec.layout.map((l) => [l.i, l]));
       return { board, name, widgets: spec.widgets.map((w) => ({ id: w.id, title: w.title, type: w.type, w: size.get(w.id)?.w, h: size.get(w.id)?.h })) };
     }));
     const removeWidget = async (board, id) => {
-      if (!(board in BOARD_NAMES)) throw new Error(`Unknown dashboard "${board}".`);
+      await known(board);
       const before = await getDashboard(board);
       const title = before.widgets.find((w) => w.id === id)?.title;
       if (!title) throw new Error("That widget is no longer on the dashboard. List the widgets again.");
@@ -63,12 +97,13 @@ export function getAssistant() {
     };
     // Resizing a widget the user names (decision #54): saved as a new version, so the chat's Undo puts it back.
     const resizeWidget = async (board, id, size) => {
-      if (!(board in BOARD_NAMES)) throw new Error(`Unknown dashboard "${board}".`);
+      await known(board);
       const out = await resizeWidgetOnBoard(board, id, size);
       if (!out.unchanged) await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "widget_resized", board, widgetId: id, from: out.from, to: out.to, ok: true }).catch(() => {});
       return { board, id, ...out };
     };
-    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), addWidget, listWidgets, removeWidget, resizeWidget });
+    agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), addWidget, listWidgets, removeWidget, resizeWidget,
+      searchDocuments: async (query) => searchDocs(await loadDocuments(), query), createPage, addReadyWidget, addEmailWidget });
   }
   return agent;
 }

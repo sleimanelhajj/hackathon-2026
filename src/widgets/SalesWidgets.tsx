@@ -7,12 +7,15 @@ import type { SalesDashboard, Widget } from "../lib/api";
 // Widgets for the Sales board. They read the numbers the Sales page loaded for the chosen period (one request for
 // the whole board), so moving, adding or removing widgets never refetches.
 
+/** Thrown when a widget's data isn't there (e.g. on the main board before Gmail or Sales is set up); shown as-is. */
+export class MissingDataError extends Error {}
+
 export type SalesData = { d: SalesDashboard; vsLabel: string };
 const Ctx = createContext<SalesData | null>(null);
 export const SalesDataProvider = Ctx.Provider;
 function useSalesData(): SalesData {
   const v = useContext(Ctx);
-  if (!v) throw new Error("Sales widgets need SalesDataProvider");
+  if (!v) throw new MissingDataError("No sales data yet. Load the demo data on the Sales page.");
   return v;
 }
 
@@ -37,6 +40,7 @@ export const SalesKpiWidget = memo(function SalesKpiWidget({ widget }: KpiProps)
     newCustomers: { value: count(k.newCustomers), now: k.newCustomers, before: k.newCustomersPrev },
     winRate: { value: `${k.winRate.toFixed(0)}%`, now: k.winRate, before: k.winRatePrev, points: true },
     openPipeline: { value: money(k.openPipeline), note: `${k.openDeals} open deals` },
+    purchases: { value: money(k.purchases ?? 0), now: k.purchases ?? 0, before: k.purchasesPrev ?? 0 },
   }[widget.metric] as { value: string; now?: number; before?: number; points?: boolean; note?: string };
 
   let change: { dir: "up" | "down" | "flat"; text: string } | null = null;

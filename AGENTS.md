@@ -32,7 +32,9 @@ UI designs live in Figma: https://www.figma.com/design/XTZ64s5ZqMsk2ARqPw1C2h (7
 - **Assistant chat bubble (LangGraph, `server/agent/sales-agent.js`):** answers sales questions from Postgres, recommends products for a scenario, builds invoice PDFs after the user confirms a draft, and adds custom chart widgets to the Sales board through a widget-builder sub-agent ("show me sales of the cordless drill").
 - **Automatic Gmail sync:** the server checks for new mail every minute and syncs and sorts only when something arrived; switch on the Integrations page (decision #52).
 - **Schedule page (`#/calendar`):** a calendar built from Gmail (react-big-calendar): reply tasks by urgency, follow-ups, meetings and deadlines, each explaining why; opt-in sync to the app's own Google calendar (decision #51). All 24 hours, the user's availability (weekly hours + date changes), and meeting requests: past or clashing ones get an automatic reply with free times, ones outside availability wait for the user to accept or decline (decision #55).
-- Not built yet: prompt-generated dashboards, user corrections for AI labels, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
+- **Files page (`#/files`):** every attachment filed per contact with an AI summary and its figures; the assistant searches them (#56). Invoices feed a Payments widget (#59) and move stock and Sales automatically, with undo (#58). Reply drafts check live stock (#57).
+- **Dashboard pages:** Dashboard is a main board of email and sales widgets with pages; the Email dashboard is `#/email`. The assistant builds pages and widgets, including custom email charts (#60). Every dashboard exports as PNG or PDF (#61).
+- Not built yet: user corrections for AI labels, approval-gated drafts, RBAC/admin, Calendar. The order and how-to for each are in `context/roadmap.md`.
 
 ## Commands
 
