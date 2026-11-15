@@ -2,7 +2,7 @@
 // one setting, named by a plain "kind" ("sales-kpi:revenue", "payments:to-pay", "sales-trend"). The model picks a kind
 // from this list; the widget itself is built here from the catalogue, so it's always valid.
 import {
-  BREAKDOWN_RULES, CATALOG, INSIGHT_FOCUS_LABELS, LIST_RULES, PAYMENTS_SHOW_LABELS, SALES_BREAKDOWN_LABELS, SALES_CATALOG, SALES_METRIC_LABELS,
+  BREAKDOWN_RULES, CATALOG, INSIGHT_FOCUS_LABELS, LIST_RULES, PAYMENTS_SHOW_LABELS, SALES_BREAKDOWN_LABELS, SALES_CATALOG, SALES_COST_LABELS, SALES_METRIC_LABELS,
   SALES_TABLE_LABELS, STAT_LABELS, Widget,
 } from "../shared/spec.js";
 
@@ -19,6 +19,7 @@ const SETTINGS = {
   "sales-kpi": ["metric", SALES_METRIC_LABELS],
   "sales-breakdown": ["by", SALES_BREAKDOWN_LABELS],
   "sales-table": ["table", SALES_TABLE_LABELS],
+  "sales-cost": ["by", SALES_COST_LABELS],
 };
 
 function kindsOf(catalog, data) {

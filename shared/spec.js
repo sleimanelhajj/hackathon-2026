@@ -68,12 +68,15 @@ const title = z.string().trim().min(1).max(60);
 
 // Custom sales widgets, made by the assistant's widget builder (decision #48). The widget stores a typed query, never
 // SQL and never data: server/sales/custom.js turns it into fixed, parameterized SQL each time the widget loads.
-export const CustomMetric = z.enum(["revenue", "orders", "units", "aov", "marginPct", "customers"]);
-export const CustomGroupBy = z.enum(["none", "month", "week", "day", "category", "product", "branch", "staff", "channel", "segment", "customer"]);
+// cost = what the goods sold cost (quantity x unit cost), profit = revenue - cost, purchases = supplier invoices (#62).
+export const CustomMetric = z.enum(["revenue", "orders", "units", "aov", "marginPct", "customers", "cost", "profit", "purchases"]);
+export const CustomGroupBy = z.enum(["none", "month", "week", "day", "category", "product", "branch", "staff", "channel", "segment", "customer", "supplier"]);
+/** What a supplier purchase can be grouped by (it has no branch, staff, channel or customer). */
+export const PURCHASE_GROUPS = ["none", "month", "week", "day", "category", "product", "supplier"];
 export const CustomChart = z.enum(["number", "line", "bar", "table"]);
 export const TIME_GROUPS = ["month", "week", "day"];
-export const CUSTOM_METRIC_LABELS = { revenue: "Revenue", orders: "Orders", units: "Units sold", aov: "Average order", marginPct: "Gross margin", customers: "Customers" };
-export const CUSTOM_GROUP_LABELS = { none: "Total", month: "Month", week: "Week", day: "Day", category: "Category", product: "Product", branch: "Branch", staff: "Staff", channel: "Channel", segment: "Customer type", customer: "Customer" };
+export const CUSTOM_METRIC_LABELS = { revenue: "Revenue", orders: "Orders", units: "Units sold", aov: "Average order", marginPct: "Gross margin", customers: "Customers", cost: "Cost of goods sold", profit: "Gross profit", purchases: "Purchases" };
+export const CUSTOM_GROUP_LABELS = { none: "Total", month: "Month", week: "Week", day: "Day", category: "Category", product: "Product", branch: "Branch", staff: "Staff", channel: "Channel", segment: "Customer type", customer: "Customer", supplier: "Supplier" };
 const names = z.array(z.string().trim().min(1).max(80)).max(10).default([]);
 export const CustomQuery = z.object({
   metric: CustomMetric,
@@ -98,6 +101,9 @@ export function customWidgetProblems(widget) {
   if (chart === "number" && query.groupBy !== "none") problems.push("A single number can't be grouped; use groupBy 'none', or a bar or table chart.");
   if (chart === "line" && !time) problems.push("A line chart shows change over time; group by month, week or day.");
   if ((chart === "bar" || chart === "table") && query.groupBy === "none") problems.push("Bars and tables need a group (month, product, branch…); use a number chart for a single total.");
+  if (query.metric === "purchases" && !PURCHASE_GROUPS.includes(query.groupBy)) problems.push("Purchases come from supplier invoices, which have no branch, staff, channel, customer type or customer; group them by month, week, day, category, product or supplier.");
+  if (query.metric === "purchases" && ["branches", "segments", "channels", "customers"].some((k) => query.filters?.[k]?.length)) problems.push("Purchases from supplier invoices can only be filtered by product or category.");
+  if (query.metric !== "purchases" && query.groupBy === "supplier") problems.push("Group by supplier works only with purchases.");
   if (query.groupBy === "day" && query.months > 3) problems.push("Daily figures are limited to the last 3 months; group by week or month for longer periods.");
   return problems;
 }
@@ -152,7 +158,10 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("sales-custom"), title, chart: CustomChart, query: CustomQuery, note: z.string().trim().max(160).optional() }),
   // Every invoice that moved stock, with Undo (decision #58)
   z.object({ id, type: z.literal("stock-changes"), title }),
+  // Cost of goods sold by category or product (decision #62)
+  z.object({ id, type: z.literal("sales-cost"), title, by: z.enum(["category", "product"]) }),
 ]);
+export const SALES_COST_LABELS = { category: "Cost by category", product: "Cost by product" };
 export const PAYMENTS_SHOW_LABELS = { all: "Payments", "to-pay": "Invoices to pay", "to-collect": "Invoices to collect" };
 
 // ---------------------------------------------------------------------------
@@ -376,6 +385,12 @@ export const SALES_CATALOG = {
     size: { w: 6, h: 9, minW: 4, minH: 5 },
     create: () => ({ type: "sales-table", title: "Top products", table: "topProducts" }),
   },
+  "sales-cost": {
+    label: "Costs",
+    description: "What the goods sold cost, by category or by product",
+    size: { w: 6, h: 10, minW: 4, minH: 6 },
+    create: () => ({ type: "sales-cost", title: "Cost by category", by: "category" }),
+  },
   "stock-changes": {
     label: "Stock from invoices",
     description: "Every invoice that changed stock (sent or received), with Undo",
@@ -410,6 +425,8 @@ export const DEFAULT_SALES_SPEC = {
     { id: "by-region", type: "sales-breakdown", title: "Revenue by region", by: "region" },
     { id: "recent-orders", type: "sales-table", title: "Recent orders", table: "recentOrders" },
     { id: "stock-changes", type: "stock-changes", title: "Stock changes from invoices" },
+    { id: "cost-by-category", type: "sales-cost", title: "Cost by category", by: "category" },
+    { id: "cost-by-product", type: "sales-cost", title: "Cost by product", by: "product" },
   ],
   layout: [
     { i: "kpi-revenue", x: 0, y: 0, w: 2, h: 3 },
@@ -427,6 +444,8 @@ export const DEFAULT_SALES_SPEC = {
     { i: "by-region", x: 0, y: 33, w: 5, h: 9 },
     { i: "recent-orders", x: 5, y: 33, w: 7, h: 9 },
     { i: "stock-changes", x: 0, y: 42, w: 12, h: 10 },
+    { i: "cost-by-category", x: 0, y: 52, w: 6, h: 10 },
+    { i: "cost-by-product", x: 6, y: 52, w: 6, h: 10 },
   ],
 };
 

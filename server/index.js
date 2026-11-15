@@ -16,7 +16,7 @@ import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgr
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
 import { runCustomQuery } from "./sales/custom.js";
-import { listFolders, onDocumentSaved, summariseAttachments } from "./documents.js";
+import { listFolders, loadDocuments, onDocumentSaved, summariseAttachments } from "./documents.js";
 import { loadPayments } from "./payments.js";
 import { createPage, deletePage, listPages, renamePage } from "./pages.js";
 import { runEmailQuery } from "./email-custom.js";
@@ -549,12 +549,17 @@ async function startInventory() {
     await createSchema(getPool());
     const since = await emailInvoicesSince();
     let storeName = null;
-    onDocumentSaved(async (doc) => {
-      if (doc.docType !== "invoice") return;
+    const apply = async (doc) => {
+      if (doc.docType !== "invoice" || doc.status !== "ok") return;
       storeName ??= (await getPool().query(`SELECT name FROM "${DEFAULT_SCHEMA}".store_profile WHERE id = 1`)).rows[0]?.name ?? "";
       const out = await applyEmailInvoice(doc, { storeName, since });
       if (out.applied) await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "agent", action: "invoice_applied", key: out.key, source: "email", ok: true }).catch(() => {});
-    });
+    };
+    onDocumentSaved(apply);
+    // Catch up on invoices read while the server was down or before this hook worked; each invoice counts once anyway.
+    // In the background, so the server answers requests right away.
+    (async () => { for (const doc of await loadDocuments()) await apply(doc).catch((err) => console.error("Stock from an emailed invoice:", err.message)); })()
+      .catch((err) => console.error("Stock catch-up:", err.message));
   } catch (err) {
     console.error("Inventory updates are off:", err.message);
   }

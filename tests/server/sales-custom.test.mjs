@@ -114,3 +114,56 @@ test("custom widgets are valid sales-board widgets, hidden from the manual widge
   assert.ok(SALES_CATALOG["sales-custom"]);
   assert.equal(SALES_CATALOG["sales-custom"].hidden, true);
 });
+
+// ---- costs (decision #62): cost of goods sold, gross profit, and supplier purchases ----
+function costByHand(key) {
+  const from = monthStart(11);
+  const cost = new Map(), revenue = new Map();
+  for (const it of data.orderItems) {
+    const o = orders.get(it.orderId);
+    if (o.status === "refunded" || o.orderedAt < from || o.orderedAt > now) continue;
+    const p = products.get(it.productId);
+    const k = key(p);
+    cost.set(k, (cost.get(k) ?? 0) + it.quantity * p.unitCost);
+    revenue.set(k, (revenue.get(k) ?? 0) + line(it));
+  }
+  return { cost, revenue };
+}
+
+test("cost by category and by product: what the goods sold cost, matching a hand count", { skip }, async () => {
+  for (const [groupBy, key] of [["category", (p) => p.category], ["product", (p) => p.name]]) {
+    const res = await runCustomQuery(pool, { metric: "cost", groupBy, months: 12, limit: 20 }, { schema, now });
+    const { cost } = costByHand(key);
+    assert.equal(res.unit, "USD");
+    for (const r of res.rows) assert.ok(Math.abs(r.value - cost.get(r.key)) < 0.02, `${groupBy} ${r.key}: ${r.value} vs ${cost.get(r.key)}`);
+    assert.ok(res.rows.every((r, i) => i === 0 || r.value <= res.rows[i - 1].value), "biggest first");
+  }
+});
+
+test("gross profit is revenue minus the cost of the goods sold", { skip }, async () => {
+  const res = await runCustomQuery(pool, { metric: "profit", groupBy: "category", months: 12, limit: 20 }, { schema, now });
+  const { cost, revenue } = costByHand((p) => p.category);
+  for (const r of res.rows) assert.ok(Math.abs(r.value - (revenue.get(r.key) - cost.get(r.key))) < 0.05, r.key);
+});
+
+test("purchases: what supplier invoices cost, by product, category or supplier", { skip }, async () => {
+  const p = data.products[1];
+  const { rows: [{ id }] } = await pool.query(`INSERT INTO "${schema}".purchases (number, supplier, purchased_at, total, currency) VALUES ('NS-1', 'Northstar', $1, 999, 'USD') RETURNING id`, [new Date("2026-11-10T10:00:00Z")]);
+  await pool.query(`INSERT INTO "${schema}".purchase_items (purchase_id, product_id, quantity, unit_cost) VALUES ($1, $2, 10, 50)`, [id, p.id]);
+  const byProduct = await runCustomQuery(pool, { metric: "purchases", groupBy: "product", months: 1 }, { schema, now });
+  assert.deepEqual(byProduct.rows, [{ key: p.name, value: 500 }]);
+  assert.equal(byProduct.total, 500);
+  const bySupplier = await runCustomQuery(pool, { metric: "purchases", groupBy: "supplier", months: 1 }, { schema, now });
+  assert.deepEqual(bySupplier.rows, [{ key: "Northstar", value: 500 }]);
+  const byCategory = await runCustomQuery(pool, { metric: "purchases", groupBy: "category", months: 1, filters: { categories: [p.category] } }, { schema, now });
+  assert.equal(byCategory.total, 500);
+});
+
+test("purchases can't be grouped by things a supplier invoice doesn't have; supplier only goes with purchases", () => {
+  const w = (metric, groupBy) => ({ chart: "bar", query: CustomQuery.parse({ metric, groupBy }) });
+  assert.match(customWidgetProblems(w("purchases", "branch")).join(), /supplier invoices/);
+  assert.match(customWidgetProblems(w("purchases", "customer")).join(), /supplier invoices/);
+  assert.deepEqual(customWidgetProblems(w("purchases", "supplier")), []);
+  assert.deepEqual(customWidgetProblems(w("cost", "category")), []);
+  assert.match(customWidgetProblems(w("revenue", "supplier")).join(), /only with purchases/);
+});

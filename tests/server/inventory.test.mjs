@@ -109,3 +109,13 @@ test("applying an invoice moves stock and Sales once; undo puts everything back"
   await assert.rejects(inv.undoInvoice("sale:INV-1", opts), /already undone/);
   assert.equal((await inv.listInvoiceChanges(opts)).find((l) => l.key === "sale:INV-1").undoneAt !== null, true);
 });
+
+test("options without a database still use the app's database (the bug that skipped every emailed invoice)", async () => {
+  const { withDefaults } = await import("../../server/inventory.js");
+  const pool = { fake: true };
+  assert.equal(withDefaults({ storeName: "Cedar", since: new Date() }).schema, "sales", "a partial options object keeps the defaults");
+  assert.ok("pool" in withDefaults({ storeName: "Cedar" }));
+  assert.equal(withDefaults({ pool, schema: "test_x" }).pool, pool);
+  assert.equal(withDefaults({ pool, schema: "test_x" }).schema, "test_x");
+  assert.equal(withDefaults(undefined).schema, "sales");
+});

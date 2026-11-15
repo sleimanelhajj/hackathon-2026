@@ -2,7 +2,7 @@ import { lazy, Suspense, type ComponentType } from "react";
 import { BarChart3, Boxes, Filter, FolderOpen, Hash, LineChart, ListTodo, Paperclip, PieChart, Receipt, Sparkles, Table2, Tags, Target, Users, type LucideIcon } from "lucide-react";
 import { ContactsWidget } from "./ContactsWidget";
 import { AttachmentsWidget } from "./AttachmentsWidget";
-import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, PAYMENTS_SHOW_LABELS, SALES_BREAKDOWN_LABELS, SALES_METRIC_LABELS, SALES_TABLE_LABELS, STAT_LABELS } from "../../shared/spec.js";
+import { BREAKDOWN_RULES, INSIGHT_FOCUS_LABELS, LIST_RULES, PAYMENTS_SHOW_LABELS, SALES_COST_LABELS, SALES_BREAKDOWN_LABELS, SALES_METRIC_LABELS, SALES_TABLE_LABELS, STAT_LABELS } from "../../shared/spec.js";
 import { SalesBreakdownWidget, SalesKpiWidget, SalesPipelineWidget, SalesRepsWidget, SalesTableWidget, SalesTrendWidget } from "./SalesWidgets";
 import type { InsightFocus, Widget, WidgetType } from "../lib/api";
 import { CategoryBreakdownWidget, InsightListWidget } from "./InsightWidgets";
@@ -11,6 +11,7 @@ import { EmailCustomWidget } from "./EmailCustomWidget";
 import { StatWidget } from "./StatWidget";
 import { PaymentsWidget } from "./PaymentsWidget";
 import { StockChangesWidget } from "./StockChangesWidget";
+import { SalesCostWidget } from "./SalesCostWidget";
 import { ThreadListWidget } from "./ThreadListWidget";
 import { TopPeopleWidget } from "./TopPeopleWidget";
 import { RuleListWidget } from "./RuleListWidget";
@@ -193,6 +194,17 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
     },
   },
   "stock-changes": { icon: Boxes, component: StockChangesWidget as AnyWidgetComponent, collapsible: true },
+  "sales-cost": {
+    icon: BarChart3,
+    component: SalesCostWidget as AnyWidgetComponent,
+    collapsible: true,
+    setting: {
+      label: "Show",
+      options: Object.entries(SALES_COST_LABELS).map(([value, label]) => ({ value, label })),
+      get: (w) => (w.type === "sales-cost" ? w.by : ""),
+      set: (w, v) => (w.type === "sales-cost" ? { ...w, by: v as typeof w.by, title: SALES_COST_LABELS[v as typeof w.by] } : w),
+    },
+  },
   // Made by the assistant (decision #60); ask it for a different chart.
   "email-custom": { icon: Sparkles, component: EmailCustomWidget as AnyWidgetComponent, collapsible: true },
 };

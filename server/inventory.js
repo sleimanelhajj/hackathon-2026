@@ -66,6 +66,8 @@ const q = (schema) => {
   return `"${schema}"`;
 };
 const defaults = () => ({ pool: postgresConfigured() ? getPool() : null, schema: DEFAULT_SCHEMA });
+/** Options with the app's database filled in for whatever wasn't given (a partial object must not mean "no database"). */
+export const withDefaults = (opts) => ({ ...defaults(), ...Object.fromEntries(Object.entries(opts ?? {}).filter(([, v]) => v !== undefined)) });
 
 async function inTransaction(pool, fn) {
   const client = await pool.connect();
@@ -101,7 +103,8 @@ async function customerFor(c, s, { customerId, counterparty }) {
  * Applies one invoice: { kind: "sale"|"purchase", number, counterparty, customerId?, date, currency, total, lines,
  * source?, sourceId? }. Returns { applied: false } when this invoice was already applied.
  */
-export async function applyInvoice(inv, { pool, schema } = defaults()) {
+export async function applyInvoice(inv, opts) {
+  const { pool, schema } = withDefaults(opts);
   if (!pool) return { applied: false, reason: "no database" };
   const s = q(schema);
   return inTransaction(pool, async (c) => {
@@ -154,7 +157,8 @@ export async function applyInvoice(inv, { pool, schema } = defaults()) {
 }
 
 /** Reverses one applied invoice: stock back, its order or purchase removed. */
-export async function undoInvoice(key, { pool, schema } = defaults()) {
+export async function undoInvoice(key, opts) {
+  const { pool, schema } = withDefaults(opts);
   if (!pool) throw new Error("Postgres isn't set up.");
   const s = q(schema);
   return inTransaction(pool, async (c) => {
@@ -172,7 +176,8 @@ export async function undoInvoice(key, { pool, schema } = defaults()) {
 }
 
 /** The log, newest first: each invoice with the stock it moved and the lines it couldn't match. */
-export async function listInvoiceChanges({ pool, schema, limit = 50 } = defaults()) {
+export async function listInvoiceChanges(opts) {
+  const { pool, schema, limit = 50 } = withDefaults(opts);
   if (!pool) return [];
   const s = q(schema);
   const { rows } = await pool.query(
@@ -188,7 +193,8 @@ export async function listInvoiceChanges({ pool, schema, limit = 50 } = defaults
 }
 
 /** When email-read invoices started to count (set the first time; older mail never moves stock). */
-export async function emailInvoicesSince({ pool, schema } = defaults()) {
+export async function emailInvoicesSince(opts) {
+  const { pool, schema } = withDefaults(opts);
   if (!pool) return null;
   const s = q(schema);
   await pool.query(`INSERT INTO ${s}.inventory_settings (id, email_invoices_since) VALUES (1, now()) ON CONFLICT (id) DO NOTHING`);
