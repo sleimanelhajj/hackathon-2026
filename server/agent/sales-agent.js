@@ -67,8 +67,26 @@ export const SEARCH_DOCUMENTS_DECLARATION = {
 
 export const ADD_WIDGET_DECLARATION = {
   name: "add_dashboard_widget",
-  description: "Hand a custom SALES chart or number request to the dashboard builder, which designs a widget over the sales database (metric, grouping, period, filters, chart type) and adds it to a board: Sales (default), the main Dashboard or one of its pages. Pass the request in plain words with every detail the user gave (product, customer, branch, period, comparison).",
+  description: "Hand any widget request over the business data to the dashboard builder, which designs it and adds it to a board: Sales (default), the main Dashboard or one of its pages. It builds charts and numbers (revenue, orders, units, margin, customers, cost of goods sold, profit, supplier purchases, running expenses; by time, product, category, branch, staff, channel, customer type, customer or supplier; filtered) AND lists of records with chosen columns (products with prices and stock, customers, orders, supplier purchases, expenses, quotes, staff). Pass the request in the user's own words with every detail they gave (product, customer, branch, period, measure, columns); don't translate it into a different measure.",
   parameters: { type: "OBJECT", properties: { request: { type: "STRING" }, board: { type: "STRING", description: "sales (default), main, or a page id" } }, required: ["request"] },
+};
+
+/** Hands an email the user wants to send to the email writer (decision #69). Nothing is sent by the tool. */
+export const DRAFT_EMAIL_DECLARATION = {
+  name: "draft_email",
+  description: "Hand an email the user wants to write or send to the email writer, who drafts it. The draft appears in the chat, where the user can edit it, ask for a rewrite or press Send; this tool never sends anything. To change the draft the user already has ('make it shorter', 'add the price'), call it again with revise true and the change.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      to: { type: "STRING", description: "Recipient email address(es), comma-separated. Look customers up with find_customers. Leave empty if unknown: the user fills it in." },
+      toName: { type: "STRING", description: "Recipient's name or company, if known" },
+      request: { type: "STRING", description: "What the email should say, in the user's words, with every detail they gave" },
+      facts: { type: "STRING", description: "Figures and details from tool results the email needs (prices, stock, order lines, totals, dates), written out exactly" },
+      revise: { type: "BOOLEAN", description: "true to rewrite the draft the user already has" },
+      change: { type: "STRING", description: "With revise: what to change" },
+    },
+    required: ["request"],
+  },
 };
 
 // ---- dashboard pages and widgets beyond Sales (decision #60) ----
@@ -145,16 +163,25 @@ FILES (EMAIL ATTACHMENTS)
 - Answer from the result: the document number, its date, the total with currency, and what it was for; name the file. The figures were read from the file by AI, so say so when the user relies on them.
 
 DASHBOARD WIDGETS
-- A question ("how did…", "which…", "why…") gets an answer in words from the read tools; for one product, branch or customer over time use sales_figures (e.g. units by month for a product to show its seasons). Only add a widget when the user asks to see, show, chart, track, add or put something on the dashboard.
-- When the user wants to see, chart, track or add something to the dashboard ("show me sales of the 5 kWh battery", "add a chart of orders by branch", "put battery revenue on my dashboard"), call add_dashboard_widget with their request in plain words, including every detail they gave. Don't ask about chart types or axes: the builder chooses them.
-- Then tell them in one or two sentences what was added (its title and the headline figure from the result) and which board it is on. Don't repeat the data as a list.
-- The boards: the main Dashboard ("my dashboard", "the main dashboard", "overview"; board main, plus pages page-…) takes any widget, email or sales; the Email dashboard ("email dashboard", "email tab"; board default) takes email widgets; Sales (board sales) takes sales widgets. When the user names no board, use Sales for sales charts and the Email dashboard for email charts.
-- A widget that already exists in the app (payments, waiting on you, revenue, top products, needs your attention…): add_ready_widget with the matching kind. A custom chart of emails ("emails by company this month", "how many urgent emails per day"): add_email_widget. A custom chart of sales: add_dashboard_widget.
+- A question ("how did…", "which…", "why…") gets an answer in words from the read tools; for one product, branch or customer over time use sales_figures (e.g. units by month for a product to show its seasons). Only add a widget when the user asks to see, show, list, chart, track, add or put something on the dashboard.
+- When the user wants to see, list, chart, track or add something from the business data ("show me sales of the 5 kWh battery", "add a chart of orders by branch", "add the costs of purchasing solar panels", "show the list of products we have and their stock", "list the open quotes", "put rent and salaries by month on my dashboard"), call add_dashboard_widget with their request in their own words, including every detail they gave. It handles charts, numbers and lists of records. Don't ask about chart types, axes or columns: the builder chooses them. Never answer such a request with a different measure: "cost of purchasing X" is what we paid suppliers for X, not the cost of goods sold.
+- Then tell them in one or two sentences what was added (its title and the headline figure or row count from the result) and which board it is on. Don't repeat the data as a list. If the result shows no data for the period (total 0 or no rows), say so plainly.
+- The boards: the main Dashboard ("my dashboard", "the main dashboard", "overview"; board main, plus pages page-…) takes any widget, email or sales; the Email dashboard ("email dashboard", "email tab"; board default) takes email widgets; Sales (board sales) takes sales widgets. When the user names no board, use Sales for sales widgets and the Email dashboard for email charts.
+- add_ready_widget only when the request names exactly a ready-made widget with nothing more specific (payments, waiting on you, revenue number, top products, pipeline, needs your attention…). Anything with a product, customer, period, filter, measure or list the ready ones don't cover goes to add_dashboard_widget (sales data) or add_email_widget (email counts). The ready "Cost of goods sold" widgets are only for cost of goods sold.
 - "Make a page for…": create_dashboard_page, then add the widgets it should have (ready-made where one fits), then say what's on it. Email widgets can't go on Sales and sales widgets can't go on the Email dashboard; if asked, offer the main Dashboard instead.
 - When the user wants a widget removed ("remove the battery chart", "delete the pipeline widget"), call list_dashboard_widgets, find the one they mean by its title, then call remove_dashboard_widget. If more than one could match, ask which one (name them); if none matches, say so and name what's there. Remove only what they asked for.
 - After removing, say what was removed in one sentence and that they can undo it from the chat.
 - When the user wants a widget bigger, smaller, wider, taller, shorter, half or full width ("make the pipeline full width", "make revenue by month taller", "shrink the top products table"), call list_dashboard_widgets, find it by its title, work out the new width and/or height from its current size, then call resize_dashboard_widget. "Bigger" or "smaller" without a size means a clear step (about half again, or two-thirds); keep the other dimension unless they asked for both. Ask which one if more than one could match.
 - After resizing, say in one sentence what changed in plain words ("now full width", "a little taller"), not in columns or rows, and that they can undo it from the chat. If you resized several widgets in one go, say only the last change can be undone from the chat. If the result says it was limited, say it is as big (or small) as that widget goes. If nothing changed, say it is already that size.`;
+
+/** Added to the instructions when the assistant can draft emails (decision #69). */
+const EMAIL_SYSTEM = `
+
+WRITING EMAILS
+- When the user wants to write, send or email something to someone ("email Khoury Solar that their panels arrived", "send Omar a quote for 10 panels", "write to our supplier asking for the price list"), find the recipient first (find_customers gives a customer's email; the user may give an address), look up the facts the email needs with the read tools (prices, stock, orders), then call draft_email with the request in the user's words and those facts written out exactly.
+- If you can't find the recipient's address, still draft it with "to" empty and tell the user to fill in the address.
+- After drafting, say in one short sentence who it's for and that they can edit it, ask you to change it, or press Send. Never say it was sent: only the user can send it, from the draft.
+- When the user asks to change the draft ("shorter", "more formal", "add the delivery date"), call draft_email again with revise true and the change.`;
 
 /** Added to the instructions when the assistant can update records (decision #68). */
 const CHANGES_SYSTEM = `
@@ -184,6 +211,8 @@ const State = Annotation.Root({
   widgets: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
   removed: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
   resized: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
+  emails: Annotation({ reducer: (a, b) => (b === null ? [] : a.concat(b)), default: () => [] }),
+  lastEmail: Annotation({ reducer: (_, b) => b, default: () => null }),
   steps: Annotation({ reducer: (_, b) => b, default: () => 0 }),
   stopped: Annotation({ reducer: (_, b) => b, default: () => false }),
 });
@@ -209,7 +238,7 @@ const draftSummary = (d) => ({
  * @param deps.tools       { run(name, args), draftInvoice(args) }                (sales-tools.js)
  * @param deps.saveInvoice (draft) => public invoice with pdfUrl                  (stores the confirmed invoice)
  */
-export function createSalesAgent({ generate, tools, saveInvoice, changes = null, addWidget = null, listWidgets = null, removeWidget = null, resizeWidget = null, searchDocuments = null, createPage = null, addReadyWidget = null, addEmailWidget = null, now = () => new Date(), maxSteps = 10, checkpointer = new MemorySaver() }) {
+export function createSalesAgent({ generate, tools, saveInvoice, changes = null, addWidget = null, listWidgets = null, removeWidget = null, resizeWidget = null, searchDocuments = null, createPage = null, addReadyWidget = null, addEmailWidget = null, writeEmail = null, now = () => new Date(), maxSteps = 10, checkpointer = new MemorySaver() }) {
   const declarations = [
     ...TOOL_DECLARATIONS,
     ...(addWidget ? [ADD_WIDGET_DECLARATION] : []),
@@ -220,13 +249,14 @@ export function createSalesAgent({ generate, tools, saveInvoice, changes = null,
     ...(createPage ? [CREATE_PAGE_DECLARATION] : []),
     ...(addReadyWidget ? [ADD_READY_WIDGET_DECLARATION] : []),
     ...(addEmailWidget ? [ADD_EMAIL_WIDGET_DECLARATION] : []),
+    ...(writeEmail ? [DRAFT_EMAIL_DECLARATION] : []),
     ...(changes ? [...CHANGE_DECLARATIONS, EXPENSES_DECLARATION] : []),
   ];
   async function model(state) {
     if (state.steps >= maxSteps) {
       return { contents: [{ role: "model", parts: [{ text: "Sorry, I couldn't finish that one. Try asking in a simpler way, or split it into smaller questions." }] }], stopped: true };
     }
-    const { content } = await generate({ system: `${SYSTEM}${changes ? CHANGES_SYSTEM : ""}
+    const { content } = await generate({ system: `${SYSTEM}${writeEmail ? EMAIL_SYSTEM : ""}${changes ? CHANGES_SYSTEM : ""}
 
 Today is ${today(now())}.`, contents: state.contents, tools: declarations });
     return { contents: [content], steps: state.steps + 1 };
@@ -241,11 +271,23 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
     const widgets = [];
     const removed = [];
     const resized = [];
+    const emails = [];
+    let lastEmail = state.lastEmail;
     for (const { name, args, id } of calls) {
       let response;
       const started = Date.now();
       try {
-        if (name === "list_dashboard_widgets" && listWidgets) {
+        if (name === "draft_email" && writeEmail) {
+          const revise = args?.revise === true && lastEmail;
+          const draft = await writeEmail({
+            to: String(args?.to ?? (revise ? lastEmail.to : "")), toName: String(args?.toName ?? (revise ? lastEmail.toName : "")),
+            request: String(args?.request ?? ""), facts: String(args?.facts ?? ""),
+            current: revise ? lastEmail : null, change: String(args?.change ?? ""),
+          });
+          emails.push(draft);
+          lastEmail = draft;
+          response = { drafted: true, status: "shown to the user in the chat to edit, rewrite or send; not sent", to: draft.to || "(empty: the user must add it)", subject: draft.subject, body: draft.body, note: draft.note };
+        } else if (name === "list_dashboard_widgets" && listWidgets) {
           response = { boards: await listWidgets() };
         } else if (name === "remove_dashboard_widget" && removeWidget) {
           const out = await removeWidget(String(args?.board ?? ""), String(args?.widgetId ?? ""));
@@ -279,9 +321,15 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
         } else if (name === "add_dashboard_widget" && addWidget) {
           const out = await addWidget(String(args?.request ?? ""), String(args?.board || "sales"));
           const summary = widgetSummary(out.widget, out.preview);
-          widgets.push({ board: out.board, id: out.widget.id, title: out.widget.title, chart: out.widget.chart, summary });
-          response = { added: true, board: out.board, title: out.widget.title, chart: out.widget.chart, shows: summary,
-            total: out.preview.total, previousPeriodTotal: out.preview.previousTotal, unit: out.preview.unit, period: out.preview.period };
+          if (out.widget.type === "sales-records") {
+            widgets.push({ board: out.board, id: out.widget.id, title: out.widget.title, chart: "table", summary });
+            response = { added: true, board: out.board, title: out.widget.title, kind: "list", shows: summary, rows: out.preview.total,
+              columns: out.preview.columns.map((c) => c.label), firstRows: out.preview.rows.slice(0, 3), period: out.preview.period };
+          } else {
+            widgets.push({ board: out.board, id: out.widget.id, title: out.widget.title, chart: out.widget.chart, summary });
+            response = { added: true, board: out.board, title: out.widget.title, chart: out.widget.chart, shows: summary,
+              measure: out.widget.query?.metric, total: out.preview.total, previousPeriodTotal: out.preview.previousTotal, unit: out.preview.unit, period: out.preview.period };
+          }
         } else if (changes && CHANGE_TOOL_NAMES.has(name)) {
           // A draft only: saved after the user presses Save (decision #68). One at a time.
           if (pendingChange || pending) response = { error: "One change at a time: the user must answer the first one before you propose another." };
@@ -301,7 +349,7 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
       noteTool({ name, args, result: response, durationMs: Date.now() - started, ok: !response?.error, error: response?.error }); // Logs (#67)
       parts.push({ functionResponse: { ...(id ? { id } : {}), name, response } });
     }
-    return { contents: [{ role: "user", parts }], toolsUsed: used, widgets, removed, resized, ...(pending ? { pending } : {}), ...(pendingChange ? { pendingChange } : {}) };
+    return { contents: [{ role: "user", parts }], toolsUsed: used, widgets, removed, resized, emails, ...(emails.length ? { lastEmail } : {}), ...(pending ? { pending } : {}), ...(pendingChange ? { pendingChange } : {}) };
   }
 
   async function confirm(state) {
@@ -351,7 +399,8 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
     let reply = textOf(lastModel);
     if (draft) reply = reply && !callsIn(lastModel).length ? reply : "Here's the invoice draft. Please review the customer, items and total, then confirm to create the PDF, or tell me what to change.";
     if (change) reply = reply && !callsIn(lastModel).length ? reply : "Here's the change. Check it, then press Save, or tell me what to change.";
-    return { reply: reply || "Done.", pendingInvoice: draft, pendingChange: change, applied: snap.values.applied ?? [], invoice: draft ? null : snap.values.invoice, toolsUsed: [...new Set(snap.values.toolsUsed)], widgets: snap.values.widgets ?? [], removed: snap.values.removed ?? [], resized: snap.values.resized ?? [] };
+    return { reply: reply || "Done.", pendingInvoice: draft, pendingChange: change, applied: snap.values.applied ?? [], invoice: draft ? null : snap.values.invoice, toolsUsed: [...new Set(snap.values.toolsUsed)], widgets: snap.values.widgets ?? [], removed: snap.values.removed ?? [], resized: snap.values.resized ?? [],
+      emailDraft: snap.values.emails?.at(-1) ?? null };
   }
 
   async function waitingFor(config) {
@@ -360,7 +409,7 @@ Today is ${today(now())}.`, contents: state.contents, tools: declarations });
   }
 
   /** Each turn starts fresh bookkeeping (steps, tools used, last invoice); the conversation itself is kept. */
-  const turnStart = { steps: 0, stopped: false, invoice: null, toolsUsed: null, widgets: null, removed: null, resized: null, applied: null, closed: false };
+  const turnStart = { steps: 0, stopped: false, invoice: null, toolsUsed: null, widgets: null, removed: null, resized: null, emails: null, applied: null, closed: false };
 
   return {
     graph,

@@ -120,7 +120,9 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | GET | `/api/messages?q=&direction=&from=&status=&priority=&category=&page=0&limit=25` | Stored emails, searchable, filterable and paged (no body, no headers), each with its AI label (`ai`); used by the Email data page |
 | GET | `/api/messages/:gmailId` | One stored email with all headers and the decrypted body |
 | GET | `/api/messages/people` | Everyone in the stored email with message counts (Email data person filter) |
-| POST | `/api/replies/draft` | `{ threadId }` → AI-drafted reply (to, subject, body, note). Drafts only, never sends |
+| POST | `/api/replies/draft` | `{ threadId, guidance?, current? }` → AI-drafted reply (to, subject, body, note); with `guidance` (the owner's instructions) it rewrites `current` (#69). Drafts only, never sends |
+| POST | `/api/email/rewrite` | `{ to, subject, body, instruction }` → the email writer's rewrite of a chat draft (#69). Never sends |
+| POST | `/api/email/send` | `{ to[], subject, body, approved: true }` → sends a new email the user confirmed in a chat draft (#69) |
 | GET | `/api/threads/:threadId` | One conversation in full for the email viewer: bodies (decrypted on the server), files, AI summary |
 | GET | `/api/sales/status` | Postgres connection state and table counts (no secrets) |
 | POST | `/api/sales/seed` | Creates the database/schema if needed and loads the demo sales data (replaces it) |
@@ -134,6 +136,7 @@ Open http://localhost:5173. With nothing connected you land on Integrations.
 | POST | `/api/analysis/run` | Start AI email analysis in the background (`{ "force": true }` re-sorts every thread). Also runs on its own after a sync or sample load |
 | POST | `/api/agent/chat` | Last 10 text turns → answer from bounded company-data records, verified sources and optional stored invoice draft |
 | POST | `/api/assistant/message` | `{ threadId, message }` → the LangGraph assistant's reply, tools used, and an invoice draft waiting for confirmation (if any) |
+| POST | `/api/sales/records` | `{ query }` (a list widget's typed query, #69) → columns, rows, total and what it lists; fixed, parameterized, read-only SQL |
 | POST | `/api/sales/custom` | `{ query }` (a custom widget's typed query) → rows, total, previous-period total and what it counts; fixed, parameterized, read-only SQL |
 | DELETE | `/api/dashboards/:board/widgets/:id` | Removes one widget (the chat's Remove button for an assistant-made widget) |
 | (script) | `npm run db:backup` / `npm run db:restore -- --yes` | Back up / restore the demo sales data and dashboard layouts (`backups/`); never email data |

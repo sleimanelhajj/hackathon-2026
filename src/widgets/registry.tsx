@@ -12,6 +12,7 @@ import { StatWidget } from "./StatWidget";
 import { PaymentsWidget } from "./PaymentsWidget";
 import { StockChangesWidget } from "./StockChangesWidget";
 import { SalesCostWidget } from "./SalesCostWidget";
+import { SalesRecordsWidget } from "./SalesRecordsWidget";
 import { ThreadListWidget } from "./ThreadListWidget";
 import { TopPeopleWidget } from "./TopPeopleWidget";
 import { RuleListWidget } from "./RuleListWidget";
@@ -182,6 +183,7 @@ export const REGISTRY: Record<WidgetType, WidgetDef> = {
   },
   // Made by the assistant's dashboard builder; no manual setting (ask the assistant for a different chart).
   "sales-custom": { icon: Sparkles, component: CustomSalesWidget as AnyWidgetComponent, collapsible: true },
+  "sales-records": { icon: Sparkles, component: SalesRecordsWidget as AnyWidgetComponent, collapsible: true },
   payments: {
     icon: Receipt,
     component: PaymentsWidget as AnyWidgetComponent,

@@ -30,9 +30,9 @@ export const TEAM = [
     does: "Files every attachment under its contact with a short summary and the figures it holds (invoice numbers, totals, dates), which feed Payments and stock.",
   },
   {
-    id: "rayan", name: "Rayan", role: "Reply writer", parent: "layla", relation: "team", icon: "pen", hue: "indigo", reads: ["Gmail", "Sales database"],
-    runs: "When you ask for a suggested reply",
-    does: "Drafts an email reply to a thread, checking live stock first so he never promises what isn't there. You edit and approve it before anything is sent.",
+    id: "rayan", name: "Rayan", role: "Email writer", parent: "layla", relation: "team", icon: "pen", hue: "indigo", reads: ["Gmail", "Sales database"],
+    runs: "When you ask for a suggested reply, rewrite one with your instructions, or ask the assistant to write an email",
+    does: "Drafts email replies (checking live stock first so he never promises what isn't there) and new emails the assistant asks for, and rewrites them as you instruct. You edit and approve every one before anything is sent.",
   },
   {
     id: "tala", name: "Tala", role: "Telegram analyst", parent: "layla", relation: "team", icon: "send", hue: "green", reads: ["Telegram"],

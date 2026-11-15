@@ -54,7 +54,7 @@ export const CustomSalesWidget = memo(function CustomSalesWidget({ widget }: Pro
   if (isLoading) return <div className="custom-loading" aria-busy="true"><span className="bone" style={{ width: "40%", height: 22 }} /><span className="bone" style={{ flex: 1, height: "auto", minHeight: 60 }} /></div>;
   if (error || !data) return <div className="widget-empty"><p>Couldn't load this widget.</p><p className="widget-empty-rule">{errorMessage(error)}</p></div>;
 
-  const what = data.filters.map((f) => f.replace(/^[^:]+:\s*/, "")).join(", ") || "All sales";
+  const what = data.filters.map((f) => f.replace(/^[^:]+:\s*/, "")).join(", ") || ({ purchases: "All purchases", expenses: "All expenses" } as Record<string, string>)[data.metric] || "All sales";
   // Show the years only when the period crosses one ("Dec 1, 2025 – Nov 14, 2026"), so "Dec 1 – Nov 14" is never ambiguous.
   const crossesYear = data.period.from.slice(0, 4) !== data.period.to.slice(0, 4);
   const when = (iso: string) => (crossesYear ? `${day(iso)}, ${iso.slice(0, 4)}` : day(iso));

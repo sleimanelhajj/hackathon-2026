@@ -1264,6 +1264,7 @@ a.agent-source:hover { border-color: var(--border-strong); background: var(--hov
 .custom-number { flex: 1; justify-content: center; }
 .custom-widget[data-chart="number"] { gap: 6px; }
 .custom-widget[data-chart="number"] .custom-caption { flex-wrap: nowrap; }
+.records-widget .sales-table td { white-space: normal; }
 .custom-loading { height: 100%; display: flex; flex-direction: column; gap: 12px; }
 /* The newest widget glows briefly when the board opens on it. */
 .dashboard-canvas .grid-stack-item[data-highlight] .widget { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-subtle), var(--shadow-lift); transition: box-shadow 400ms var(--ease), border-color 400ms var(--ease); }
@@ -1301,6 +1302,11 @@ a.agent-source:hover { border-color: var(--border-strong); background: var(--hov
 .invoice-review .input { background: var(--surface-solid); font-size: 12px; }
 .invoice-message { min-height: 104px; }
 .invoice-review-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.email-rewrite { display: flex; gap: 6px; align-items: center; }
+.email-rewrite .input { flex: 1; min-width: 0; height: 34px; font-size: 13px; }
+.reply-guidance { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius); background: var(--subtle); }
+.reply-guidance-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.reply-guidance-input { height: auto; min-height: 56px; padding: 8px 10px; resize: vertical; font: inherit; font-size: 13px; line-height: 1.45; }
 
 @media (max-width: 760px) {
   .agent-root { inset: 0; right: auto; bottom: auto; pointer-events: none; }

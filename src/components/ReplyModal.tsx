@@ -84,12 +84,14 @@ function ReplyForm({ threadId, onDirty, onSent }: { threadId: string; onDirty: (
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [edited, setEdited] = useState(false);
+  // The owner's own context for the AI (decision #69): "Rewrite with this" turns the current text into a new draft.
+  const [guidance, setGuidance] = useState("");
 
-  const runDraft = async () => {
+  const runDraft = async (opts: { guidance?: string; current?: string } = {}) => {
     setDrafting(true);
     setDraftError(null);
     try {
-      const d = await api.draftReply(threadId);
+      const d = await api.draftReply(threadId, opts);
       setDraft(d);
       setTo((cur) => cur || formatTo(d.to));
       setSubject((cur) => cur || d.subject);
@@ -111,7 +113,12 @@ function ReplyForm({ threadId, onDirty, onSent }: { threadId: string; onDirty: (
 
   const regenerate = async () => {
     if (edited && !(await confirm({ title: "Replace your edits?", message: "A new AI draft replaces the text you've changed.", confirmLabel: "Write a new draft", tone: "danger" }))) return;
-    void runDraft();
+    void runDraft(guidance.trim() ? { guidance: guidance.trim() } : {});
+  };
+  /** Rewrites the text in the box (your edits included) to follow your instructions. */
+  const rewrite = () => {
+    if (!guidance.trim() || drafting) return;
+    void runDraft({ guidance: guidance.trim(), current: body });
   };
 
   // Keep the fixed footer and the close guard in step with the form.
@@ -165,6 +172,19 @@ function ReplyForm({ threadId, onDirty, onSent }: { threadId: string; onDirty: (
           <textarea className="input textarea" rows={11} value={body} onChange={(e) => { setBody(e.target.value); setEdited(true); }} placeholder="Write your reply" />
         )}
       </label>
+
+      <div className="reply-guidance">
+        <label className="field-label" htmlFor="reply-guidance">Tell the AI what to say</label>
+        <textarea id="reply-guidance" className="input reply-guidance-input" rows={2} value={guidance} onChange={(e) => setGuidance(e.target.value)} disabled={drafting}
+          placeholder="Add context or what to change, e.g. they're a regular, offer 5% off; we can deliver Tuesday; keep it short"
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); rewrite(); } }} />
+        <div className="reply-guidance-row">
+          <span className="muted small">The AI rewrites the message above, your edits included. Nothing is sent.</span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={rewrite} disabled={drafting || !guidance.trim()}>
+            {drafting ? <Loader2 size={14} className="spin" aria-hidden /> : <Sparkles size={14} aria-hidden />} Rewrite with this
+          </button>
+        </div>
+      </div>
 
       {draftError ? <p className="ui-modal-error" role="alert"><AlertTriangle size={15} aria-hidden /><span>Couldn't write a draft: {draftError} You can still write the reply yourself.</span></p> : null}
       {draft && !drafting && draft.filesRead?.length > 0 ? (

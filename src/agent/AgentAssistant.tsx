@@ -3,7 +3,7 @@ import {
   AlertTriangle, ArrowRight, Scaling, BarChart3, CheckCircle2, DatabaseZap, Download, FileCheck2, FileText, Hash, LineChart, Loader2, Mail, MessageCircle, Pencil, RotateCcw, Save, Send, ShieldCheck, Table2, Trash2, Undo2, X,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, type AddedWidget, type AppliedChange, type AssistantReply, type Board, type ChangeDraft, type InvoiceDraft, type InvoiceProposal, type ResizedWidget, type Status } from "../lib/api";
+import { api, type AddedWidget, type AppliedChange, type AssistantReply, type Board, type ChangeDraft, type EmailDraft, type InvoiceDraft, type InvoiceProposal, type ResizedWidget, type Status } from "../lib/api";
 import { useHighlight } from "../lib/store";
 import { useStatus } from "../lib/queries";
 import { errorMessage } from "../lib/errors";
@@ -26,13 +26,16 @@ type ChatMessage = {
   widgets?: AddedWidget[];
   removed?: AssistantReply["removed"];
   resized?: AssistantReply["resized"];
+  emailDraft?: EmailDraft | null;
   error?: boolean;
 };
 
 const SUGGESTIONS = [
   "How did sales go this month compared with last month?",
   "Which items need reordering?",
-  "I'm repainting a 12 by 12 ft bedroom. What do I need?",
+  "Show the list of our products and their stock",
+  "Add the cost of purchasing solar panels to my dashboard",
+  "Email Khoury Solar that their panels are ready for pickup",
   "Show me monthly sales of the 5 kWh battery",
   "Create an invoice for a trade customer",
   "Record a sale of 10 panels to Khoury Solar",
@@ -45,7 +48,7 @@ const TOOL_LABELS: Record<string, string> = {
   find_customers: "customer list", customer_history: "customer history", low_stock: "stock levels", lapsed_customers: "customer activity", sales_figures: "sales data",
   store_profile: "store profile", staff_performance: "staff targets", quote_pipeline: "trade quotes", propose_invoice: "invoice draft",
   add_dashboard_widget: "dashboard builder", list_dashboard_widgets: "dashboard widgets", remove_dashboard_widget: "dashboard widgets", resize_dashboard_widget: "dashboard widgets", create_dashboard_page: "dashboard pages", add_ready_widget: "dashboard widgets",
-  add_email_widget: "email data", search_documents: "email files",
+  add_email_widget: "email data", search_documents: "email files", draft_email: "email writer",
   propose_new_customer: "customer draft", propose_customer_update: "customer draft", propose_new_product: "product draft", propose_product_update: "product draft",
   propose_sale: "sale draft", propose_purchase: "purchase draft", propose_expense: "expense draft", propose_order_status: "order draft", propose_quote: "quote draft",
   propose_staff_target: "target draft", propose_store_settings: "settings draft", expenses_summary: "expenses",
@@ -304,7 +307,7 @@ function AppliedCard({ item }: { item: AppliedChange }) {
     try {
       await api.assistantUndoChange(item.id);
       setState("undone");
-      for (const key of ["sales", "sales-status", "sales-custom", "stock-changes", "payments"]) void qc.invalidateQueries({ queryKey: [key] });
+      for (const key of ["sales", "sales-status", "sales-custom", "sales-records", "stock-changes", "payments"]) void qc.invalidateQueries({ queryKey: [key] });
       toast.success("Change undone", item.target);
     } catch (err) {
       setState("saved");
@@ -439,6 +442,110 @@ function InvoiceCard({ initial, status }: { initial: InvoiceDraft; status: Statu
   );
 }
 
+const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+
+/**
+ * A new email the email writer drafted (decision #69). The user edits it here, asks for a rewrite, or sends it.
+ * Sending asks for confirmation with the exact recipients first (AGENTS.md rule 4).
+ */
+function EmailDraftCard({ initial, status }: { initial: EmailDraft; status: Status | undefined }) {
+  const [to, setTo] = useState(initial.to);
+  const [subject, setSubject] = useState(initial.subject);
+  const [body, setBody] = useState(initial.body);
+  const [note, setNote] = useState(initial.note);
+  const [instruction, setInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const gmail = status?.gmail;
+  const canSend = gmail?.mode === "live" && gmail.canSend;
+  const recipients = to.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+  const bad = recipients.find((r) => !EMAIL_RE.test(r));
+  const invalid = !recipients.length ? "Add the recipient's email address." : bad ? `"${bad}" isn't an email address.` : !subject.trim() ? "Add a subject." : !body.trim() ? "Write a message." : null;
+
+  const rewrite = async () => {
+    const change = instruction.trim();
+    if (!change || rewriting) return;
+    setRewriting(true);
+    setProblem(null);
+    try {
+      const out = await api.rewriteEmail({ to, subject, body, instruction: change });
+      setSubject(out.subject);
+      setBody(out.body);
+      setNote(out.note);
+      setInstruction("");
+    } catch (err) {
+      setProblem(errorMessage(err));
+    } finally {
+      setRewriting(false);
+    }
+  };
+
+  const send = async () => {
+    if (invalid || !canSend) return;
+    const list = recipients.join(", ");
+    const ok = await confirm({
+      title: "Send this email?",
+      message: <>It goes to <strong>{list}</strong> from {gmail?.email}, now. You can't unsend it.</>,
+      details: <div className="ui-modal-details"><strong>{subject.trim()}</strong>{"\n\n"}{body.trim()}</div>,
+      confirmLabel: "Send email",
+      icon: <Send size={18} />,
+      action: () => api.sendEmail({ to: recipients.map((email) => ({ name: "", email })), subject: subject.trim(), body: body.trim() }),
+    });
+    if (!ok) return;
+    setSent(list);
+    toast.success("Email sent", `To ${list}. It's in your Gmail Sent folder.`);
+  };
+
+  return (
+    <section className="invoice-card email-draft-card" aria-label={`Email draft: ${subject}`}>
+      <header className="invoice-card-head">
+        <span className="invoice-icon"><Mail size={16} aria-hidden /></span>
+        <div>
+          <strong>{sent ? "Email sent" : "Email draft"}</strong>
+          <span>{initial.toName || to || "Add a recipient"}</span>
+        </div>
+        <span className="tag" data-tone={sent ? "ok" : "accent"}>{sent ? "Sent" : "Not sent"}</span>
+      </header>
+      {sent ? (
+        <p className="invoice-sent"><CheckCircle2 size={14} aria-hidden /> Sent to {sent}: {subject}</p>
+      ) : (
+        <div className="invoice-review">
+          <label className="field">
+            <span className="field-label">To</span>
+            <input className="input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@company.com" inputMode="email" spellCheck={false} aria-invalid={Boolean(bad) || undefined} />
+          </label>
+          <label className="field">
+            <span className="field-label">Subject</span>
+            <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="field-label">Message</span>
+            <textarea className="input textarea invoice-message" rows={9} value={body} onChange={(e) => setBody(e.target.value)} disabled={rewriting} />
+          </label>
+          {note && <p className="invoice-delivery-note"><AlertTriangle size={13} aria-hidden /> Check before sending: {note}</p>}
+          <div className="email-rewrite">
+            <label className="sr-only" htmlFor={`rewrite-${initial.subject}`}>What to change</label>
+            <input id={`rewrite-${initial.subject}`} className="input" value={instruction} onChange={(e) => setInstruction(e.target.value)} disabled={rewriting}
+              placeholder="What to change, e.g. shorter, more formal, mention delivery on Tuesday"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void rewrite(); } }} />
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void rewrite()} disabled={rewriting || !instruction.trim()}>
+              {rewriting ? <Loader2 size={14} className="spin" aria-hidden /> : <Pencil size={14} aria-hidden />} Rewrite
+            </button>
+          </div>
+          {problem && <p className="agent-error" role="alert"><AlertTriangle size={13} aria-hidden /> {problem}</p>}
+          <p className="invoice-delivery-note"><ShieldCheck size={13} aria-hidden /> {canSend ? "Nothing is sent until you confirm." : "Connect Gmail with sending permission to send it from here."}</p>
+          <div className="invoice-review-actions">
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void send()} disabled={Boolean(invalid) || !canSend || rewriting} title={invalid ?? undefined} aria-haspopup="dialog">
+              <Send size={14} aria-hidden /> Send email
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function AgentAssistant() {
   const { data: status } = useStatus();
   const team = useAgents();
@@ -477,7 +584,7 @@ export function AgentAssistant() {
     setMessages((current) => [...current, {
       id: crypto.randomUUID(), role: "assistant", text: result.reply, toolsUsed: result.toolsUsed,
       proposal: result.pendingInvoice, change: result.pendingChange, applied: result.applied,
-      proposalState: result.pendingInvoice || result.pendingChange ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed, resized: result.resized,
+      proposalState: result.pendingInvoice || result.pendingChange ? "waiting" : undefined, invoice: result.invoice, widgets: result.widgets, removed: result.removed, resized: result.resized, emailDraft: result.emailDraft,
     }]);
   };
   const addError = (err: unknown) =>
@@ -542,7 +649,7 @@ export function AgentAssistant() {
               <div className="agent-empty">
                 <span className="agent-empty-icon"><MessageCircle size={20} aria-hidden /></span>
                 <h3>Hi, I'm {layla.name}. What would you like to know?</h3>
-                <p>Ask about sales, stock and customers, describe a job to get product picks, or ask for an invoice.</p>
+                <p>Ask about sales, stock and customers, describe a job to get product picks, ask for an invoice or an email, or add any chart or list to your dashboard.</p>
                 <div className="agent-prompts">
                   {SUGGESTIONS.map((suggestion) => (
                     <button key={suggestion} type="button" onClick={() => void ask(suggestion)}>{suggestion}</button>
@@ -571,6 +678,7 @@ export function AgentAssistant() {
                 {message.removed?.map((w) => <RemovedCard key={w.id} item={w} />)}
                 {message.resized?.map((w, i) => <ResizedCard key={`${w.id}-${i}`} item={w} />)}
                 {message.invoice && <InvoiceCard initial={message.invoice} status={status} />}
+                {message.emailDraft && <EmailDraftCard initial={message.emailDraft} status={status} />}
               </article>
             ))}
             {working && <div className="agent-thinking" role="status"><Loader2 size={15} className="spin" aria-hidden /> Looking at your data…</div>}

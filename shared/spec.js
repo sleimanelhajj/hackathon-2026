@@ -69,13 +69,15 @@ const title = z.string().trim().min(1).max(60);
 // Custom sales widgets, made by the assistant's widget builder (decision #48). The widget stores a typed query, never
 // SQL and never data: server/sales/custom.js turns it into fixed, parameterized SQL each time the widget loads.
 // cost = what the goods sold cost (quantity x unit cost), profit = revenue - cost, purchases = supplier invoices (#62).
-export const CustomMetric = z.enum(["revenue", "orders", "units", "aov", "marginPct", "customers", "cost", "profit", "purchases"]);
+export const CustomMetric = z.enum(["revenue", "orders", "units", "aov", "marginPct", "customers", "cost", "profit", "purchases", "expenses"]);
 export const CustomGroupBy = z.enum(["none", "month", "week", "day", "category", "product", "branch", "staff", "channel", "segment", "customer", "supplier"]);
 /** What a supplier purchase can be grouped by (it has no branch, staff, channel or customer). */
 export const PURCHASE_GROUPS = ["none", "month", "week", "day", "category", "product", "supplier"];
+/** Running costs (rent, salaries…): grouped by time, expense category or branch (#69). */
+export const EXPENSE_GROUPS = ["none", "month", "week", "day", "category", "branch"];
 export const CustomChart = z.enum(["number", "line", "bar", "table"]);
 export const TIME_GROUPS = ["month", "week", "day"];
-export const CUSTOM_METRIC_LABELS = { revenue: "Revenue", orders: "Orders", units: "Units sold", aov: "Average order", marginPct: "Gross margin", customers: "Customers", cost: "Cost of goods sold", profit: "Gross profit", purchases: "Purchases" };
+export const CUSTOM_METRIC_LABELS = { revenue: "Revenue", orders: "Orders", units: "Units sold", aov: "Average order", marginPct: "Gross margin", customers: "Customers", cost: "Cost of goods sold", profit: "Gross profit", purchases: "Purchases", expenses: "Expenses" };
 export const CUSTOM_GROUP_LABELS = { none: "Total", month: "Month", week: "Week", day: "Day", category: "Category", product: "Product", branch: "Branch", staff: "Staff", channel: "Channel", segment: "Customer type", customer: "Customer", supplier: "Supplier" };
 const names = z.array(z.string().trim().min(1).max(80)).max(10).default([]);
 export const CustomQuery = z.object({
@@ -104,7 +106,100 @@ export function customWidgetProblems(widget) {
   if (query.metric === "purchases" && !PURCHASE_GROUPS.includes(query.groupBy)) problems.push("Purchases come from supplier invoices, which have no branch, staff, channel, customer type or customer; group them by month, week, day, category, product or supplier.");
   if (query.metric === "purchases" && ["branches", "segments", "channels", "customers"].some((k) => query.filters?.[k]?.length)) problems.push("Purchases from supplier invoices can only be filtered by product or category.");
   if (query.metric !== "purchases" && query.groupBy === "supplier") problems.push("Group by supplier works only with purchases.");
+  if (query.metric === "expenses" && !EXPENSE_GROUPS.includes(query.groupBy)) problems.push("Expenses can be grouped by month, week, day, category (rent, salaries…) or branch.");
+  if (query.metric === "expenses" && ["products", "segments", "channels", "customers"].some((k) => query.filters?.[k]?.length)) problems.push("Expenses can only be filtered by category (rent, salaries…) or branch.");
   if (query.groupBy === "day" && query.months > 3) problems.push("Daily figures are limited to the last 3 months; group by week or month for longer periods.");
+  return problems;
+}
+
+// Lists of records the assistant builds (decision #69): products with stock and prices, customers, orders, supplier
+// purchases, expenses, quotes or staff, with chosen columns, filters and sorting. A typed query, never SQL:
+// server/sales/records.js maps each column key to a fixed SQL fragment.
+const col = (label, unit = "text") => ({ label, unit });
+export const RECORD_DATASETS = {
+  products: {
+    label: "Products",
+    columns: {
+      name: col("Product"), sku: col("SKU"), category: col("Category"), brand: col("Brand"), unit: col("Unit"),
+      price: col("Price", "USD"), cost: col("Unit cost", "USD"), marginPct: col("Margin", "percent"),
+      stock: col("In stock", "count"), reorderLevel: col("Reorder at", "count"), stockStatus: col("Stock status"),
+      stockValue: col("Stock value (at cost)", "USD"), retailValue: col("Stock value (at price)", "USD"),
+      unitsSold: col("Units sold", "count"), revenue: col("Revenue", "USD"), unitsBought: col("Units bought", "count"), purchaseCost: col("Bought for", "USD"),
+    },
+    defaults: ["name", "category", "price", "stock", "stockStatus"],
+    sort: "name",
+  },
+  customers: {
+    label: "Customers",
+    columns: {
+      name: col("Customer"), segment: col("Customer type"), branch: col("Branch"), industry: col("Industry"), email: col("Email"), phone: col("Phone"),
+      orders: col("Orders", "count"), revenue: col("Revenue", "USD"), lastOrder: col("Last order", "date"),
+    },
+    defaults: ["name", "segment", "branch", "orders", "revenue"],
+    sort: "revenue",
+  },
+  orders: {
+    label: "Orders",
+    columns: {
+      number: col("Order"), date: col("Date", "date"), customer: col("Customer"), branch: col("Branch"), staff: col("Staff"), channel: col("Channel"),
+      status: col("Status"), items: col("Items"), units: col("Units", "count"), total: col("Total", "USD"),
+    },
+    defaults: ["number", "date", "customer", "status", "total"],
+    sort: "date",
+  },
+  purchases: {
+    label: "Supplier purchases",
+    columns: { number: col("Invoice"), date: col("Date", "date"), supplier: col("Supplier"), items: col("Items"), units: col("Units", "count"), total: col("Total", "USD") },
+    defaults: ["date", "supplier", "items", "total"],
+    sort: "date",
+  },
+  expenses: {
+    label: "Expenses",
+    columns: { date: col("Date", "date"), category: col("Category"), payee: col("Paid to"), branch: col("Branch"), description: col("Description"), amount: col("Amount", "USD") },
+    defaults: ["date", "category", "payee", "amount"],
+    sort: "date",
+  },
+  quotes: {
+    label: "Quotes",
+    columns: {
+      name: col("Quote"), customer: col("Customer"), stage: col("Stage"), amount: col("Amount", "USD"), staff: col("Staff"),
+      created: col("Created", "date"), expectedClose: col("Expected close", "date"), closed: col("Closed", "date"),
+    },
+    defaults: ["name", "customer", "stage", "amount", "expectedClose"],
+    sort: "amount",
+  },
+  staff: {
+    label: "Staff",
+    columns: { name: col("Name"), branch: col("Branch"), target: col("Monthly target", "USD"), orders: col("Orders", "count"), revenue: col("Revenue", "USD"), targetPct: col("Of target", "percent") },
+    defaults: ["name", "branch", "orders", "revenue", "targetPct"],
+    sort: "revenue",
+  },
+};
+export const RecordsDataset = z.enum(Object.keys(RECORD_DATASETS));
+export const RecordsQuery = z.object({
+  dataset: RecordsDataset,
+  columns: z.array(z.string().trim().min(1).max(40)).max(10).default([]),
+  sortBy: z.string().trim().max(40).default(""),
+  sortDir: z.enum(["auto", "asc", "desc"]).default("auto"), // auto: A to Z for text, highest or newest first otherwise
+  limit: z.number().int().min(1).max(50).default(20),
+  months: z.number().int().min(1).max(24).default(12),
+  filters: z.object({
+    search: z.string().trim().max(80).default(""),
+    products: names, // SKUs
+    categories: names,
+    branches: names,
+    segments: names,
+    statuses: names, // order status (paid, pending, refunded) or quote stage
+    stock: z.enum(["any", "low", "out"]).default("any"),
+  }).prefault({}),
+});
+/** Why a records query doesn't fit its dataset, in plain words; [] when it does. */
+export function recordsProblems(query) {
+  const def = RECORD_DATASETS[query.dataset];
+  const problems = [];
+  const bad = [...query.columns, ...(query.sortBy ? [query.sortBy] : [])].filter((c) => !(c in def.columns));
+  if (bad.length) problems.push(`${def.label} have no column ${bad.map((c) => `"${c}"`).join(", ")}. Use: ${Object.keys(def.columns).join(", ")}.`);
+  if (query.filters.stock !== "any" && query.dataset !== "products") problems.push("The stock filter works only on products.");
   return problems;
 }
 
@@ -160,8 +255,10 @@ export const Widget = z.discriminatedUnion("type", [
   z.object({ id, type: z.literal("stock-changes"), title }),
   // Cost of goods sold by category or product (decision #62)
   z.object({ id, type: z.literal("sales-cost"), title, by: z.enum(["category", "product"]) }),
+  // A list of records with chosen columns, made by the assistant (decision #69)
+  z.object({ id, type: z.literal("sales-records"), title, query: RecordsQuery, note: z.string().trim().max(160).optional() }),
 ]);
-export const SALES_COST_LABELS = { category: "Cost by category", product: "Cost by product" };
+export const SALES_COST_LABELS = { category: "Cost of goods sold by category", product: "Cost of goods sold by product" };
 export const PAYMENTS_SHOW_LABELS = { all: "Payments", "to-pay": "Invoices to pay", "to-collect": "Invoices to collect" };
 
 // ---------------------------------------------------------------------------
@@ -386,8 +483,8 @@ export const SALES_CATALOG = {
     create: () => ({ type: "sales-table", title: "Top products", table: "topProducts" }),
   },
   "sales-cost": {
-    label: "Costs",
-    description: "What the goods sold cost, by category or by product",
+    label: "Cost of goods sold",
+    description: "What the goods we sold had cost us (quantity x unit cost), by category or by product. Not purchases.",
     size: { w: 6, h: 10, minW: 4, minH: 6 },
     create: () => ({ type: "sales-cost", title: "Cost by category", by: "category" }),
   },
@@ -404,6 +501,13 @@ export const SALES_CATALOG = {
     size: { w: 6, h: 9, minW: 3, minH: 3 },
     hidden: true,
     create: () => ({ type: "sales-custom", title: "Revenue by month", chart: "line", query: { metric: "revenue", groupBy: "month", months: 12, limit: 10, filters: {} } }),
+  },
+  "sales-records": {
+    label: "List",
+    description: "Made by the assistant: products, customers, orders, purchases…",
+    size: { w: 12, h: 10, minW: 4, minH: 5 },
+    hidden: true,
+    create: () => ({ type: "sales-records", title: "Products", query: { dataset: "products" } }),
   },
 };
 

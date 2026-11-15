@@ -11,11 +11,13 @@ import { ConflictError, getDashboard, removeWidgetFromBoard, resetDashboard, sav
 import { geminiConfigured, geminiModel } from "./agent/llm.js";
 import { resetStaleAnalysis, startAnalysis } from "./agent/classify.js";
 import { draftReply, loadThread } from "./agent/reply.js";
+import { writeEmail } from "./agent/email-writer.js";
 import { threadView } from "./threads.js";
 import { DEFAULT_SCHEMA, createSchema, ensureDatabase, getPool, loadData, postgresConfigured, tableCounts } from "./sales/db.js";
 import { generateSalesData } from "./sales/seed.js";
 import { salesDashboard } from "./sales/metrics.js";
 import { runCustomQuery } from "./sales/custom.js";
+import { runRecordsQuery } from "./sales/records.js";
 import { listFolders, loadDocuments, onDocumentSaved, summariseAttachments } from "./documents.js";
 import { loadPayments } from "./payments.js";
 import { createPage, deletePage, listPages, renamePage } from "./pages.js";
@@ -376,9 +378,15 @@ app.get("/api/sales/dashboard", async (req, res) => {
 });
 
 // ---- Replies: AI draft, then send only after the user edits and approves it (decision #30) ----
+// Optional: the owner's own instructions and the current text, so "Rewrite with my instructions" changes the draft (#69).
+const ReplyDraftBody = z.object({
+  threadId: z.string().min(1).max(200),
+  guidance: z.string().trim().max(2000).default(""),
+  current: z.string().trim().max(20000).default(""),
+});
 app.post("/api/replies/draft", wrap(async (req, res) => {
-  const threadId = z.string().min(1).max(200).parse(req.body?.threadId);
-  res.json(await draftReply(threadId));
+  const { threadId, guidance, current } = ReplyDraftBody.parse(req.body ?? {});
+  res.json(await draftReply(threadId, { guidance, current }));
 }));
 
 const Addr = z.object({ name: z.string().max(200).default(""), email: z.string().trim().email().max(320) });
@@ -405,6 +413,44 @@ app.post("/api/replies/send", async (req, res) => {
       threadId: input.threadId, gmailId: sent.id, to: input.to.map((a) => a.email), subject: input.subject, sentAt: new Date(),
     });
     syncGmail().then(analyseInBackground).catch(() => {}); // pick up the sent message so "waiting on you" updates
+    res.json({ ok: true, id: sent.id });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ---- New emails the assistant drafted in the chat (decision #69) ----
+// Rewrite: the email writer changes the current draft as the user asks. Nothing is sent.
+const EmailRewriteBody = z.object({
+  to: z.string().trim().max(1000).default(""),
+  subject: z.string().trim().max(300).default(""),
+  body: z.string().trim().min(1).max(20000),
+  instruction: z.string().trim().min(1).max(1000),
+});
+app.post("/api/email/rewrite", wrap(async (req, res) => {
+  const parsed = EmailRewriteBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Say what to change in the email." });
+  const { to, subject, body, instruction } = parsed.data;
+  const out = await writeEmail({ to, current: { subject, body }, change: instruction, request: instruction });
+  res.json({ subject: out.subject, body: out.body, note: out.note });
+}));
+// Send: only from the draft's Send button, after the user confirmed the exact recipients and text (AGENTS.md rule 4).
+const EmailSendBody = z.object({
+  to: z.array(Addr).min(1).max(20),
+  cc: z.array(Addr).max(20).default([]),
+  subject: z.string().trim().min(1).max(300),
+  body: z.string().trim().min(1).max(20000),
+  approved: z.literal(true),
+});
+app.post("/api/email/send", async (req, res) => {
+  const parsed = EmailSendBody.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "The email is incomplete: check the recipients, subject and message." });
+  const input = parsed.data;
+  try {
+    const sent = await sendReply({ to: input.to, cc: input.cc, subject: input.subject, body: input.body, inReplyTo: null, references: [] });
+    await getDb().collection("sent_emails").insertOne({ gmailId: sent.id, to: input.to.map((a) => a.email), subject: input.subject, source: "assistant", sentAt: new Date() });
+    await getDb().collection("audit_events").insertOne({ at: new Date(), actor: "user", action: "email_sent", gmailId: sent.id, ok: true }).catch(() => {});
+    syncGmail().then(analyseInBackground).catch(() => {});
     res.json({ ok: true, id: sent.id });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -548,6 +594,16 @@ app.post("/api/sales/custom", async (req, res) => {
     res.json(await runCustomQuery(getPool(), req.body?.query));
   } catch (err) {
     res.status(400).json({ error: err?.issues ? "This widget's settings aren't valid." : friendlyPgError(err) });
+  }
+});
+
+// Data for a list widget (decision #69): the widget's typed query, run as fixed, parameterized SQL.
+app.post("/api/sales/records", async (req, res) => {
+  try {
+    if (!postgresConfigured()) return res.status(400).json({ error: "Postgres isn't set up. Add POSTGRES_URL to .env and restart the server." });
+    res.json(await runRecordsQuery(getPool(), req.body?.query));
+  } catch (err) {
+    res.status(400).json({ error: err?.issues ? "This list's settings aren't valid." : friendlyPgError(err) });
   }
 });
 

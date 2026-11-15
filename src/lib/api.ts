@@ -123,7 +123,11 @@ export type AssistantReply = {
   removed: { board: Board; id: string; title: string; version: number }[];
   /** Widgets the assistant resized (sizes in grid columns and rows); `limited` means the widget can't go further. */
   resized: ResizedWidget[];
+  /** A new email the email writer drafted this turn (decision #69): shown to edit, rewrite or send. */
+  emailDraft?: EmailDraft | null;
 };
+
+export type EmailDraft = { to: string; toName: string; subject: string; body: string; note: string | null };
 
 export type ResizedWidget = { board: Board; id: string; title: string; version: number; from: { w: number; h: number }; to: { w: number; h: number }; limited: boolean };
 
@@ -231,6 +235,17 @@ export type CustomResult = {
   rows: { key: string; value: number | null }[];
   total: number;
   previousTotal: number | null;
+  filters: string[];
+};
+
+/** Data for a list widget (POST /api/sales/records, decision #69). */
+export type RecordsResult = {
+  dataset: string;
+  label: string;
+  columns: { key: string; label: string; unit: "text" | "USD" | "count" | "percent" | "date" }[];
+  rows: Record<string, string | number | null>[];
+  total: number;
+  period: { from: string; to: string; months: number };
   filters: string[];
 };
 
@@ -586,11 +601,26 @@ export const api = {
   seedSales: () => request<{ ok: true; counts: NonNullable<SalesStatus["counts"]> }>("/api/sales/seed", { method: "POST" }),
   thread: (threadId: string) => request<ThreadView>(`/api/threads/${encodeURIComponent(threadId)}`),
   people: () => request<{ email: string; name: string; count: number }[]>("/api/messages/people"),
-  draftReply: (threadId: string) =>
+  /** A new AI draft; with `guidance` (the owner's instructions) it rewrites `current` to follow them (decision #69). */
+  draftReply: (threadId: string, opts: { guidance?: string; current?: string } = {}) =>
     request<ReplyDraft>("/api/replies/draft", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threadId }),
+      body: JSON.stringify({ threadId, ...opts }),
+    }),
+  /** The email writer rewrites a chat draft as asked. Nothing is sent. */
+  rewriteEmail: (draft: { to: string; subject: string; body: string; instruction: string }) =>
+    request<{ subject: string; body: string; note: string | null }>("/api/email/rewrite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    }),
+  /** Sends a new email for real. Only call this from a draft's Send button after the user confirmed it. */
+  sendEmail: (email: { to: { name: string; email: string }[]; subject: string; body: string }) =>
+    request<{ ok: true; id: string }>("/api/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...email, approved: true }),
     }),
   /** Sends for real. Only call this from the Send button after the user has reviewed the reply. */
   sendReply: (reply: { threadId: string; to: { name: string; email: string }[]; subject: string; body: string }) =>
@@ -669,6 +699,12 @@ export const api = {
     }),
   salesCustom: (query: Extract<Widget, { type: "sales-custom" }>["query"]) =>
     request<CustomResult>("/api/sales/custom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    }),
+  salesRecords: (query: Extract<Widget, { type: "sales-records" }>["query"]) =>
+    request<RecordsResult>("/api/sales/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),

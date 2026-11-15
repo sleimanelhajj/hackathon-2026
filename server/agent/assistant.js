@@ -11,6 +11,8 @@ import { createSalesAgent } from "./sales-agent.js";
 import { createChangeDesk } from "../sales/changes.js";
 import { createWidgetBuilder } from "./widget-builder.js";
 import { filterValues, runCustomQuery } from "../sales/custom.js";
+import { runRecordsQuery } from "../sales/records.js";
+import { writeEmail } from "./email-writer.js";
 import { loadDocuments, searchDocs } from "../documents.js";
 import { boardDef, EmailCustomQuery, emailChartProblems } from "../../shared/spec.js";
 import { createPage as createDashboardPage, listPages } from "../pages.js";
@@ -52,6 +54,7 @@ export function getAssistant() {
       generate: generateContent, tools,
       values: () => filterValues(getPool()),
       runQuery: (query) => runCustomQuery(getPool(), query),
+      runRecords: (query) => runRecordsQuery(getPool(), query),
     });
     // Every board the assistant can work on (decision #60): Email dashboard, Sales, and the main Dashboard's pages.
     const boardList = async () => [{ board: "default", name: "Email dashboard" }, { board: "sales", name: "Sales" }, ...(await listPages()).map((p) => ({ board: p.id, name: p.name }))];
@@ -66,7 +69,9 @@ export function getAssistant() {
     const addWidget = async (request, board = "sales") => {
       await known(board);
       const built = await asAgent({ agent: "sami", task: request }, () => builder.build(request)); // Layla hands the chart to Sami
-      const { widget } = await addWidgetToBoard(board, built.widget);
+      // Lists are tables: full width when they have many columns, half width otherwise.
+      const size = built.widget.type === "sales-records" ? { w: built.preview.columns.length > 4 ? 12 : 6, h: 10 } : undefined;
+      const { widget } = await addWidgetToBoard(board, built.widget, size);
       return added(board, widget, { preview: built.preview });
     };
     const addReadyWidget = async (board, kind) => {
@@ -112,7 +117,7 @@ export function getAssistant() {
       return { board, id, ...out };
     };
     agent = createSalesAgent({ generate: generateContent, tools, saveInvoice: (draft) => saveConfirmedInvoice(draft), changes: getChangeDesk(), addWidget, listWidgets, removeWidget, resizeWidget,
-      searchDocuments: async (query) => searchDocs(await loadDocuments(), query), createPage, addReadyWidget, addEmailWidget });
+      searchDocuments: async (query) => searchDocs(await loadDocuments(), query), createPage, addReadyWidget, addEmailWidget, writeEmail: (input) => writeEmail(input) });
   }
   return agent;
 }

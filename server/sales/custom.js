@@ -19,6 +19,8 @@ const METRICS = {
   profit: { sql: `sum(${LINE}) - sum(li.quantity * p.unit_cost)`, unit: "USD" },
   // Supplier invoices (decision #58): a different table, see PURCHASE_SQL below.
   purchases: { sql: "sum(pi.quantity * coalesce(pi.unit_cost, p.unit_cost))", unit: "USD" },
+  // Running costs (rent, salaries…) from the expenses table (decision #69).
+  expenses: { sql: "sum(e.amount)", unit: "USD" },
 };
 const GROUPS = {
   none: "'Total'",
@@ -30,6 +32,8 @@ const GROUPS = {
 };
 /** Purchases read supplier invoices instead of orders: the same fragments with the purchase date and tables. */
 const forPurchases = (sql) => sql.replaceAll("o.ordered_at", "pu.purchased_at");
+/** Expenses: their own date, category and branch. */
+const forExpenses = (groupBy) => ({ category: "e.category", branch: "e.branch" }[groupBy] ?? GROUPS[groupBy].replaceAll("o.ordered_at", "e.spent_at"));
 
 const round = (v, unit) => (v == null ? null : unit === "count" ? Math.round(Number(v)) : Math.round(Number(v) * 100) / 100);
 const ymd = (d) => d.toISOString().slice(0, 10);
@@ -76,6 +80,7 @@ export async function runCustomQuery(pool, input, { schema = DEFAULT_SCHEMA, now
   const { sql: metricSql, unit } = METRICS[q.metric];
   const f = q.filters;
   const buying = q.metric === "purchases";
+  const spending = q.metric === "expenses";
   const problems = customWidgetProblems({ chart: q.groupBy === "none" ? "number" : "table", query: q });
   if (problems.length) throw new Error(problems.join(" "));
 
@@ -97,9 +102,14 @@ export async function runCustomQuery(pool, input, { schema = DEFAULT_SCHEMA, now
     AND (cardinality($4::text[]) = 0 OR lower(p.category) = ANY($4))
     AND cardinality($5::text[]) >= 0 AND cardinality($6::text[]) >= 0 AND cardinality($7::text[]) >= 0 AND cardinality($8::int[]) >= 0`;
   const purchaseJoins = `FROM ${s}.purchases pu JOIN ${s}.purchase_items pi ON pi.purchase_id = pu.id JOIN ${s}.products p ON p.id = pi.product_id`;
-  const W = buying ? purchaseWhere : where;
-  const FROM = buying ? purchaseJoins : fromJoins;
-  const G = buying ? forPurchases(GROUPS[q.groupBy]) : GROUPS[q.groupBy];
+  const expenseWhere = `e.spent_at >= $1 AND e.spent_at <= $2
+    AND cardinality($3::text[]) >= 0
+    AND (cardinality($4::text[]) = 0 OR lower(e.category) = ANY($4))
+    AND (cardinality($5::text[]) = 0 OR lower(e.branch) = ANY($5))
+    AND cardinality($6::text[]) >= 0 AND cardinality($7::text[]) >= 0 AND cardinality($8::int[]) >= 0`;
+  const W = buying ? purchaseWhere : spending ? expenseWhere : where;
+  const FROM = buying ? purchaseJoins : spending ? `FROM ${s}.expenses e` : fromJoins;
+  const G = buying ? forPurchases(GROUPS[q.groupBy]) : spending ? forExpenses(q.groupBy) : GROUPS[q.groupBy];
 
   const client = await pool.connect();
   try {
@@ -110,7 +120,7 @@ export async function runCustomQuery(pool, input, { schema = DEFAULT_SCHEMA, now
         GROUP BY 1 ORDER BY ${time ? "1" : "2 DESC NULLS LAST"} ${time ? "" : "LIMIT $9"}`,
       time ? [from, to, ...params] : [from, to, ...params, q.limit]);
     const totals = await client.query(`SELECT (${metricSql})::float AS value ${FROM} WHERE ${W}`, [from, to, ...params]);
-    const previous = await client.query(`SELECT (${metricSql})::float AS value ${FROM} WHERE ${W.replace("o.ordered_at <= $2", "o.ordered_at < $2").replace("pu.purchased_at <= $2", "pu.purchased_at < $2")}`, [prevFrom, prevTo, ...params]);
+    const previous = await client.query(`SELECT (${metricSql})::float AS value ${FROM} WHERE ${W.replace("o.ordered_at <= $2", "o.ordered_at < $2").replace("pu.purchased_at <= $2", "pu.purchased_at < $2").replace("e.spent_at <= $2", "e.spent_at < $2")}`, [prevFrom, prevTo, ...params]);
     // Labels for the filters, so the widget can say exactly what it counts.
     const labels = [];
     if (f.products.length) {
